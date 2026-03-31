@@ -1,0 +1,45 @@
+name: Update GitHub Wiki
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'docs/**'
+  workflow_dispatch:
+
+jobs:
+  update-wiki:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Clone wiki repository
+        run: |
+          git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git /tmp/wiki
+        env:
+          GIT_TERMINAL_PROMPT: 0
+
+      - name: Copy files from docs/ to wiki
+        run: |
+          cp -R docs/* /tmp/wiki/
+
+      - name: Commit and push to wiki
+        working-directory: /tmp/wiki
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes detected in wiki."
+          else
+            git commit -m "docs: auto-sync wiki from docs/ folder [skip ci]"
+            git push origin HEAD
+            echo "Wiki successfully updated."
+          fi
