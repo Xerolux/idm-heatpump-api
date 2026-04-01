@@ -1,44 +1,42 @@
-name: Stale
+name: Sync docs to GitHub Wiki
 
 on:
-  schedule:
-    - cron: "30 0 * * *"
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/wiki-sync.yml'
   workflow_dispatch:
 
 permissions:
-  issues: write
-  pull-requests: write
-
-concurrency:
-  group: lock
+  contents: write
 
 jobs:
-  stale:
+  sync-wiki:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/stale@v10
-        with:
-          debug-only: ${{ github.ref != 'refs/heads/main' }}
-          remove-stale-when-updated: true
-          operations-per-run: 400
-          days-before-pr-stale: 90
-          days-before-pr-close: 7
-          stale-pr-label: "stale"
-          exempt-pr-labels: "not-stale"
-          stale-pr-message: >
-            There hasn't been any activity on this pull request recently. This
-            pull request has been automatically marked as stale because of that
-            and will be closed if no further activity occurs within 7 days.
-            Please rebase your PR onto the latest main branch.
-          days-before-issue-stale: 90
-          days-before-issue-close: 7
-          stale-issue-label: "stale"
-          exempt-issue-labels: "not-stale"
-          stale-issue-message: >
-            There hasn't been any activity on this issue recently. Due to the
-            high number of incoming GitHub notifications, we have to clean some
-            of the old issues, as many of them have already been resolved with
-            the latest updates. Please make sure to update to the latest
-            integration version and check if that solves the issue. This issue
-            has now been marked as stale and will be closed if no further
-            activity occurs.
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Clone wiki
+        env:
+          GIT_TERMINAL_PROMPT: 0
+        run: |
+          git clone "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git" /tmp/wiki
+
+      - name: Sync docs content
+        run: |
+          rsync -av --delete docs/ /tmp/wiki/
+
+      - name: Commit and push wiki changes
+        working-directory: /tmp/wiki
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No wiki changes detected."
+          else
+            git commit -m "docs: sync wiki from docs folder [skip ci]"
+            git push origin HEAD
+          fi
