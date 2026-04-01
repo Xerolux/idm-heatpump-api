@@ -1,38 +1,22 @@
-# IDM Heatpump
+# IDM Heatpump API Wiki
 
-**[Home](Home)**
+Welcome to the documentation home for **idm-heatpump-api**.
 
----
+## Documentation Entry Points
 
-## Erste Schritte
-- [Installation & Setup](Installation-and-Setup)
-- [Konfiguration](Configuration)
+1. GitHub Pages: https://xerolux.github.io/idm-heatpump-api/
+2. GitHub Wiki: https://github.com/Xerolux/idm-heatpump-api/wiki
+3. Repository: https://github.com/Xerolux/idm-heatpump-api
 
-## Entities & Gerate
-- [Alle Entities](Entities)
-- [Sensoren & Messwerte](Entities#sensoren)
-- [Numbers (Sollwerte)](Entities#numbers)
-- [Selects (Modi)](Entities#selects)
-- [Switches](Entities#schalter)
+## Core Documentation
 
-## Automatisierung
-- [Services Referenz](Services)
-- [Beispiel-Automatisierungen](Examples)
-
-## Betrieb & Wartung
-- [Datenaktualisierung](Data-Update)
-- [Unterstützte Geräte](Supported-Devices)
-- [Bekannte Einschränkungen](Known-Limitations)
+- [Installation and Setup](Installation-and-Setup)
+- [Supported Devices](Supported-Devices)
+- [Data Update](Data-Update)
 - [Troubleshooting](Troubleshooting)
-- [Modbus-Register](Modbus-Register)
+- [Services](Services)
+- [Modbus Register](Modbus-Register)
 
-## Entwicklung
-- [Contributing](Contributing)
-- [Changelog](Changelog)
+## Notes
 
----
-
-**HA:** 2025.12.0+ · getestet bis 2026.3
-**Python:** 3.14.2 · **pymodbus:** 3.11.2
-
-[GitHub](https://github.com/Xerolux/idm-heatpump-hass) · [Issues](https://github.com/Xerolux/idm-heatpump-hass/issues) · [HACS](https://hacs.xyz/)
+This wiki is synchronized automatically from the `docs/` folder in the repository.
