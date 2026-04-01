@@ -1,48 +1,64 @@
-# Bekannte Einschränkungen
+"""Shared constants for IDM Heatpump API consumers."""
 
-## Gerätekompatibilität
+from __future__ import annotations
 
-- **Nur IDM Navigator 2.0 / Navigator Pro** werden offiziell unterstützt
-- Ältere IDM-Steuerungen ohne Navigator-Firmware werden **nicht** unterstützt
-- Das Modbus-Register-Mapping kann zwischen Firmware-Versionen leicht abweichen
+import enum
 
-## Modbus TCP
+DEFAULT_PORT: int = 502
+DEFAULT_SLAVE_ID: int = 1
+UNUSED_VALUE: float = -1.0
 
-- Ausschließlich **Modbus TCP** wird unterstützt (kein serielles Modbus RTU)
-- Port und Slave-ID müssen korrekt konfiguriert sein
-- Gleichzeitige Verbindungen von mehreren Clients (z.B. IDM-Webinterface + HA) können zu Timeout-Fehlern führen
-- Empfehlung: Anderen Modbus-Clients während des Betriebs deaktivieren oder das Abfrageintervall erhöhen
 
-## EEPROM-Schutz
+class SystemMode(enum.IntEnum):
+    STANDBY = 0
+    AUTOMATIC = 1
+    AWAY = 2
+    HOLIDAY = 3
+    HOT_WATER_ONLY = 4
+    HEATING_COOLING_ONLY = 5
 
-- **88 Register** sind EEPROM-geschützt und können nur **einmal pro Minute** beschrieben werden
-- Häufigere Schreibvorgänge auf diese Register können zu Hardwareverschleiß führen
-- Die Integration erzwingt dieses Limit automatisch
 
-## Einzelgerät pro Konfigurationseintrag
+SYSTEM_MODE_OPTIONS: dict[int, str] = {
+    0: "Standby",
+    1: "Automatik",
+    2: "Abwesend",
+    3: "Urlaub",
+    4: "Nur Warmwasser",
+    5: "Nur Heizung/Kuehlung",
+}
 
-- Pro Home Assistant Instanz kann **nur eine** IDM Wärmepumpe über Modbus TCP konfiguriert werden (aufgrund der IP-basierten Unique-ID)
-- Für mehrere Wärmepumpen am gleichen Bus: separate Slave-IDs verwenden und für jede einen eigenen Eintrag anlegen
 
-## Nur Lesezugriff auf bestimmte Register
+class CircuitMode(enum.IntEnum):
+    OFF = 0
+    TIMED = 1
+    NORMAL = 2
+    ECO = 3
+    MANUAL_HEAT = 4
+    MANUAL_COOL = 5
 
-- Einige Register sind **schreibgeschützt** (z.B. Energiezähler, Temperatursensoren)
-- Der Schreibversuch auf read-only Register kann einen Modbus-Fehler zurückgeben
-- Der `write_register`-Service umgeht diese Schutzmaßnahme – **nur für erfahrene Nutzer**
 
-## Zonenmodule
+CIRCUIT_MODE_OPTIONS: dict[int, str] = {
+    0: "Aus",
+    1: "Zeitprogramm",
+    2: "Normal",
+    3: "Eco",
+    4: "Manuell Heizen",
+    5: "Manuell Kuehlen",
+}
 
-- Maximal **10 Zonenmodule** mit je bis zu **8 Räumen** werden unterstützt
-- Zonenmodul-Konfiguration ist nach der Ersteinrichtung über die Optionen anpassbar
-- Räume ohne physischen Sensor liefern ggf. `-1.0` als Wert (werden als unavailable markiert)
 
-## Keine Push-Benachrichtigungen
+class RoomMode(enum.IntEnum):
+    OFF = 0
+    AUTOMATIC = 1
+    ECO = 2
+    NORMAL = 3
+    COMFORT = 4
 
-- Die Integration ist ein **Polling-Client** – die Wärmepumpe sendet keine Änderungsbenachrichtigungen
-- Änderungen am Gerät (z.B. über das Navigator-Webinterface) sind erst nach dem nächsten Polling-Zyklus in HA sichtbar
 
-## Firmware-Version
-
-- Die aktuelle Firmware-Version wird als Diagnose-Sensor (`firmware_version`) ausgelesen
-- Firmware-Updates direkt aus Home Assistant sind **nicht** möglich
-- Updates erfolgen über das IDM-Webinterface oder per USB
+ROOM_MODE_OPTIONS: dict[int, str] = {
+    0: "Aus",
+    1: "Automatik",
+    2: "Eco",
+    3: "Normal",
+    4: "Komfort",
+}
