@@ -1,63 +1,297 @@
-# Installation & Setup
+"""Async Modbus TCP client for IDM Navigator heat pumps."""
 
-## Voraussetzungen
+from __future__ import annotations
 
-- **Home Assistant** 2025.12.0 oder neuer (getestet bis 2026.3)
-- **HACS** ([Installationsanleitung](https://hacs.xyz/docs/setup/download))
-- **IDM Navigator 2.0** Warmepumpe mit aktiviertem Modbus TCP
-- Modbus TCP muss in der Navigator-Steuerung aktiviert sein (Port 502, Slave ID 1)
+import asyncio
+import inspect
+import logging
+import math
+import struct
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any
 
-## Modbus TCP auf dem Navigator aktivieren
+import pymodbus
+from pymodbus.client import AsyncModbusTcpClient
+from pymodbus.exceptions import ConnectionException, ModbusException
 
-1. Offne das Navigator-Webinterface (ip-des-navigators)
-2. Gehe zu **Einstellungen → Kommunikation → Modbus TCP**
-3. Aktiviere Modbus TCP
-4. Notiere dir die **IP-Adresse** und den **Port** (Standard: 502)
-5. Slave ID ist in der Regel **1**
+_LOGGER = logging.getLogger(__name__)
+_MAX_GROUP_FAILURES = 3
 
-## Installation uber HACS (empfohlen)
 
-1. Offne HACS in Home Assistant
-2. Gehe zu **Integrationen**
-3. Klicke auf **⋮ (Drei Punkte)** → **Benutzerdefinierte Repositories**
-4. Gib die URL ein: `https://github.com/Xerolux/idm-heatpump-hass`
-5. Wahle **Kategorie: Integration**
-6. Klicke auf **Hinzufugen**
-7. Suche nach **"IDM Heatpump"**
-8. Klicke auf **Herunterladen**
-9. **Starte Home Assistant neu**
+def _get_slave_param() -> str:
+    """Return the pymodbus slave parameter name for the installed version."""
+    try:
+        params = inspect.signature(AsyncModbusTcpClient.read_input_registers).parameters
+        if "device_id" in params:
+            return "device_id"
+        return "slave"
+    except Exception:  # noqa: BLE001
+        parts = pymodbus.__version__.split(".")
+        try:
+            major = int(parts[0])
+            minor = int(parts[1])
+            if major > 3 or (major == 3 and minor >= 10):
+                return "device_id"
+        except (ValueError, IndexError):
+            pass
+        return "slave"
 
-## Manuelle Installation
 
-1. Lade die neueste [Release](https://github.com/Xerolux/idm-heatpump-hass/releases) herunter (`idm_heatpump.zip`)
-2. Entpacke die ZIP-Datei
-3. Kopiere den Ordner `idm_heatpump` in dein `custom_components/` Verzeichnis:
-   ```
-   <ha-config>/custom_components/idm_heatpump/
-   ```
-4. Starte Home Assistant neu
+_PMODBUS_SLAVE_PARAM = _get_slave_param()
 
-## Einrichtung
 
-1. Gehe zu **Einstellungen → Gerate & Dienste**
-2. Klicke auf **Integration hinzufugen**
-3. Suche nach **"IDM Heatpump"**
-4. Folge dem Konfigurationsassistenten:
-   - **Schritt 1**: IP-Adresse, Port (502) und Name eingeben
-   - **Schritt 2**: Scan-Intervall, Heizkreise (A-G), Zonenanzahl
-   - **Schritt 3**: Raumnamen fur Zonen konfigurieren
-5. Klicke auf **Fertig stellen**
+class DataType(Enum):
+    FLOAT = "FLOAT"
+    UCHAR = "UCHAR"
+    INT8 = "INT8"
+    INT16 = "INT16"
+    UINT16 = "UINT16"
+    BOOL = "BOOL"
+    BITFLAG = "BITFLAG"
 
-## Deinstallation
 
-1. Gehe zu **Einstellungen → Gerate & Dienste**
-2. Finde die **IDM Heatpump** Integration
-3. Klicke auf die drei Punkte → **Loschen**
-4. (Optional) Losche den Ordner `custom_components/idm_heatpump/`
-5. Starte Home Assistant neu
+@dataclass
+class RegisterDef:
+    address: int
+    datatype: DataType
+    name: str
+    unit: str | None = None
+    writable: bool = False
+    min_val: float | None = None
+    max_val: float | None = None
+    enum_options: dict[int, str] | None = None
+    multiplier: float = 1.0
+    size: int = field(init=False)
 
-## Upgrade
+    def __post_init__(self) -> None:
+        self.size = 2 if self.datatype == DataType.FLOAT else 1
 
-Uber HACS: Gehe zu HACS → Integrationen → IDM Heatpump → "Aktualisieren" → HA neu starten.
 
-Manuell: Wiederhole die manuelle Installation (uberschreibt die alten Dateien).
+class IdmModbusClient:
+    def __init__(self, host: str, port: int = 502, slave_id: int = 1) -> None:
+        self._host = host
+        self._port = int(port)
+        self._slave_id = int(slave_id)
+        self._client: AsyncModbusTcpClient | None = None
+        self._lock = asyncio.Lock()
+        self._group_failure_counts: dict[int, int] = {}
+        self._permanently_failed_addresses: set[int] = set()
+
+    @property
+    def host(self) -> str:
+        return self._host
+
+    @property
+    def port(self) -> int:
+        return self._port
+
+    async def connect(self) -> None:
+        async with self._lock:
+            if self._client is None or not self._client.connected:
+                self._client = AsyncModbusTcpClient(
+                    host=str(self._host),
+                    port=int(self._port),
+                    timeout=10,
+                )
+                await self._client.connect()
+
+    async def disconnect(self) -> None:
+        if self._client is not None:
+            maybe_coro = self._client.close()
+            if inspect.isawaitable(maybe_coro):
+                await maybe_coro
+            self._client = None
+
+    def _get_client(self) -> AsyncModbusTcpClient:
+        if self._client is None or not self._client.connected:
+            raise ConnectionException(f"Not connected to {self._host}:{self._port}")
+        return self._client
+
+    async def _read_registers(self, address: int, count: int) -> list[int]:
+        async with self._lock:
+            client = self._get_client()
+            kwargs = {_PMODBUS_SLAVE_PARAM: int(self._slave_id)}
+            result = await client.read_input_registers(
+                address=int(address), count=int(count), **kwargs
+            )
+
+            if result.isError():
+                raise ModbusException(f"Modbus error reading address {address}")
+            return list(result.registers)
+
+    async def _write_registers(self, address: int, values: list[int]) -> None:
+        async with self._lock:
+            client = self._get_client()
+            kwargs = {_PMODBUS_SLAVE_PARAM: int(self._slave_id)}
+            result = await client.write_registers(
+                address=int(address),
+                values=[int(v) for v in values],
+                **kwargs,
+            )
+
+            if result.isError():
+                raise ModbusException(f"Modbus error writing address {address}")
+
+    def decode_value(self, registers: list[int], reg: RegisterDef) -> Any:
+        if reg.datatype == DataType.FLOAT:
+            if len(registers) < 2:
+                raise ValueError("Not enough registers for FLOAT")
+            low_word, high_word = registers[0], registers[1]
+            raw = struct.pack("<HH", low_word, high_word)
+            value = struct.unpack("<f", raw)[0]
+            if math.isnan(value):
+                return None
+            return round(value * reg.multiplier, 2)
+
+        if reg.datatype == DataType.UCHAR:
+            val = registers[0] & 0xFF
+            return round(val * reg.multiplier, 2) if reg.multiplier != 1.0 else val
+
+        if reg.datatype == DataType.INT8:
+            val = registers[0] & 0xFF
+            if val >= 128:
+                val -= 256
+            return round(val * reg.multiplier, 2) if reg.multiplier != 1.0 else val
+
+        if reg.datatype == DataType.INT16:
+            val = registers[0]
+            if val >= 32768:
+                val -= 65536
+            return round(val * reg.multiplier, 2) if reg.multiplier != 1.0 else val
+
+        if reg.datatype == DataType.UINT16:
+            val = registers[0]
+            return round(val * reg.multiplier, 2) if reg.multiplier != 1.0 else val
+
+        if reg.datatype == DataType.BOOL:
+            return bool(registers[0] & 0x01)
+
+        if reg.datatype == DataType.BITFLAG:
+            return registers[0] & 0xFF
+
+        raise ValueError(f"Unknown datatype: {reg.datatype}")
+
+    def encode_value(self, value: Any, reg: RegisterDef) -> list[int]:
+        if reg.datatype == DataType.FLOAT:
+            float_val = float(value) / reg.multiplier
+            raw = struct.pack("<f", float_val)
+            low, high = struct.unpack("<HH", raw)
+            return [low, high]
+
+        if reg.datatype == DataType.UCHAR:
+            val = int(round(float(value) / reg.multiplier))
+            return [val & 0xFF]
+
+        if reg.datatype == DataType.INT8:
+            val = int(round(float(value) / reg.multiplier))
+            if val < 0:
+                val += 256
+            return [val & 0xFF]
+
+        if reg.datatype == DataType.INT16:
+            val = int(round(float(value) / reg.multiplier))
+            if val < 0:
+                val += 65536
+            return [val & 0xFFFF]
+
+        if reg.datatype == DataType.UINT16:
+            val = int(round(float(value) / reg.multiplier))
+            return [val & 0xFFFF]
+
+        if reg.datatype == DataType.BOOL:
+            return [1 if value else 0]
+
+        if reg.datatype == DataType.BITFLAG:
+            return [int(value) & 0xFF]
+
+        raise ValueError(f"Unknown datatype: {reg.datatype}")
+
+    async def read_register(self, reg: RegisterDef) -> Any:
+        if self._client is None or not self._client.connected:
+            await self.connect()
+        registers = await self._read_registers(reg.address, reg.size)
+        return self.decode_value(registers, reg)
+
+    async def write_register(self, reg: RegisterDef, value: Any) -> None:
+        if not reg.writable:
+            raise ValueError(f"Register {reg.name} is read-only")
+
+        if reg.min_val is not None and value < reg.min_val:
+            raise ValueError(f"Value {value} below minimum {reg.min_val}")
+        if reg.max_val is not None and value > reg.max_val:
+            raise ValueError(f"Value {value} above maximum {reg.max_val}")
+
+        if self._client is None or not self._client.connected:
+            await self.connect()
+        encoded = self.encode_value(value, reg)
+        await self._write_registers(reg.address, encoded)
+
+    async def read_batch(self, register_list: list[RegisterDef]) -> dict[str, Any]:
+        if not register_list:
+            return {}
+
+        if self._client is None or not self._client.connected:
+            await self.connect()
+
+        sorted_regs = sorted(register_list, key=lambda r: r.address)
+        groups: list[list[RegisterDef]] = []
+        current_group: list[RegisterDef] = [sorted_regs[0]]
+        current_group_word_count = sorted_regs[0].size
+
+        for reg in sorted_regs[1:]:
+            last = current_group[-1]
+            expected_next = last.address + last.size
+            if (
+                reg.address == expected_next
+                and (current_group_word_count + reg.size) <= 30
+            ):
+                current_group.append(reg)
+                current_group_word_count += reg.size
+            else:
+                groups.append(current_group)
+                current_group = [reg]
+                current_group_word_count = reg.size
+        groups.append(current_group)
+
+        results: dict[str, Any] = {}
+        tasks = [self._read_group(group) for group in groups]
+        group_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for group_result in group_results:
+            if isinstance(group_result, dict):
+                results.update(group_result)
+            elif isinstance(group_result, Exception):
+                _LOGGER.warning("Error reading register group: %s", group_result)
+
+        return results
+
+    async def _read_group(self, group: list[RegisterDef]) -> dict[str, Any]:
+        start = group[0].address
+        end = group[-1].address + group[-1].size
+        count = end - start
+
+        if start in self._permanently_failed_addresses:
+            return {}
+
+        try:
+            registers = await self._read_registers(start, count)
+            self._group_failure_counts.pop(start, None)
+        except (ConnectionException, ModbusException) as err:
+            failures = self._group_failure_counts.get(start, 0) + 1
+            self._group_failure_counts[start] = failures
+            if failures >= _MAX_GROUP_FAILURES:
+                self._permanently_failed_addresses.add(start)
+            _LOGGER.debug("Failed to read group %s: %s", start, err)
+            return {}
+
+        data: dict[str, Any] = {}
+        offset = 0
+        for reg in group:
+            try:
+                reg_slice = registers[offset : offset + reg.size]
+                data[reg.name] = self.decode_value(reg_slice, reg)
+            except (ValueError, IndexError):
+                pass
+            offset += reg.size
+        return data
