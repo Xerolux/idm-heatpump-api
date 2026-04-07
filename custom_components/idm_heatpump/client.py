@@ -75,8 +75,7 @@ class IdmModbusClient:
         self._slave_id = int(slave_id)
         self._client: AsyncModbusTcpClient | None = None
         self._lock = asyncio.Lock()
-        self._group_failure_counts: dict[int, int] = {}
-        self._permanently_failed_addresses: set[int] = set()
+        self._permanently_failed_registers: set[str] = set()
 
     @property
     def host(self) -> str:
@@ -98,7 +97,7 @@ class IdmModbusClient:
 
     async def disconnect(self) -> None:
         if self._client is not None:
-            maybe_coro = self._client.close()
+            maybe_coro = self._client.close()  # type: ignore[func-returns-value]
             if inspect.isawaitable(maybe_coro):
                 await maybe_coro
             self._client = None
@@ -111,7 +110,7 @@ class IdmModbusClient:
     async def _read_registers(self, address: int, count: int) -> list[int]:
         async with self._lock:
             client = self._get_client()
-            kwargs = {_PMODBUS_SLAVE_PARAM: int(self._slave_id)}
+            kwargs: Any = {_PMODBUS_SLAVE_PARAM: int(self._slave_id)}
             result = await client.read_input_registers(
                 address=int(address), count=int(count), **kwargs
             )
@@ -123,7 +122,7 @@ class IdmModbusClient:
     async def _write_registers(self, address: int, values: list[int]) -> None:
         async with self._lock:
             client = self._get_client()
-            kwargs = {_PMODBUS_SLAVE_PARAM: int(self._slave_id)}
+            kwargs: Any = {_PMODBUS_SLAVE_PARAM: int(self._slave_id)}
             result = await client.write_registers(
                 address=int(address),
                 values=[int(v) for v in values],
@@ -170,7 +169,7 @@ class IdmModbusClient:
         if reg.datatype == DataType.BITFLAG:
             return registers[0] & 0xFF
 
-        raise ValueError(f"Unknown datatype: {reg.datatype}")
+        raise ValueError(f"Unknown or unsupported decode datatype: {reg.datatype}")
 
     def encode_value(self, value: Any, reg: RegisterDef) -> list[int]:
         if reg.datatype == DataType.FLOAT:
@@ -205,7 +204,7 @@ class IdmModbusClient:
         if reg.datatype == DataType.BITFLAG:
             return [int(value) & 0xFF]
 
-        raise ValueError(f"Unknown datatype: {reg.datatype}")
+        raise ValueError(f"Unknown or unsupported encode datatype: {reg.datatype}")
 
     async def read_register(self, reg: RegisterDef) -> Any:
         if self._client is None or not self._client.connected:
@@ -231,10 +230,15 @@ class IdmModbusClient:
         if not register_list:
             return {}
 
+        # Filter out registers that have permanently failed
+        valid_regs = [r for r in register_list if r.name not in self._permanently_failed_registers]
+        if not valid_regs:
+            return {}
+
         if self._client is None or not self._client.connected:
             await self.connect()
 
-        sorted_regs = sorted(register_list, key=lambda r: r.address)
+        sorted_regs = sorted(valid_regs, key=lambda r: r.address)
         groups: list[list[RegisterDef]] = []
         current_group: list[RegisterDef] = [sorted_regs[0]]
         current_group_word_count = sorted_regs[0].size
@@ -255,14 +259,9 @@ class IdmModbusClient:
         groups.append(current_group)
 
         results: dict[str, Any] = {}
-        tasks = [self._read_group(group) for group in groups]
-        group_results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        for group_result in group_results:
-            if isinstance(group_result, dict):
-                results.update(group_result)
-            elif isinstance(group_result, Exception):
-                _LOGGER.warning("Error reading register group: %s", group_result)
+        for group in groups:
+            group_res = await self._read_group(group)
+            results.update(group_res)
 
         return results
 
@@ -271,19 +270,12 @@ class IdmModbusClient:
         end = group[-1].address + group[-1].size
         count = end - start
 
-        if start in self._permanently_failed_addresses:
-            return {}
-
         try:
             registers = await self._read_registers(start, count)
-            self._group_failure_counts.pop(start, None)
         except (ConnectionException, ModbusException) as err:
-            failures = self._group_failure_counts.get(start, 0) + 1
-            self._group_failure_counts[start] = failures
-            if failures >= _MAX_GROUP_FAILURES:
-                self._permanently_failed_addresses.add(start)
-            _LOGGER.debug("Failed to read group %s: %s", start, err)
-            return {}
+            _LOGGER.debug("Failed to read group starting at %s: %s. Falling back to individual reads.", start, err)
+            # Fall back to individual reads to isolate the failure
+            return await self._read_individual_fallback(group)
 
         data: dict[str, Any] = {}
         offset = 0
@@ -294,4 +286,18 @@ class IdmModbusClient:
             except (ValueError, IndexError):
                 pass
             offset += reg.size
+        return data
+
+    async def _read_individual_fallback(self, group: list[RegisterDef]) -> dict[str, Any]:
+        """Read registers one by one to find the failing one."""
+        data: dict[str, Any] = {}
+        for reg in group:
+            try:
+                registers = await self._read_registers(reg.address, reg.size)
+                data[reg.name] = self.decode_value(registers, reg)
+            except (ConnectionException, ModbusException) as err:
+                _LOGGER.warning("Register %s (%s) failed during individual read: %s. Marking as permanently failed.", reg.name, reg.address, err)
+                self._permanently_failed_registers.add(reg.name)
+            except (ValueError, IndexError) as err:
+                _LOGGER.warning("Register %s (%s) failed during decode: %s", reg.name, reg.address, err)
         return data
