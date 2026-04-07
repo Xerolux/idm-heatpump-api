@@ -43,6 +43,8 @@ CORE_REGISTERS: dict[str, RegisterDef] = {
 
 def get_register(name: str) -> RegisterDef:
     """Return a register definition by canonical name."""
+    if name not in CORE_REGISTERS:
+        raise ValueError(f"Register '{name}' not found in core registers.")
     return CORE_REGISTERS[name]
 
 
