@@ -93,13 +93,13 @@ class IdmModbusClient:
                     port=int(self._port),
                     timeout=10,
                 )
-                await self._client.connect()
+                if not await self._client.connect():
+                    self._client = None
+                    raise ConnectionException(f"Failed to connect to {self._host}:{self._port}")
 
     async def disconnect(self) -> None:
         if self._client is not None:
-            maybe_coro = self._client.close()  # type: ignore[func-returns-value]
-            if inspect.isawaitable(maybe_coro):
-                await maybe_coro
+            self._client.close()
             self._client = None
 
     def _get_client(self) -> AsyncModbusTcpClient:
@@ -272,7 +272,10 @@ class IdmModbusClient:
 
         try:
             registers = await self._read_registers(start, count)
-        except (ConnectionException, ModbusException) as err:
+        except ConnectionException as err:
+            _LOGGER.debug("Connection failed while reading group starting at %s: %s", start, err)
+            raise
+        except ModbusException as err:
             _LOGGER.debug("Failed to read group starting at %s: %s. Falling back to individual reads.", start, err)
             # Fall back to individual reads to isolate the failure
             return await self._read_individual_fallback(group)
@@ -295,7 +298,10 @@ class IdmModbusClient:
             try:
                 registers = await self._read_registers(reg.address, reg.size)
                 data[reg.name] = self.decode_value(registers, reg)
-            except (ConnectionException, ModbusException) as err:
+            except ConnectionException as err:
+                _LOGGER.debug("Connection failed during individual read of %s (%s): %s", reg.name, reg.address, err)
+                raise
+            except ModbusException as err:
                 _LOGGER.warning("Register %s (%s) failed during individual read: %s. Marking as permanently failed.", reg.name, reg.address, err)
                 self._permanently_failed_registers.add(reg.name)
             except (ValueError, IndexError) as err:
