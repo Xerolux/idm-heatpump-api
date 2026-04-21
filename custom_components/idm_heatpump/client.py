@@ -109,28 +109,42 @@ class IdmModbusClient:
 
     async def _read_registers(self, address: int, count: int) -> list[int]:
         async with self._lock:
-            client = self._get_client()
-            kwargs: Any = {_PMODBUS_SLAVE_PARAM: int(self._slave_id)}
-            result = await client.read_input_registers(
-                address=int(address), count=int(count), **kwargs
-            )
+            for attempt in range(3):
+                try:
+                    client = self._get_client()
+                    kwargs: Any = {_PMODBUS_SLAVE_PARAM: int(self._slave_id)}
+                    result = await client.read_input_registers(
+                        address=int(address), count=int(count), **kwargs
+                    )
 
-            if result.isError():
-                raise ModbusException(f"Modbus error reading address {address}")
-            return list(result.registers)
+                    if result.isError():
+                        raise ModbusException(f"Modbus error reading address {address}")
+                    return list(result.registers)
+                except (ConnectionException, ModbusException) as e:
+                    if attempt == 2:
+                        raise e
+                    await asyncio.sleep(0.5 * (attempt + 1))
+            raise ModbusException("Unexpected error in _read_registers")
 
     async def _write_registers(self, address: int, values: list[int]) -> None:
         async with self._lock:
-            client = self._get_client()
-            kwargs: Any = {_PMODBUS_SLAVE_PARAM: int(self._slave_id)}
-            result = await client.write_registers(
-                address=int(address),
-                values=[int(v) for v in values],
-                **kwargs,
-            )
+            for attempt in range(3):
+                try:
+                    client = self._get_client()
+                    kwargs: Any = {_PMODBUS_SLAVE_PARAM: int(self._slave_id)}
+                    result = await client.write_registers(
+                        address=int(address),
+                        values=[int(v) for v in values],
+                        **kwargs,
+                    )
 
-            if result.isError():
-                raise ModbusException(f"Modbus error writing address {address}")
+                    if result.isError():
+                        raise ModbusException(f"Modbus error writing address {address}")
+                    return
+                except (ConnectionException, ModbusException) as e:
+                    if attempt == 2:
+                        raise e
+                    await asyncio.sleep(0.5 * (attempt + 1))
 
     def decode_value(self, registers: list[int], reg: RegisterDef) -> Any:
         if reg.datatype == DataType.FLOAT:
@@ -241,21 +255,23 @@ class IdmModbusClient:
         sorted_regs = sorted(valid_regs, key=lambda r: r.address)
         groups: list[list[RegisterDef]] = []
         current_group: list[RegisterDef] = [sorted_regs[0]]
-        current_group_word_count = sorted_regs[0].size
+
+        max_gap = 10
+        max_size = 40
 
         for reg in sorted_regs[1:]:
+            first = current_group[0]
             last = current_group[-1]
             expected_next = last.address + last.size
+
             if (
-                reg.address == expected_next
-                and (current_group_word_count + reg.size) <= 30
+                reg.address <= expected_next + max_gap
+                and (reg.address + reg.size - first.address) <= max_size
             ):
                 current_group.append(reg)
-                current_group_word_count += reg.size
             else:
                 groups.append(current_group)
                 current_group = [reg]
-                current_group_word_count = reg.size
         groups.append(current_group)
 
         results: dict[str, Any] = {}
@@ -278,14 +294,13 @@ class IdmModbusClient:
             return await self._read_individual_fallback(group)
 
         data: dict[str, Any] = {}
-        offset = 0
         for reg in group:
+            offset = reg.address - start
             try:
                 reg_slice = registers[offset : offset + reg.size]
                 data[reg.name] = self.decode_value(reg_slice, reg)
             except (ValueError, IndexError):
                 pass
-            offset += reg.size
         return data
 
     async def _read_individual_fallback(self, group: list[RegisterDef]) -> dict[str, Any]:
