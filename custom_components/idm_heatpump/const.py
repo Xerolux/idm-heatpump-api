@@ -7,6 +7,9 @@ import enum
 DEFAULT_PORT: int = 502
 DEFAULT_SLAVE_ID: int = 1
 UNUSED_VALUE: float = -1.0
+DEFAULT_TIMEOUT: float = 10.0
+MAX_RETRIES: int = 3
+RETRY_BACKOFF_BASE: float = 0.5
 
 
 class SystemMode(enum.IntEnum):
@@ -20,11 +23,11 @@ class SystemMode(enum.IntEnum):
 
 SYSTEM_MODE_OPTIONS: dict[int, str] = {
     0: "Standby",
-    1: "Automatik",
-    2: "Abwesend",
-    3: "Urlaub",
-    4: "Nur Warmwasser",
-    5: "Nur Heizung/Kuehlung",
+    1: "Automatic",
+    2: "Away",
+    3: "Holiday",
+    4: "Hot Water Only",
+    5: "Heating/Cooling Only",
 }
 
 
@@ -38,12 +41,12 @@ class CircuitMode(enum.IntEnum):
 
 
 CIRCUIT_MODE_OPTIONS: dict[int, str] = {
-    0: "Aus",
-    1: "Zeitprogramm",
+    0: "Off",
+    1: "Timed Schedule",
     2: "Normal",
     3: "Eco",
-    4: "Manuell Heizen",
-    5: "Manuell Kuehlen",
+    4: "Manual Heat",
+    5: "Manual Cool",
 }
 
 
@@ -56,9 +59,9 @@ class RoomMode(enum.IntEnum):
 
 
 ROOM_MODE_OPTIONS: dict[int, str] = {
-    0: "Aus",
-    1: "Automatik",
+    0: "Off",
+    1: "Automatic",
     2: "Eco",
     3: "Normal",
-    4: "Komfort",
+    4: "Comfort",
 }
