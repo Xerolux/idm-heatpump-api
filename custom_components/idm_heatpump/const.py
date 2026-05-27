@@ -11,12 +11,27 @@ DEFAULT_TIMEOUT: float = 10.0
 MAX_RETRIES: int = 3
 RETRY_BACKOFF_BASE: float = 0.5
 
+HEATING_CIRCUIT_LETTERS: list[str] = list("ABCDEFG")
+MAX_HEATING_CIRCUITS: int = 7
+MAX_ZONE_MODULES: int = 10
+MAX_ROOMS_PER_ZONE: int = 8
+
+MODEL_NAVIGATOR_20: str = "Navigator 2.0"
+MODEL_NAVIGATOR_PRO: str = "Navigator Pro"
+MODEL_UNKNOWN: str = "Unknown"
+
+FEATURE_SOLAR: str = "solar"
+FEATURE_ISC: str = "isc"
+FEATURE_PV: str = "pv"
+FEATURE_CASCADE: str = "cascade"
+FEATURE_ZONE_MODULES: str = "zone_modules"
+FEATURE_HEATING_CIRCUITS: str = "heating_circuits"
+
 
 class SystemMode(enum.IntEnum):
     STANDBY = 0
     AUTOMATIC = 1
     AWAY = 2
-    HOLIDAY = 3
     HOT_WATER_ONLY = 4
     HEATING_COOLING_ONLY = 5
 
@@ -24,8 +39,7 @@ class SystemMode(enum.IntEnum):
 SYSTEM_MODE_OPTIONS: dict[int, str] = {
     0: "Standby",
     1: "Automatic",
-    2: "Away",
-    3: "Holiday",
+    2: "Absent",
     4: "Hot Water Only",
     5: "Heating/Cooling Only",
 }
@@ -42,7 +56,7 @@ class CircuitMode(enum.IntEnum):
 
 CIRCUIT_MODE_OPTIONS: dict[int, str] = {
     0: "Off",
-    1: "Timed Schedule",
+    1: "Time Program",
     2: "Normal",
     3: "Eco",
     4: "Manual Heat",
@@ -65,3 +79,80 @@ ROOM_MODE_OPTIONS: dict[int, str] = {
     3: "Normal",
     4: "Comfort",
 }
+
+
+HP_OPERATING_MODE_OPTIONS: dict[int, str] = {
+    0: "Off",
+    1: "Heating",
+    2: "Cooling",
+    4: "DHW",
+    8: "Defrost",
+}
+
+
+SMART_GRID_OPTIONS: dict[int, str] = {
+    0: "EVU Lock + No Cheap Power",
+    1: "EVU Draw + No Cheap Power",
+    2: "No EVU Draw + Cheap Power",
+    4: "EVU Lock + Cheap Power",
+}
+
+
+BIVALENCE_STATE_OPTIONS: dict[int, str] = {
+    0: "Off",
+    1: "Bivalence 1 Active",
+    2: "Bivalence 2 Active",
+    3: "Bivalence 1+2 Active",
+}
+
+
+SOLAR_MODE_OPTIONS: dict[int, str] = {
+    0: "Automatic",
+    1: "DHW",
+    2: "Heating",
+    3: "DHW + Heating",
+    4: "Heat Source / Pool",
+}
+
+
+ISC_MODE_OPTIONS: dict[int, str] = {
+    0: "No Waste Heat",
+    1: "Heating",
+    4: "DHW",
+    8: "Heat Source",
+}
+
+
+ACTIVE_HC_MODE_OPTIONS: dict[int, str] = {
+    0: "Off",
+    1: "Heating",
+    2: "Cooling",
+}
+
+
+ZONE_MODULE_MODE_OPTIONS: dict[int, str] = {
+    0: "Cooling",
+    1: "Heating",
+}
+
+
+EEPROM_SENSITIVE_ADDRESSES: set[int] = {
+    1005, 1032, 1033, 1034,
+    1120, 1121, 1122, 1123,
+    1393, 1394, 1395, 1396, 1397, 1398, 1399,
+    1401, 1403, 1405, 1407, 1409, 1411, 1413,
+    1415, 1417, 1419, 1421, 1423, 1425, 1427,
+    1429, 1431, 1433, 1435, 1437, 1439, 1441,
+    1442, 1443, 1444, 1445, 1446, 1447, 1448,
+    1449, 1450, 1451, 1452, 1453, 1454, 1455,
+    1457, 1459, 1461, 1463, 1465, 1467, 1469,
+    1471, 1473, 1475, 1477, 1479, 1481, 1483,
+    1484, 1485, 1486, 1487, 1488, 1489, 1490,
+    1491, 1492, 1493, 1494, 1495, 1496, 1497,
+    1505, 1506, 1507, 1508, 1509, 1510, 1511,
+    1694, 1695,
+    1856,
+}
+
+
+CYCLIC_REGISTERS: set[int] = {1696, 1698}
