@@ -14,12 +14,14 @@ requires-python = ">=3.12"
 license = { text = "MIT" }
 classifiers = [
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Operating System :: OS Independent",
     "Intended Audience :: Developers",
     "Topic :: Home Automation",
 ]
 dependencies = [
-    "pymodbus>=3.7.0",
+    "pymodbus>=3.7.0,<4.0.0",
 ]
 
 [project.urls]

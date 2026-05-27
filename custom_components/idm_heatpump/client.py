@@ -15,7 +15,21 @@ import pymodbus
 from pymodbus.client import AsyncModbusTcpClient
 from pymodbus.exceptions import ConnectionException, ModbusException
 
-from .const import DEFAULT_TIMEOUT, MAX_RETRIES, RETRY_BACKOFF_BASE
+from .const import (
+    DEFAULT_TIMEOUT,
+    FEATURE_CASCADE,
+    FEATURE_ISC,
+    FEATURE_PV,
+    FEATURE_SOLAR,
+    FEATURE_ZONE_MODULES,
+    MAX_HEATING_CIRCUITS,
+    MAX_RETRIES,
+    MAX_ZONE_MODULES,
+    MODEL_NAVIGATOR_20,
+    MODEL_NAVIGATOR_PRO,
+    MODEL_UNKNOWN,
+    RETRY_BACKOFF_BASE,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -23,11 +37,19 @@ _MAX_GROUP_GAP = 10
 _MAX_GROUP_SIZE = 40
 _PERMANENT_FAILURE_THRESHOLD = 3
 
+_DETECT_HC_FLOW_BASE = 1350
+_DETECT_HC_ROOM_BASE = 1364
+_DETECT_HC_STEP = 2
+_DETECT_ZONE_MODULE_BASE = 2000
+_DETECT_ZONE_MODULE_STEP = 65
+
 
 def _get_slave_param() -> str:
     """Return the pymodbus slave parameter name for the installed version."""
     try:
-        params = inspect.signature(AsyncModbusTcpClient.read_input_registers).parameters
+        params = inspect.signature(
+            AsyncModbusTcpClient.read_input_registers
+        ).parameters
         if "device_id" in params:
             return "device_id"
         return "slave"
@@ -56,6 +78,27 @@ class DataType(Enum):
     BITFLAG = "BITFLAG"
 
 
+class RegisterType(Enum):
+    INPUT = "input"
+    HOLDING = "holding"
+
+
+@dataclass
+class IdmModelInfo:
+    model_name: str
+    active_heating_circuits: list[str]
+    zone_modules: int
+    has_solar: bool
+    has_isc: bool
+    has_pv: bool
+    has_cascade: bool
+    features: set[str] = field(default_factory=set)
+
+    @property
+    def is_pro(self) -> bool:
+        return self.zone_modules > 0
+
+
 @dataclass
 class RegisterDef:
     address: int
@@ -67,13 +110,18 @@ class RegisterDef:
     max_val: float | None = None
     enum_options: dict[int, str] | None = None
     multiplier: float = 1.0
+    register_type: RegisterType = RegisterType.INPUT
+    eeprom_sensitive: bool = False
+    cyclic_required: bool = False
     size: int = field(init=False)
 
     def __post_init__(self) -> None:
         if self.datatype not in DataType:
             raise ValueError(f"Invalid datatype: {self.datatype}")
         if self.address < 0:
-            raise ValueError(f"Register address must be non-negative, got {self.address}")
+            raise ValueError(
+                f"Register address must be non-negative, got {self.address}"
+            )
         self.size = 2 if self.datatype == DataType.FLOAT else 1
 
 
@@ -85,6 +133,8 @@ class IdmModbusClient:
       - Configurable retries with exponential backoff
       - Batch reads with automatic grouping and fallback to individual reads
       - Permanently failed register tracking to avoid repeated failures
+      - Model detection with capability probing
+      - Support for both input and holding registers
     """
 
     def __init__(
@@ -111,6 +161,7 @@ class IdmModbusClient:
         self._lock = asyncio.Lock()
         self._register_failures: dict[str, int] = {}
         self._permanently_failed_registers: set[str] = set()
+        self._model_info: IdmModelInfo | None = None
 
     def __repr__(self) -> str:
         connected = self._client is not None and self._client.connected
@@ -130,6 +181,10 @@ class IdmModbusClient:
     @property
     def is_connected(self) -> bool:
         return self._client is not None and self._client.connected
+
+    @property
+    def model_info(self) -> IdmModelInfo | None:
+        return self._model_info
 
     async def connect(self) -> None:
         """Establish a connection to the Modbus device."""
@@ -175,16 +230,26 @@ class IdmModbusClient:
             )
         return self._client
 
-    async def _read_registers(self, address: int, count: int) -> list[int]:
-        """Read input registers with retries and exponential backoff."""
+    async def _read_registers(
+        self,
+        address: int,
+        count: int,
+        reg_type: RegisterType = RegisterType.INPUT,
+    ) -> list[int]:
+        """Read registers with retries and exponential backoff."""
         async with self._lock:
             for attempt in range(self._max_retries):
                 try:
                     client = self._require_client()
                     kwargs: Any = {_PMODBUS_SLAVE_PARAM: self._slave_id}
-                    result = await client.read_input_registers(
-                        address=address, count=count, **kwargs
-                    )
+                    if reg_type == RegisterType.HOLDING:
+                        result = await client.read_holding_registers(
+                            address=address, count=count, **kwargs
+                        )
+                    else:
+                        result = await client.read_input_registers(
+                            address=address, count=count, **kwargs
+                        )
                     if result.isError():
                         raise ModbusException(
                             f"Modbus error reading address {address}: {result}"
@@ -194,15 +259,11 @@ class IdmModbusClient:
                     if attempt == self._max_retries - 1:
                         raise
                     await self._try_reconnect()
-                    await asyncio.sleep(
-                        RETRY_BACKOFF_BASE * (2 ** attempt)
-                    )
+                    await asyncio.sleep(RETRY_BACKOFF_BASE * (2 ** attempt))
                 except ModbusException:
                     if attempt == self._max_retries - 1:
                         raise
-                    await asyncio.sleep(
-                        RETRY_BACKOFF_BASE * (2 ** attempt)
-                    )
+                    await asyncio.sleep(RETRY_BACKOFF_BASE * (2 ** attempt))
             raise ModbusException("Unexpected: all retries exhausted")
 
     async def _try_reconnect(self) -> None:
@@ -237,15 +298,132 @@ class IdmModbusClient:
                     if attempt == self._max_retries - 1:
                         raise
                     await self._try_reconnect()
-                    await asyncio.sleep(
-                        RETRY_BACKOFF_BASE * (2 ** attempt)
-                    )
+                    await asyncio.sleep(RETRY_BACKOFF_BASE * (2 ** attempt))
                 except ModbusException:
                     if attempt == self._max_retries - 1:
                         raise
-                    await asyncio.sleep(
-                        RETRY_BACKOFF_BASE * (2 ** attempt)
-                    )
+                    await asyncio.sleep(RETRY_BACKOFF_BASE * (2 ** attempt))
+
+    async def probe_register(
+        self, address: int, count: int = 1
+    ) -> list[int] | None:
+        """Try to read a register without affecting failure tracking.
+
+        Returns the register values or None if the read fails.
+        """
+        try:
+            await self._ensure_connected()
+            return await self._read_registers(address, count)
+        except (ModbusException, ConnectionException, OSError):
+            return None
+
+    async def detect_model(self) -> IdmModelInfo:
+        """Detect the IDM heat pump model and capabilities by probing registers.
+
+        Strategy:
+          1. Verify basic connectivity by reading outdoor temperature (1000)
+          2. Probe heating circuit flow temperatures (1350-1362)
+          3. Probe zone module presence (2000, 2065, ...)
+          4. Probe solar register (1850)
+          5. Probe ISC register (1870)
+          6. Probe PV register (74)
+          7. Probe cascade register (1147)
+        """
+        await self._ensure_connected()
+
+        active_circuits: list[str] = []
+        for i in range(MAX_HEATING_CIRCUITS):
+            addr = _DETECT_HC_FLOW_BASE + i * _DETECT_HC_STEP
+            regs = await self.probe_register(addr, 2)
+            if regs is not None:
+                try:
+                    raw = struct.pack("<HH", regs[0], regs[1])
+                    val = struct.unpack("<f", raw)[0]
+                    if not (math.isnan(val) or math.isinf(val)) and -50 < val < 80:
+                        active_circuits.append(HEATING_CIRCUIT_LETTERS[i])
+                except (struct.error, ValueError):
+                    if regs is not None:
+                        active_circuits.append(HEATING_CIRCUIT_LETTERS[i])
+
+        zone_modules = 0
+        for zm in range(MAX_ZONE_MODULES):
+            addr = _DETECT_ZONE_MODULE_BASE + zm * _DETECT_ZONE_MODULE_STEP
+            regs = await self.probe_register(addr, 1)
+            if regs is not None:
+                zone_modules = zm + 1
+
+        has_solar = False
+        solar_regs = await self.probe_register(1850, 2)
+        if solar_regs is not None:
+            try:
+                raw = struct.pack("<HH", solar_regs[0], solar_regs[1])
+                val = struct.unpack("<f", raw)[0]
+                if not (math.isnan(val) or math.isinf(val)):
+                    has_solar = True
+            except (struct.error, ValueError):
+                has_solar = True
+
+        has_isc = False
+        isc_regs = await self.probe_register(1870, 2)
+        if isc_regs is not None:
+            try:
+                raw = struct.pack("<HH", isc_regs[0], isc_regs[1])
+                val = struct.unpack("<f", raw)[0]
+                if not (math.isnan(val) or math.isinf(val)):
+                    has_isc = True
+            except (struct.error, ValueError):
+                has_isc = True
+
+        has_pv = await self.probe_register(74, 2) is not None
+
+        has_cascade = False
+        cascade_regs = await self.probe_register(1147, 1)
+        if cascade_regs is not None and cascade_regs[0] != 0:
+            has_cascade = True
+
+        features: set[str] = set()
+        if active_circuits:
+            features.add(FEATURE_ZONE_MODULES if False else "heating_circuits")
+        if zone_modules > 0:
+            features.add(FEATURE_ZONE_MODULES)
+        if has_solar:
+            features.add(FEATURE_SOLAR)
+        if has_isc:
+            features.add(FEATURE_ISC)
+        if has_pv:
+            features.add(FEATURE_PV)
+        if has_cascade:
+            features.add(FEATURE_CASCADE)
+
+        if zone_modules > 0:
+            model_name = MODEL_NAVIGATOR_PRO
+        elif active_circuits:
+            model_name = MODEL_NAVIGATOR_20
+        else:
+            model_name = MODEL_UNKNOWN
+
+        info = IdmModelInfo(
+            model_name=model_name,
+            active_heating_circuits=active_circuits,
+            zone_modules=zone_modules,
+            has_solar=has_solar,
+            has_isc=has_isc,
+            has_pv=has_pv,
+            has_cascade=has_cascade,
+            features=features,
+        )
+        self._model_info = info
+        _LOGGER.info(
+            "Detected IDM model: %s (circuits=%s, zones=%d, solar=%s, isc=%s, pv=%s, cascade=%s)",
+            model_name,
+            active_circuits,
+            zone_modules,
+            has_solar,
+            has_isc,
+            has_pv,
+            has_cascade,
+        )
+        return info
 
     def decode_value(self, registers: list[int], reg: RegisterDef) -> Any:
         """Decode raw Modbus register values into a Python value."""
@@ -266,7 +444,8 @@ class IdmModbusClient:
             if math.isnan(value) or math.isinf(value):
                 _LOGGER.debug(
                     "Register %s returned NaN/Inf at address %s",
-                    reg.name, reg.address,
+                    reg.name,
+                    reg.address,
                 )
                 return None
             return round(value * reg.multiplier, 2)
@@ -306,9 +485,7 @@ class IdmModbusClient:
         if reg.datatype == DataType.FLOAT:
             float_val = float(value) / reg.multiplier
             if math.isnan(float_val) or math.isinf(float_val):
-                raise ValueError(
-                    f"Cannot encode NaN/Inf for register {reg.name}"
-                )
+                raise ValueError(f"Cannot encode NaN/Inf for register {reg.name}")
             raw = struct.pack("<f", float_val)
             low, high = struct.unpack("<HH", raw)
             return [low, high]
@@ -360,7 +537,9 @@ class IdmModbusClient:
     async def read_register(self, reg: RegisterDef) -> Any:
         """Read a single register, auto-connecting if needed."""
         await self._ensure_connected()
-        registers = await self._read_registers(reg.address, reg.size)
+        registers = await self._read_registers(
+            reg.address, reg.size, reg.register_type
+        )
         return self.decode_value(registers, reg)
 
     async def write_register(self, reg: RegisterDef, value: Any) -> None:
@@ -389,19 +568,31 @@ class IdmModbusClient:
             return {}
 
         valid_regs = [
-            r for r in register_list
+            r
+            for r in register_list
             if r.name not in self._permanently_failed_registers
         ]
         if not valid_regs:
             return {}
 
         await self._ensure_connected()
-        groups = self._group_registers(valid_regs)
+
+        input_regs = [r for r in valid_regs if r.register_type == RegisterType.INPUT]
+        holding_regs = [r for r in valid_regs if r.register_type == RegisterType.HOLDING]
 
         results: dict[str, Any] = {}
-        for group in groups:
-            group_res = await self._read_group(group)
-            results.update(group_res)
+
+        if input_regs:
+            groups = self._group_registers(input_regs)
+            for group in groups:
+                group_res = await self._read_group(group, RegisterType.INPUT)
+                results.update(group_res)
+
+        if holding_regs:
+            groups = self._group_registers(holding_regs)
+            for group in groups:
+                group_res = await self._read_group(group, RegisterType.HOLDING)
+                results.update(group_res)
 
         return results
 
@@ -432,7 +623,9 @@ class IdmModbusClient:
         return groups
 
     async def _read_group(
-        self, group: list[RegisterDef]
+        self,
+        group: list[RegisterDef],
+        reg_type: RegisterType = RegisterType.INPUT,
     ) -> dict[str, Any]:
         """Read a group of registers in one batch, falling back to individual reads."""
         start = group[0].address
@@ -440,7 +633,7 @@ class IdmModbusClient:
         count = end - start
 
         try:
-            registers = await self._read_registers(start, count)
+            registers = await self._read_registers(start, count, reg_type)
         except ConnectionException:
             _LOGGER.warning(
                 "Connection lost while reading group at address %d", start
@@ -450,9 +643,10 @@ class IdmModbusClient:
             _LOGGER.debug(
                 "Group read at address %d failed: %s. "
                 "Falling back to individual reads.",
-                start, err,
+                start,
+                err,
             )
-            return await self._read_individual_fallback(group)
+            return await self._read_individual_fallback(group, reg_type)
 
         data: dict[str, Any] = {}
         for reg in group:
@@ -462,30 +656,38 @@ class IdmModbusClient:
                 if len(reg_slice) < reg.size:
                     _LOGGER.warning(
                         "Incomplete data for register %s (address %d)",
-                        reg.name, reg.address,
+                        reg.name,
+                        reg.address,
                     )
                     continue
                 data[reg.name] = self.decode_value(reg_slice, reg)
             except (ValueError, IndexError) as err:
                 _LOGGER.debug(
                     "Failed to decode register %s (address %d): %s",
-                    reg.name, reg.address, err,
+                    reg.name,
+                    reg.address,
+                    err,
                 )
         return data
 
     async def _read_individual_fallback(
-        self, group: list[RegisterDef]
+        self,
+        group: list[RegisterDef],
+        reg_type: RegisterType = RegisterType.INPUT,
     ) -> dict[str, Any]:
         """Read registers one by one and track failures."""
         data: dict[str, Any] = {}
         for reg in group:
             try:
-                registers = await self._read_registers(reg.address, reg.size)
+                registers = await self._read_registers(
+                    reg.address, reg.size, reg_type
+                )
                 data[reg.name] = self.decode_value(registers, reg)
             except ConnectionException:
                 _LOGGER.warning(
                     "Connection lost during individual read of %s (address %d)",
-                    reg.name, reg.address,
+                    reg.name,
+                    reg.address,
                 )
                 raise
             except ModbusException as err:
@@ -496,18 +698,25 @@ class IdmModbusClient:
                     _LOGGER.warning(
                         "Register %s (address %d) has failed %d times. "
                         "Marking as permanently failed.",
-                        reg.name, reg.address, failures,
+                        reg.name,
+                        reg.address,
+                        failures,
                     )
                 else:
                     _LOGGER.debug(
                         "Register %s (address %d) failed: %s (%d/%d attempts)",
-                        reg.name, reg.address, err,
-                        failures, _PERMANENT_FAILURE_THRESHOLD,
+                        reg.name,
+                        reg.address,
+                        err,
+                        failures,
+                        _PERMANENT_FAILURE_THRESHOLD,
                     )
             except (ValueError, IndexError) as err:
                 _LOGGER.warning(
                     "Decoding failed for register %s (address %d): %s",
-                    reg.name, reg.address, err,
+                    reg.name,
+                    reg.address,
+                    err,
                 )
         return data
 
@@ -516,3 +725,7 @@ class IdmModbusClient:
         self._permanently_failed_registers.clear()
         self._register_failures.clear()
         _LOGGER.info("Permanently failed registers have been reset")
+
+
+# Required for detect_model circuit letter lookup
+HEATING_CIRCUIT_LETTERS = list("ABCDEFG")
