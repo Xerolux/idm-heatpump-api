@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["custom_components.idm_heatpump*"]
-exclude = ["images*", "docs*", "tests*"]
+include = ["idm_heatpump*"]
+exclude = ["custom_components*", "images*", "docs*", "tests*", "*.egg-info*"]
 
 [project]
 name = "idm_heatpump"
@@ -16,7 +16,7 @@ authors = [
 description = "Python library for communicating with IDM Navigator heat pumps via Modbus TCP. Used by the official Home Assistant integration."
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "MIT" }
+license = "MIT"
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
