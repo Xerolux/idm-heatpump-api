@@ -161,7 +161,7 @@ jobs:
 
             ### Installation
             ```bash
-            pip install idm-heatpump
+            pip install idm-heatpump-api
             ```
 
             ---

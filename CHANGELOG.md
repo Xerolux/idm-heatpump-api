@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.2] - 2026-05
 
+## [0.3.0] - 2026-06
+
+### Breaking
+
+- PyPI package renamed from `idm-heatpump` to `idm-heatpump-api`. Install with `pip install idm-heatpump-api`. Python import remains `from idm_heatpump import ...`.
+
 ### Added
 
 - New `RegisterDef` metadata fields for better Home Assistant integration support:
