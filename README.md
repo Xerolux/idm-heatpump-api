@@ -84,3 +84,15 @@ This library is developed in my spare time. If you find it useful, consider supp
 - Star the repository on GitHub
 - [Report bugs](https://github.com/Xerolux/idm-heatpump-api/issues)
 - Share with other IDM heat pump owners
+
+---
+
+## Disclaimer
+
+This project is an **unofficial community project** and is not affiliated with, endorsed by, or connected to IDM Energiesysteme GmbH.
+
+All trademarks, logos, and product names (e.g., "IDM", "Navigator") are property of their respective owners. The logos and images used are solely for identifying the compatible device and are not used commercially.
+
+This project is provided without any warranty. Use at your own risk — especially when writing Modbus registers.
+
+IDM Energiesysteme GmbH has neither authorized nor endorsed this project.
