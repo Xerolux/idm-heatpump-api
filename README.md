@@ -1,8 +1,8 @@
 # IDM Heatpump API
 
-[![PyPI version](https://img.shields.io/pypi/v/idm-heatpump.svg?style=for-the-badge)](https://pypi.org/project/idm-heatpump/)
-[![PyPI downloads](https://img.shields.io/pypi/dm/idm-heatpump.svg?style=for-the-badge)](https://pypistats.org/packages/idm-heatpump)
-[![Python versions](https://img.shields.io/pypi/pyversions/idm-heatpump.svg?style=for-the-badge)](https://pypi.org/project/idm-heatpump/)
+[![PyPI version](https://img.shields.io/pypi/v/idm-heatpump-api.svg?style=for-the-badge)](https://pypi.org/project/idm-heatpump-api/)
+[![PyPI downloads](https://img.shields.io/pypi/dm/idm-heatpump-api.svg?style=for-the-badge)](https://pypistats.org/packages/idm-heatpump-api)
+[![Python versions](https://img.shields.io/pypi/pyversions/idm-heatpump-api.svg?style=for-the-badge)](https://pypi.org/project/idm-heatpump-api/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
 
 [![GitHub Sponsors](https://img.shields.io/github/sponsors/xerolux?logo=github&style=for-the-badge&color=blue)](https://github.com/sponsors/xerolux)
@@ -18,7 +18,7 @@ This library is primarily designed to power the official [IDM Heatpump Home Assi
 > **Documentation:**
 > - GitHub Pages: https://xerolux.github.io/idm-heatpump-api/
 > - GitHub Wiki: https://github.com/Xerolux/idm-heatpump-api/wiki
-> - PyPI: https://pypi.org/project/idm-heatpump/
+> - PyPI: https://pypi.org/project/idm-heatpump-api/
 >
 > The `docs/` directory is the single source of truth and is used for both GitHub Pages and Wiki sync.
 
@@ -50,7 +50,7 @@ This library is primarily designed to power the official [IDM Heatpump Home Assi
 ## Installation
 
 ```bash
-pip install idm-heatpump
+pip install idm-heatpump-api
 ```
 
 ## Basic Usage
