@@ -1,5 +1,17 @@
 # Entities
 
+> **Note**: This document is being updated for the Navigator 10 generation and full English translation. The Python library itself (client + registers) is fully up to date.
+
+## Navigator 10 Specifics (2025)
+
+The library now includes all registers from the official iDM "MODBUS TCP NAVIGATOR 10" documentation (18.06.2025):
+
+- Heat sink flow rate (1072 l/min) — highly recommended for systems with plate heat exchangers
+- Power limitation (4108 / 4112)
+- Complete Booster A/B monitoring (4001–4052)
+- Additional fault registers and external pump demands
+- All other registers remain compatible with Navigator 2.0 / Pro
+
 ## Sensoren
 
 Die Integration erstellt uber 100 Sensor-Entities fur verschiedene Messwerte.
@@ -38,7 +50,7 @@ Fur jeden aktivierten Heizkreis (A-G):
 
 ### Zonen-Sensoren
 
-Fur jede aktivierte Zone und jeden Raum:
+For each activated zone module and room (Navigator 10 / current hardware: **6 rooms per zone module**):
 
 | Entity | Beschreibung |
 |--------|-------------|

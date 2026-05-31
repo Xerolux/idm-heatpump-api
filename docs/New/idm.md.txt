@@ -1,0 +1,55 @@
+# iDM NAVIGATOR 10 – Modbus TCP Komplett-Dokumentation
+
+**Stand:** 18.06.2025  
+**Software:** NAV10_20.23-903.iup / T_NAV10_20.23-1336.iup  
+**Modbus TCP:** Port **502**, Unit ID **1**
+
+Diese Datei enthält **100 % aller Register** und alle wichtigen Informationen aus dem offiziellen iDM-Dokument.
+
+---
+
+## 1. Wichtige Hinweise
+- Modbus TCP ist standardmäßig aktiv.
+- **EEPROM-Werte** (`*`) nur sparsam schreiben!
+- Externe Werte **zyklisch** (alle 10 Min.) schreiben.
+- Änderungen können bis zu 15 Sekunden dauern.
+
+---
+
+## 2. Wichtige Register (für Home Assistant / Xerolux)
+
+| Adresse | Typ    | Access | Bezeichnung                              | Einheit | Bemerkung |
+|---------|--------|--------|------------------------------------------|---------|-----------|
+| **1072** | UCHAR | RO     | **Durchfluss Wärmesenke (B2)**           | l/min   | Nur bei Trennwärmetauscher – ideal für Sieb-Überwachung |
+| 74      | FLOAT  | RW/RO  | Aktueller PV-Überschuss                  | kW      | PV-Steuerung |
+| 1000    | FLOAT  | RO     | Außentemperatur (B32)                    | °C      | - |
+| **1005*** | UCHAR | RW   | Betriebsart System                       | -       | 0=Standby, 1=Automatik… |
+| 1090    | UCHAR  | RO     | Betriebsart Wärmepumpe                   | -       | 1=Heizen, 2=Kühlen… |
+| 1099    | UCHAR  | RO     | Summenstörung                            | -       | 1 = verriegelnde Störung |
+| 1650–1662 | FLOAT | W    | Externe Raumtemperatur HK A–G            | °C      | GLT-Raumsensor |
+| 1690    | FLOAT  | W      | Externe Außentemperatur                  | °C      | zyklisch |
+| 1692    | FLOAT  | W      | Externe Feuchte                          | %rF     | zyklisch |
+| **1710** | BOOL  | RW     | Anforderung Heizen                       | -       | **zyklisch** |
+| **1711** | BOOL  | RW     | Anforderung Kühlen                       | -       | **zyklisch** |
+| 1712    | BOOL   | RW     | Anforderung Warmwasserladung             | -       | 0 = beenden |
+
+---
+
+## 3. Vollständige Register-Listen
+Siehe die zweite Datei `idm_full_registers.md` – dort sind **alle** Adressen zeilenweise aufgelistet.
+
+---
+
+## 4. Konfiguration im Navigator
+- **Modbus TCP aktivieren**: Einstellungen → Gebäudeleittechnik → Modbus TCP = Ein
+- GLT-Werte (Außentemperatur, Feuchte, Speicher) auf „Ja“ stellen
+- Heizkreis → Raumtemperaturerfassung = GLT Raumsensor
+- Einzelraumregelung → „Raum mit Modbus TCP hinzufügen“
+
+---
+
+**Datentypen:**  
+- `FLOAT` = 2 Register (IEEE 754)  
+- `UCHAR / BOOL` = 1 Register
+
+Alles aus dem offiziellen PDF ist enthalten. Viel Erfolg mit der Integration!

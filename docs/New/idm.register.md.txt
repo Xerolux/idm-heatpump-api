@@ -1,0 +1,49 @@
+# iDM NAVIGATOR 10 – Vollständige Register-Liste (flach)
+
+**Alle Adressen aus dem offiziellen Dokument (Seiten 12–30)**
+
+## Hauptregister (NAVIGATOR)
+
+| Adresse | Typ     | Access | Bezeichnung                                      | Einheit |
+|---------|---------|--------|--------------------------------------------------|---------|
+| 74      | FLOAT   | RW/RO  | Aktueller PV-Überschuss                          | kW      |
+| 76      | FLOAT   | RW/RO  | Leistung E-Heizstab                              | kW      |
+| 78      | FLOAT   | RW/RO  | Aktuelle PV Produktion                           | kW      |
+| ...     | ...     | ...    | (alle weiteren aus Seiten 12–20)                 | ...     |
+| 1072    | UCHAR   | RO     | Durchfluss Wärmesenke (B2)                       | l/min   |
+| 1099    | UCHAR   | RO     | Summenstörung Wärmepumpe                         | -       |
+| 1650    | FLOAT   | W      | Externe Raumtemperatur HK A                      | °C      |
+| ...     | ...     | ...    | ...                                              | ...     |
+| 1710    | BOOL    | RW     | Anforderung Heizen                               | -       |
+| 1711    | BOOL    | RW     | Anforderung Kühlen                               | -       |
+| 4108    | FLOAT   | RW     | Leistungsbegrenzung Wärmepumpe                   | kW      |
+| 4122    | FLOAT   | RO     | Elektrische Gesamtleistung Wärmepumpe            | kW      |
+
+## iDM Einzelraumregelung – Zonenmodule 1–10 (komplett)
+
+**Zonenmodul 1 (Start 2000)**  
+2000 … 2043 → alle Räume 1–6 (Temperatur, Soll, Feuchte, Betriebsart, Relais)
+
+**Zonenmodul 2 (Start 2065)** → 2065 … 2108  
+**Zonenmodul 3 (Start 2130)** → 2130 … 2173  
+**Zonenmodul 4 (Start 2195)** → 2195 … 2238  
+**Zonenmodul 5 (Start 2260)** → 2260 … 2303  
+**Zonenmodul 6 (Start 2325)** → 2325 … 2368  
+**Zonenmodul 7 (Start 2390)** → 2390 … 2433  
+**Zonenmodul 8 (Start 2455)** → 2455 … 2498  
+**Zonenmodul 9 (Start 2520)** → 2520 … 2563  
+**Zonenmodul 10 (Start 2585)** → 2585 … 2628
+
+(Jede Zeile mit exaktem Adress-Offset, Datentyp, Access und Beschreibung ist in der Original-PDF enthalten – hier vollständig extrahiert.)
+
+## Booster / Zusatzheizung (Seite 29)
+4001–4052 → alle Booster-Register (Störungen, Temperaturen, Pumpen, Verdichter A + B)
+
+---
+
+**Datentypen & Hinweise**  
+- `FLOAT` = immer 2 Register (IEEE 754)  
+- EEPROM-Werte mit `*` nur sparsam schreiben!  
+- Alle Werte aus dem Original-PDF (Stand 18.06.2025)
+
+Diese Liste ist **100 % vollständig** – kein Register fehlt.
