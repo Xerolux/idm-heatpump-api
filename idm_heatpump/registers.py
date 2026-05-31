@@ -1426,6 +1426,14 @@ def build_register_map(
         active_circuits = circuits or list("ABCDEFG")
         num_zones = zone_modules
 
+        # Without model_info, include all optional register blocks.
+        # hide_unused_registers in the HA integration handles availability.
+        all_regs.update(_solar_registers())
+        all_regs.update(_isc_registers())
+        all_regs.update(_pv_registers())
+        all_regs.update(_cascade_registers())
+        all_regs.update(_more_cascade_registers())
+
     for letter in active_circuits:
         try:
             all_regs.update(get_heating_circuit_registers(letter))
