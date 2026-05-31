@@ -17,7 +17,7 @@ FLOAT encoding: IEEE 754, 32-bit, 2 registers, Low word first (Reg_L then Reg_H)
 
 from __future__ import annotations
 
-from .client import DataType, IdmModelInfo, RegisterDef, RegisterType
+from .client import DataType, IdmModelInfo, RegisterDef
 from .const import (
     ACTIVE_HC_MODE_OPTIONS,
     BIVALENCE_STATE_OPTIONS,
@@ -64,6 +64,7 @@ CORE_REGISTERS: dict[str, RegisterDef] = {
         datatype=DataType.UCHAR,
         name="error_acknowledge",
         writable=True,
+        write_only=True,
     ),
 }
 
@@ -217,31 +218,31 @@ def _hp_status_registers() -> dict[str, RegisterDef]:
             enum_options=HP_OPERATING_MODE_OPTIONS,
         ),
         "heating_demand": RegisterDef(
-            address=1091, datatype=DataType.UCHAR, name="heating_demand"
+            address=1091, datatype=DataType.UCHAR, name="heating_demand", binary=True
         ),
         "cooling_demand": RegisterDef(
-            address=1092, datatype=DataType.UCHAR, name="cooling_demand"
+            address=1092, datatype=DataType.UCHAR, name="cooling_demand", binary=True
         ),
         "dhw_demand": RegisterDef(
-            address=1093, datatype=DataType.UCHAR, name="dhw_demand"
+            address=1093, datatype=DataType.UCHAR, name="dhw_demand", binary=True
         ),
         "evu_lock": RegisterDef(
             address=1098, datatype=DataType.UCHAR, name="evu_lock"
         ),
         "hp_sum_alarm": RegisterDef(
-            address=1099, datatype=DataType.UCHAR, name="hp_sum_alarm"
+            address=1099, datatype=DataType.UCHAR, name="hp_sum_alarm", binary=True
         ),
         "compressor_status_1": RegisterDef(
-            address=1100, datatype=DataType.UCHAR, name="compressor_status_1"
+            address=1100, datatype=DataType.UCHAR, name="compressor_status_1", binary=True
         ),
         "compressor_status_2": RegisterDef(
-            address=1101, datatype=DataType.UCHAR, name="compressor_status_2"
+            address=1101, datatype=DataType.UCHAR, name="compressor_status_2", binary=True
         ),
         "compressor_status_3": RegisterDef(
-            address=1102, datatype=DataType.UCHAR, name="compressor_status_3"
+            address=1102, datatype=DataType.UCHAR, name="compressor_status_3", binary=True
         ),
         "compressor_status_4": RegisterDef(
-            address=1103, datatype=DataType.UCHAR, name="compressor_status_4"
+            address=1103, datatype=DataType.UCHAR, name="compressor_status_4", binary=True
         ),
         "charging_pump_status": RegisterDef(
             address=1104,
@@ -553,10 +554,8 @@ def _energy_registers() -> dict[str, RegisterDef]:
         ),
         "firmware_version": RegisterDef(
             address=4120,
-            datatype=DataType.UINT16,
+            datatype=DataType.FLOAT,
             name="firmware_version",
-            # May not be present or may return invalid data on some Navigator 10 firmwares.
-            # The client will mark it as permanently failed if it consistently fails.
         ),
         "thermal_power_flow_sensor": RegisterDef(
             address=4126,
@@ -630,7 +629,9 @@ def _isc_registers() -> dict[str, RegisterDef]:
             address=1874,
             datatype=DataType.UCHAR,
             name="isc_mode",
+            writable=True,
             enum_options=ISC_MODE_OPTIONS,
+            exclude_from_write={255},
         ),
     }
 
@@ -669,7 +670,7 @@ def _pv_registers() -> dict[str, RegisterDef]:
         ),
         "battery_soc": RegisterDef(
             address=86,
-            datatype=DataType.UINT16,
+            datatype=DataType.FLOAT,
             name="battery_soc",
             unit="%",
         ),
@@ -1133,6 +1134,7 @@ def get_heating_circuit_registers(
         max_val=5,
         enum_options=CIRCUIT_MODE_OPTIONS,
         eeprom_sensitive=True,
+        exclude_from_write={255},
     )
     regs[f"hc_{c}_room_setpoint_heat_normal"] = RegisterDef(
         address=1401 + idx * 2,
@@ -1443,6 +1445,7 @@ def build_register_map(
         datatype=DataType.UCHAR,
         name="error_acknowledge",
         writable=True,
+        write_only=True,
     )
     all_regs["humidity_sensor"] = RegisterDef(
         address=1392,
