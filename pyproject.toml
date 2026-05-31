@@ -2,16 +2,21 @@
 requires = ["setuptools>=61.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["idm_heatpump*"]
+exclude = ["custom_components*", "images*", "docs*", "tests*", "*.egg-info*"]
+
 [project]
 name = "idm_heatpump"
-version = "0.0.1"
+version = "0.2.0"
 authors = [
   { name="Basti (Xerolux)", email="git@xerolux.de" },
 ]
-description = "Home Assistant custom component for IDM Heatpump."
+description = "Python library for communicating with IDM Navigator heat pumps via Modbus TCP. Used by the official Home Assistant integration."
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "MIT" }
+license = "MIT"
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
@@ -19,9 +24,20 @@ classifiers = [
     "Operating System :: OS Independent",
     "Intended Audience :: Developers",
     "Topic :: Home Automation",
+    "Topic :: System :: Hardware",
+    "Framework :: AsyncIO",
+    "Development Status :: 4 - Beta",
 ]
+
+keywords = ["idm", "heatpump", "modbus", "navigator", "home-assistant", "hass", "heating", "modbus-tcp"]
 dependencies = [
     "pymodbus>=3.7.0,<4.0.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
 ]
 
 [project.urls]

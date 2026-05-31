@@ -1,7 +1,16 @@
 """Comprehensive register definitions for IDM Navigator heat pumps.
 
-Register map source: iDM Navigatorregelung 2.0 Modbus TCP documentation.
-Supports Navigator 2.0 and Navigator Pro with all optional subsystems.
+Register map sources:
+- Official iDM "MODBUS TCP NAVIGATOR 10" documentation (Stand 18.06.2025, NAV10_20.23+)
+- Earlier Navigator 2.0 / Pro documentation
+
+Supports:
+- Navigator 10 (current generation)
+- Navigator 2.0
+- Navigator Pro
+
+All new descriptions are in English. German original terms kept in comments where helpful
+for cross-reference with official iDM docs.
 
 FLOAT encoding: IEEE 754, 32-bit, 2 registers, Low word first (Reg_L then Reg_H).
 """
@@ -12,6 +21,7 @@ from .client import DataType, IdmModelInfo, RegisterDef, RegisterType
 from .const import (
     ACTIVE_HC_MODE_OPTIONS,
     BIVALENCE_STATE_OPTIONS,
+    BOOSTER_FAULT_OPTIONS,
     CIRCUIT_MODE_OPTIONS,
     HP_OPERATING_MODE_OPTIONS,
     ISC_MODE_OPTIONS,
@@ -659,6 +669,314 @@ def _pv_registers() -> dict[str, RegisterDef]:
     }
 
 
+# ---------------------------------------------------------------------------
+# Navigator 10 additions (from official MODBUS TCP NAVIGATOR 10 doc, 18.06.2025)
+# ---------------------------------------------------------------------------
+
+
+def _heat_sink_registers() -> dict[str, RegisterDef]:
+    """Registers related to the heat sink / plate heat exchanger (Trennwärmetauscher).
+
+    Especially useful when a hydraulic separator or plate heat exchanger is installed.
+    Address 1072 (flow rate) is particularly valuable for filter monitoring.
+    """
+    return {
+        "heat_sink_return_temp": RegisterDef(
+            address=1068,
+            datatype=DataType.FLOAT,
+            name="heat_sink_return_temp",
+            unit="°C",
+            # B124 - Rücklauftemperatur Wärmesenke
+        ),
+        "heat_sink_flow_temp": RegisterDef(
+            address=1070,
+            datatype=DataType.FLOAT,
+            name="heat_sink_flow_temp",
+            unit="°C",
+            # B125 - Vorlauftemperatur Wärmesenke
+        ),
+        "heat_sink_flow_rate": RegisterDef(
+            address=1072,
+            datatype=DataType.UCHAR,
+            name="heat_sink_flow_rate",
+            unit="l/min",
+            # B2 - Durchfluss Wärmesenke (only available with plate heat exchanger / TWT)
+        ),
+        "heat_sink_charging_pump_signal": RegisterDef(
+            address=1074,
+            datatype=DataType.UINT16,
+            name="heat_sink_charging_pump_signal",
+            unit="%",
+            # M73 - Ladepumpe Wärmesenke Steuersignal
+        ),
+    }
+
+
+def _groundwater_registers() -> dict[str, RegisterDef]:
+    """Groundwater source temperatures (Grundwasser)."""
+    return {
+        "groundwater_inlet_temp_1": RegisterDef(
+            address=1086,
+            datatype=DataType.FLOAT,
+            name="groundwater_inlet_temp_1",
+            unit="°C",
+            # B119
+        ),
+        "groundwater_inlet_temp_2": RegisterDef(
+            address=1088,
+            datatype=DataType.FLOAT,
+            name="groundwater_inlet_temp_2",
+            unit="°C",
+            # B120
+        ),
+    }
+
+
+def _additional_fault_registers() -> dict[str, RegisterDef]:
+    """Additional fault / alarm status registers (not part of the main hp_sum_alarm)."""
+    return {
+        "fault_heat_source_circuit": RegisterDef(
+            address=1680,
+            datatype=DataType.UCHAR,
+            name="fault_heat_source_circuit",
+            # 0 = fault, 1 = no fault
+        ),
+        "fault_heat_source_pressure_switch": RegisterDef(
+            address=1681,
+            datatype=DataType.UCHAR,
+            name="fault_heat_source_pressure_switch",
+            # iPump T / TERRA SWM specific
+        ),
+        "fault_charging_pump_1_intermediate": RegisterDef(
+            address=1682,
+            datatype=DataType.UCHAR,
+            name="fault_charging_pump_1_intermediate",
+            # M125
+        ),
+        "fault_charging_pump_2_intermediate": RegisterDef(
+            address=1683,
+            datatype=DataType.UCHAR,
+            name="fault_charging_pump_2_intermediate",
+            # M118
+        ),
+    }
+
+
+def _external_pump_demand_registers() -> dict[str, RegisterDef]:
+    """External demand / control of source pumps (mainly for SW/SWM models)."""
+    return {
+        "ext_demand_groundwater_pump_m15": RegisterDef(
+            address=1714,
+            datatype=DataType.UINT16,
+            name="ext_demand_groundwater_pump_m15",
+            unit="%",
+            writable=True,
+            # Model specific (SW/SWM/SW Twin). See official doc for applicability.
+        ),
+        "ext_demand_brine_pump_m16": RegisterDef(
+            address=1715,
+            datatype=DataType.UINT16,
+            name="ext_demand_brine_pump_m16",
+            unit="%",
+            writable=True,
+            # For SW Max and similar
+        ),
+    }
+
+
+def _power_limit_registers() -> dict[str, RegisterDef]:
+    """Power limitation (Leistungsbegrenzung) – very useful for grid services / peak shaving."""
+    return {
+        "power_limit_hp": RegisterDef(
+            address=4108,
+            datatype=DataType.FLOAT,
+            name="power_limit_hp",
+            unit="kW",
+            writable=True,
+            # Leistungsbegrenzung Wärmepumpe (-1 = no limit)
+        ),
+        "power_limit_cascade": RegisterDef(
+            address=4112,
+            datatype=DataType.FLOAT,
+            name="power_limit_cascade",
+            unit="kW",
+            writable=True,
+            # Leistungsbegrenzung Kaskade
+        ),
+        "power_consumption_hp_smartfox": RegisterDef(
+            address=4124,
+            datatype=DataType.FLOAT,
+            name="power_consumption_hp_smartfox",
+            unit="kW",
+            # Elektr. Gesamtleistung Wärmepumpe (Smartfox variant)
+        ),
+    }
+
+
+def _booster_registers() -> dict[str, RegisterDef]:
+    """Registers for Booster A + B (additional heat generators / 2nd stage).
+
+    Covers temperatures, pumps, compressor status and combined fault/interlock states.
+    """
+    return {
+        # --- Booster A ---
+        "booster_fault": RegisterDef(
+            address=4001,
+            datatype=DataType.UCHAR,
+            name="booster_fault",
+            enum_options=BOOSTER_FAULT_OPTIONS,
+        ),
+        "booster_interlock": RegisterDef(
+            address=4002,
+            datatype=DataType.UCHAR,
+            name="booster_interlock",
+        ),
+        "booster_a_source_inlet_temp": RegisterDef(
+            address=4010,
+            datatype=DataType.FLOAT,
+            name="booster_a_source_inlet_temp",
+            unit="°C",
+        ),
+        "booster_a_source_outlet_temp": RegisterDef(
+            address=4012,
+            datatype=DataType.FLOAT,
+            name="booster_a_source_outlet_temp",
+            unit="°C",
+        ),
+        "booster_a_storage_temp": RegisterDef(
+            address=4014,
+            datatype=DataType.FLOAT,
+            name="booster_a_storage_temp",
+            unit="°C",
+        ),
+        "booster_a_flow_temp": RegisterDef(
+            address=4016,
+            datatype=DataType.FLOAT,
+            name="booster_a_flow_temp",
+            unit="°C",
+        ),
+        "booster_a_return_temp": RegisterDef(
+            address=4018,
+            datatype=DataType.FLOAT,
+            name="booster_a_return_temp",
+            unit="°C",
+        ),
+        "booster_a_source_pump": RegisterDef(
+            address=4020,
+            datatype=DataType.UINT16,
+            name="booster_a_source_pump",
+            unit="%",
+        ),
+        "booster_a_charging_pump": RegisterDef(
+            address=4021,
+            datatype=DataType.UINT16,
+            name="booster_a_charging_pump",
+            unit="%",
+        ),
+        "booster_a_compressor": RegisterDef(
+            address=4022,
+            datatype=DataType.UCHAR,
+            name="booster_a_compressor",
+        ),
+        # --- Booster B ---
+        "booster_b_source_inlet_temp": RegisterDef(
+            address=4040,
+            datatype=DataType.FLOAT,
+            name="booster_b_source_inlet_temp",
+            unit="°C",
+        ),
+        "booster_b_source_outlet_temp": RegisterDef(
+            address=4042,
+            datatype=DataType.FLOAT,
+            name="booster_b_source_outlet_temp",
+            unit="°C",
+        ),
+        "booster_b_storage_temp": RegisterDef(
+            address=4044,
+            datatype=DataType.FLOAT,
+            name="booster_b_storage_temp",
+            unit="°C",
+        ),
+        "booster_b_flow_temp": RegisterDef(
+            address=4046,
+            datatype=DataType.FLOAT,
+            name="booster_b_flow_temp",
+            unit="°C",
+        ),
+        "booster_b_return_temp": RegisterDef(
+            address=4048,
+            datatype=DataType.FLOAT,
+            name="booster_b_return_temp",
+            unit="°C",
+        ),
+        "booster_b_source_pump": RegisterDef(
+            address=4050,
+            datatype=DataType.UINT16,
+            name="booster_b_source_pump",
+            unit="%",
+        ),
+        "booster_b_charging_pump": RegisterDef(
+            address=4051,
+            datatype=DataType.UINT16,
+            name="booster_b_charging_pump",
+            unit="%",
+        ),
+        "booster_b_compressor": RegisterDef(
+            address=4052,
+            datatype=DataType.UCHAR,
+            name="booster_b_compressor",
+        ),
+    }
+
+
+def _more_cascade_registers() -> dict[str, RegisterDef]:
+    """Additional cascade bivalence points (parallel / alternative)."""
+    return {
+        "cascade_bivalence_heating_parallel": RegisterDef(
+            address=1226,
+            datatype=DataType.INT16,
+            name="cascade_bivalence_heating_parallel",
+            unit="°C",
+            writable=True,
+        ),
+        "cascade_bivalence_heating_alternative": RegisterDef(
+            address=1227,
+            datatype=DataType.INT16,
+            name="cascade_bivalence_heating_alternative",
+            unit="°C",
+            writable=True,
+        ),
+        "cascade_bivalence_cooling_parallel": RegisterDef(
+            address=1228,
+            datatype=DataType.INT16,
+            name="cascade_bivalence_cooling_parallel",
+            unit="°C",
+            writable=True,
+        ),
+        "cascade_bivalence_cooling_alternative": RegisterDef(
+            address=1229,
+            datatype=DataType.INT16,
+            name="cascade_bivalence_cooling_alternative",
+            unit="°C",
+            writable=True,
+        ),
+        "cascade_bivalence_dhw_parallel": RegisterDef(
+            address=1230,
+            datatype=DataType.INT16,
+            name="cascade_bivalence_dhw_parallel",
+            unit="°C",
+            writable=True,
+        ),
+        "cascade_bivalence_dhw_alternative": RegisterDef(
+            address=1231,
+            datatype=DataType.INT16,
+            name="cascade_bivalence_dhw_alternative",
+            unit="°C",
+            writable=True,
+        ),
+    }
+
+
 def _glt_registers() -> dict[str, RegisterDef]:
     return {
         "ext_outdoor_temp": RegisterDef(
@@ -929,17 +1247,19 @@ def get_heating_circuit_registers(
 
 def get_zone_module_registers(
     zone_index: int,
-    room_count: int = 8,
+    room_count: int = 6,
 ) -> dict[str, RegisterDef]:
     """Return all registers for a specific zone module (1-10).
 
-    Each zone module supports up to 8 rooms.
+    Each zone module on Navigator 10 / current hardware supports 6 rooms (1-6).
+    Older references sometimes mentioned 8 rooms — the library defaults to 6 for accuracy.
     Zone module base addresses: 2000, 2065, 2130, 2195, 2260, 2325, 2390, 2455, 2520, 2585
+    (65 registers / 0x41 bytes per zone module).
     """
     if not (1 <= zone_index <= 10):
         raise ValueError(f"Zone index must be 1-10, got {zone_index}")
     if not (1 <= room_count <= 8):
-        raise ValueError(f"Room count must be 1-8, got {room_count}")
+        raise ValueError(f"Room count must be 1-8, got {room_count} (Navigator 10 typically uses 6)")
 
     base = 2000 + (zone_index - 1) * 65
     z = zone_index
@@ -1050,7 +1370,7 @@ def build_register_map(
     model_info: IdmModelInfo | None = None,
     circuits: list[str] | None = None,
     zone_modules: int = 0,
-    rooms_per_zone: int = 8,
+    rooms_per_zone: int = 6,
 ) -> dict[str, RegisterDef]:
     """Build a complete register map based on detected model or manual config.
 
@@ -1058,7 +1378,7 @@ def build_register_map(
         model_info: Auto-detected model info (takes priority over manual params).
         circuits: Manual list of active circuit letters (e.g. ["A", "B"]).
         zone_modules: Manual number of zone modules (0-10).
-        rooms_per_zone: Number of rooms per zone module (1-8).
+        rooms_per_zone: Number of rooms per zone module (default 6 for Navigator 10 / current hardware).
 
     Returns:
         Complete dict of register definitions keyed by name.
@@ -1069,6 +1389,14 @@ def build_register_map(
     all_regs.update(_hp_status_registers())
     all_regs.update(_energy_registers())
 
+    # Always include Navigator 10 additions (safe to probe; many are read-only)
+    all_regs.update(_heat_sink_registers())
+    all_regs.update(_groundwater_registers())
+    all_regs.update(_additional_fault_registers())
+    all_regs.update(_external_pump_demand_registers())
+    all_regs.update(_power_limit_registers())
+    all_regs.update(_booster_registers())
+
     active_circuits: list[str]
     num_zones: int
 
@@ -1078,6 +1406,7 @@ def build_register_map(
 
         if model_info.has_cascade:
             all_regs.update(_cascade_registers())
+            all_regs.update(_more_cascade_registers())
         if model_info.has_solar:
             all_regs.update(_solar_registers())
         if model_info.has_isc:
