@@ -41,7 +41,7 @@ jobs:
       - name: Determine next version
         id: version
         run: |
-          import re, sys, subprocess, os
+          import re, sys, os
 
           mode = "${{ github.event.inputs.version_mode }}"
           custom = "${{ github.event.inputs.custom_version }}".strip()
@@ -88,10 +88,106 @@ jobs:
           git tag "v${NEW}" || true
           git push origin main --tags
 
+      - name: Parse commits since last release
+        id: commits
+        run: |
+          NEW="${{ steps.version.outputs.version }}"
+          PREV_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | grep -v "v${NEW}" | head -1)
+
+          if [ -z "$PREV_TAG" ]; then
+            COMMITS=$(git log --oneline --pretty=format:"- %s (%h)" | head -30)
+          else
+            COMMITS=$(git log ${PREV_TAG}..HEAD --oneline --pretty=format:"- %s (%h)" 2>/dev/null || git log --oneline --pretty=format:"- %s (%h)" | head -30)
+          fi
+
+          BUG_FIXES=$(echo "$COMMITS" | grep -iE "(\bfix\b|\bbug\b|\bpatch\b|hotfix|bugfix)" || echo "")
+          IMPROVEMENTS=$(echo "$COMMITS" | grep -iE "(\bimprove\b|\benhance\b|\bupdate\b|\brefactor\b|\boptimize\b)" || echo "")
+          NEW_FEATURES=$(echo "$COMMITS" | grep -iE "(\badd\b|\bfeat\b|\bfeature\b|\bnew\b)" || echo "")
+
+          [ -z "$BUG_FIXES" ] && BUG_FIXES="- Minor bug fixes and stability improvements"
+          [ -z "$IMPROVEMENTS" ] && IMPROVEMENTS="- Performance improvements and code optimizations"
+          [ -z "$NEW_FEATURES" ] && NEW_FEATURES="- Enhanced IDM Heatpump functionality"
+
+          if [ -z "$PREV_TAG" ]; then
+            CHANGELOG_LINK="Full changelog: Initial release"
+          else
+            CHANGELOG_URL="${{ github.server_url }}/${{ github.repository }}/compare/$PREV_TAG...v${NEW}"
+            CHANGELOG_LINK="[Full changelog: $PREV_TAG...v${NEW}]($CHANGELOG_URL)"
+          fi
+
+          {
+            echo "bug-fixes<<EOF"
+            echo "$BUG_FIXES"
+            echo "EOF"
+            echo "improvements<<EOF"
+            echo "$IMPROVEMENTS"
+            echo "EOF"
+            echo "new-features<<EOF"
+            echo "$NEW_FEATURES"
+            echo "EOF"
+            echo "changelog-link<<EOF"
+            echo "$CHANGELOG_LINK"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
       - name: Build package
         run: |
           python -m pip install build
           python -m build
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "v${{ steps.version.outputs.version }}"
+          body: |
+            ## v${{ steps.version.outputs.version }} — IDM Heatpump API
+
+            [![GitHub Sponsor](https://img.shields.io/github/sponsors/xerolux?logo=github&style=for-the-badge&color=blue)](https://github.com/sponsors/xerolux)
+            [![Ko-Fi](https://img.shields.io/badge/Ko--fi-xerolux-blue?logo=ko-fi&style=for-the-badge)](https://ko-fi.com/xerolux)
+            [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-xerolux-yellow?logo=buy-me-a-coffee&style=for-the-badge)](https://www.buymeacoffee.com/xerolux)
+            [![PayPal](https://img.shields.io/badge/PayPal-xerolux-blue?logo=paypal&style=for-the-badge)](https://paypal.me/xerolux)
+            [![Tesla Referral](https://img.shields.io/badge/Tesla-Referral-red?logo=tesla&style=for-the-badge)](https://ts.la/sebastian564489)
+
+            ### New Features
+            ${{ steps.commits.outputs.new-features }}
+
+            ### Improvements
+            ${{ steps.commits.outputs.improvements }}
+
+            ### Bug Fixes
+            ${{ steps.commits.outputs.bug-fixes }}
+
+            ---
+
+            ### Installation
+            ```bash
+            pip install idm-heatpump
+            ```
+
+            ---
+
+            ${{ steps.commits.outputs.changelog-link }}
+
+            ---
+
+            ### Support
+            This library is developed in spare time — your support motivates further features and updates!
+
+            [![GitHub Sponsor](https://img.shields.io/github/sponsors/xerolux?logo=github&style=for-the-badge&color=blue)](https://github.com/sponsors/xerolux)
+            [![Ko-Fi](https://img.shields.io/badge/Ko--fi-xerolux-blue?logo=ko-fi&style=for-the-badge)](https://ko-fi.com/xerolux)
+            [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-xerolux-yellow?logo=buy-me-a-coffee&style=for-the-badge)](https://www.buymeacoffee.com/xerolux)
+            [![PayPal](https://img.shields.io/badge/PayPal-xerolux-blue?logo=paypal&style=for-the-badge)](https://paypal.me/xerolux)
+            [![Tesla Referral](https://img.shields.io/badge/Tesla-Referral-red?logo=tesla&style=for-the-badge)](https://ts.la/sebastian564489)
+
+            ---
+
+            - [Report a bug](https://github.com/${{ github.repository }}/issues/new?template=bug_report.md)
+            - [Request a feature](https://github.com/${{ github.repository }}/issues)
+            - [Contribute](https://github.com/${{ github.repository }}/blob/main/CONTRIBUTING.md)
+
+            **Developed by:** [Xerolux](https://github.com/Xerolux) | **License:** MIT
+          files: |
+            dist/*
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
