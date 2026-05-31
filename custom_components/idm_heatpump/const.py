@@ -14,10 +14,11 @@ RETRY_BACKOFF_BASE: float = 0.5
 HEATING_CIRCUIT_LETTERS: list[str] = list("ABCDEFG")
 MAX_HEATING_CIRCUITS: int = 7
 MAX_ZONE_MODULES: int = 10
-MAX_ROOMS_PER_ZONE: int = 8
+MAX_ROOMS_PER_ZONE: int = 6  # Navigator 10 / current iDM zone modules support 6 rooms each (some older configs may use 8)
 
 MODEL_NAVIGATOR_20: str = "Navigator 2.0"
 MODEL_NAVIGATOR_PRO: str = "Navigator Pro"
+MODEL_NAVIGATOR_10: str = "Navigator 10"
 MODEL_UNKNOWN: str = "Unknown"
 
 FEATURE_SOLAR: str = "solar"
@@ -133,6 +134,14 @@ ACTIVE_HC_MODE_OPTIONS: dict[int, str] = {
 ZONE_MODULE_MODE_OPTIONS: dict[int, str] = {
     0: "Cooling",
     1: "Heating",
+}
+
+
+BOOSTER_FAULT_OPTIONS: dict[int, str] = {
+    0: "No fault",
+    1: "Booster A fault",
+    2: "Booster B fault",
+    3: "Booster A + B fault",
 }
 
 
