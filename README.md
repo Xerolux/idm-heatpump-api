@@ -1,36 +1,36 @@
 # IDM Heatpump API
 
-[![PyPI](https://img.shields.io/pypi/v/idm-heatpump?style=for-the-badge&logo=pypi&logoColor=white)](https://pypi.org/project/idm-heatpump/)
-[![Python](https://img.shields.io/pypi/pyversions/idm-heatpump?style=for-the-badge&logo=python&logoColor=white)](https://pypi.org/project/idm-heatpump/)
-[![License: MIT](https://img.shields.io/github/license/Xerolux/idm-heatpump-api?style=for-the-badge)](LICENSE)
-[![GitHub Release](https://img.shields.io/github/v/release/Xerolux/idm-heatpump-api?style=for-the-badge&logo=github)](https://github.com/Xerolux/idm-heatpump-api/releases)
+[![PyPI version](https://img.shields.io/pypi/v/idm-heatpump.svg?style=for-the-badge)](https://pypi.org/project/idm-heatpump/)
+[![PyPI downloads](https://img.shields.io/pypi/dm/idm-heatpump.svg?style=for-the-badge)](https://pypistats.org/packages/idm-heatpump)
+[![Python versions](https://img.shields.io/pypi/pyversions/idm-heatpump.svg?style=for-the-badge)](https://pypi.org/project/idm-heatpump/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
 
 [![GitHub Sponsors](https://img.shields.io/github/sponsors/xerolux?logo=github&style=for-the-badge&color=blue)](https://github.com/sponsors/xerolux)
 [![Ko-Fi](https://img.shields.io/badge/Ko--fi-xerolux-blue?logo=ko-fi&style=for-the-badge)](https://ko-fi.com/xerolux)
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-xerolux-yellow?logo=buy-me-a-coffee&style=for-the-badge)](https://www.buymeacoffee.com/xerolux)
 [![PayPal](https://img.shields.io/badge/PayPal-xerolux-blue?logo=paypal&style=for-the-badge)](https://paypal.me/xerolux)
-[![Tesla Referral](https://img.shields.io/badge/Tesla-Referral-red?logo=tesla&style=for-the-badge)](https://ts.la/sebastian564489)
+[![Tesla Referral](https://img.shields.io/badge/Tesla-Referral-red?style=for-the-badge&logo=tesla)](https://ts.la/sebastian564489)
 
-**Official Python library** for communicating with IDM Navigator heat pumps (2.0, Pro, and Navigator 10) over Modbus TCP.
+An asynchronous Python library for communicating with **IDM Navigator heat pumps** (2.0, Pro, and Navigator 10) over Modbus TCP.
 
-This package is published on PyPI as `idm-heatpump` and is the core dependency for the [Home Assistant integration](https://github.com/Xerolux/idm-heatpump-hass).
+This library is primarily designed to power the official [IDM Heatpump Home Assistant Integration](https://github.com/Xerolux/idm-heatpump-hass), but it can be used independently for any Python project that needs to monitor or control an IDM heat pump.
 
-```bash
-pip install idm-heatpump
-```
+> **Documentation:**
+> - GitHub Pages: https://xerolux.github.io/idm-heatpump-api/
+> - GitHub Wiki: https://github.com/Xerolux/idm-heatpump-api/wiki
+> - PyPI: https://pypi.org/project/idm-heatpump/
+>
+> The `docs/` directory is the single source of truth and is used for both GitHub Pages and Wiki sync.
 
----
+## Features
 
-## Documentation
-
-- GitHub Pages: https://xerolux.github.io/idm-heatpump-api/
-- GitHub Wiki: https://github.com/Xerolux/idm-heatpump-api/wiki
-- Project Repository: https://github.com/Xerolux/idm-heatpump-api
-- PyPI: https://pypi.org/project/idm-heatpump/
-
-The `docs/` directory is the single source of truth:
-- GitHub Pages is deployed automatically from `docs/`.
-- GitHub Wiki is synchronized automatically from `docs/`.
+* **Asynchronous:** Fully async operations using `pymodbus` with automatic reconnection.
+* **Auto-Detection:** Probes registers to detect the controller model, active heating circuits, zone modules, solar, ISC, PV, and cascade.
+* **Comprehensive Register Map:** 100+ registers covering temperatures, energy, status, heating circuits (A-G), zone modules, solar, ISC, cascade, boosters, and more.
+* **Batch Reads:** Intelligent grouping and batching of register reads for maximum efficiency.
+* **Resilient:** Configurable retries with exponential backoff and permanent failure tracking for unavailable registers.
+* **Write Support:** Safe register writes with validation, min/max bounds, and EEPROM-sensitive write protection.
+* **Metadata:** Each register includes `binary`, `state_class`, `icon`, `enabled_by_default`, `write_only`, and `exclude_from_write` metadata for direct Home Assistant entity mapping.
 
 ## Supported Devices
 
@@ -40,13 +40,81 @@ The `docs/` directory is the single source of truth:
 | IDM Navigator 2.0 | all versions | up to 7 (A-G) | no | Confirmed |
 | IDM Navigator Pro | all versions | up to 7 (A-G) | up to 10 (6 rooms each) | Confirmed |
 
-**Note**: Zone modules on current hardware (including Navigator 10) support 6 rooms per module. Older documentation sometimes mentioned 8; the library defaults to 6 for accuracy.
-
 ## Requirements
 
-- Modbus TCP must be enabled in the IDM controller (Settings -> Building Management -> Modbus TCP = On).
+- Modbus TCP must be enabled on the IDM controller (Settings -> Building Management -> Modbus TCP = On).
 - Default port: `502`
 - Default slave ID: `1`
+- Python 3.12+
+
+## Installation
+
+```bash
+pip install idm-heatpump
+```
+
+## Basic Usage
+
+```python
+import asyncio
+from idm_heatpump import IdmModbusClient, build_register_map
+
+async def main():
+    client = IdmModbusClient(host="192.168.1.100", port=502, slave_id=1)
+
+    try:
+        await client.connect()
+
+        # Auto-detect model and capabilities
+        model_info = await client.detect_model()
+        print(f"Detected: {model_info.model_name}")
+        print(f"Circuits: {model_info.active_heating_circuits}")
+        print(f"Solar: {model_info.has_solar}, ISC: {model_info.has_isc}")
+
+        # Build register map based on detected model
+        registers = build_register_map(model_info=model_info)
+
+        # Read all registers in efficient batches
+        values = await client.read_batch(list(registers.values()))
+
+        for name, value in sorted(values.items()):
+            reg = registers[name]
+            unit = f" {reg.unit}" if reg.unit else ""
+            print(f"  {name}: {value}{unit}")
+
+        # Write a register (e.g. set DHW target temperature)
+        if "dhw_setpoint" in registers:
+            await client.write_register(registers["dhw_setpoint"], 48)
+
+    finally:
+        await client.disconnect()
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+## Advanced Usage
+
+The library provides fine-grained control for advanced scenarios:
+
+- `build_register_map(circuits=["A", "B"], zone_modules=2, rooms_per_zone=4)`: Manual register map without auto-detection.
+- `get_heating_circuit_registers("A")`: Registers for a single heating circuit.
+- `get_zone_module_registers(zone_index=1, room_count=6)`: Registers for a single zone module.
+- `client.probe_register(address=1850, count=2)`: Probe a single register without affecting failure tracking.
+- `client.reset_failed_registers()`: Retry permanently failed registers.
+
+Register metadata for HA integration mapping:
+
+```python
+reg = registers["compressor_status_1"]
+print(reg.binary)                # True -> BinarySensor
+print(reg.writable)              # False
+print(reg.write_only)            # False
+print(reg.enabled_by_default)    # True
+print(reg.state_class)           # None (or "measurement", "total_increasing")
+print(reg.icon)                  # None (or "mdi:thermometer")
+print(reg.exclude_from_write)    # None (or {255})
+```
 
 ## Navigator 10 Support
 
@@ -61,15 +129,15 @@ The library fully covers the official 2025 Navigator 10 Modbus TCP specification
 - PV / energy management, solar thermal, and ISC (Intelligent Surface Cooling)
 - Cascade temperatures and bivalence points
 
-## Installation
-
-```bash
-pip install idm-heatpump
-```
-
 ## Contributing
 
 Please open an issue or pull request for bug reports, improvements, and documentation updates.
+
+## License
+
+MIT License — see [LICENSE](LICENSE).
+
+---
 
 ## Support
 
@@ -79,7 +147,7 @@ This library is developed in my spare time. If you find it useful, consider supp
 [![Ko-Fi](https://img.shields.io/badge/Ko--fi-xerolux-blue?logo=ko-fi&style=for-the-badge)](https://ko-fi.com/xerolux)
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-xerolux-yellow?logo=buy-me-a-coffee&style=for-the-badge)](https://www.buymeacoffee.com/xerolux)
 [![PayPal](https://img.shields.io/badge/PayPal-xerolux-blue?logo=paypal&style=for-the-badge)](https://paypal.me/xerolux)
-[![Tesla Referral](https://img.shields.io/badge/Tesla-Referral-red?logo=tesla&style=for-the-badge)](https://ts.la/sebastian564489)
+[![Tesla Referral](https://img.shields.io/badge/Tesla-Referral-red?style=for-the-badge&logo=tesla)](https://ts.la/sebastian564489)
 
 - Star the repository on GitHub
 - [Report bugs](https://github.com/Xerolux/idm-heatpump-api/issues)
