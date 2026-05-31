@@ -114,6 +114,12 @@ class RegisterDef:
     register_type: RegisterType = RegisterType.INPUT
     eeprom_sensitive: bool = False
     cyclic_required: bool = False
+    binary: bool = False
+    enabled_by_default: bool = True
+    state_class: str | None = None
+    icon: str | None = None
+    write_only: bool = False
+    exclude_from_write: set[int] | None = None
     size: int = field(init=False)
 
     def __post_init__(self) -> None:
@@ -550,6 +556,8 @@ class IdmModbusClient:
 
     async def read_register(self, reg: RegisterDef) -> Any:
         """Read a single register, auto-connecting if needed."""
+        if reg.write_only:
+            raise ValueError(f"Register '{reg.name}' is write-only")
         await self._ensure_connected()
         registers = await self._read_registers(
             reg.address, reg.size, reg.register_type
@@ -560,6 +568,12 @@ class IdmModbusClient:
         """Write a single register after validation, auto-connecting if needed."""
         if not reg.writable:
             raise ValueError(f"Register '{reg.name}' is read-only")
+
+        if reg.exclude_from_write and int(value) in reg.exclude_from_write:
+            raise ValueError(
+                f"Value {value} for '{reg.name}' is not writable "
+                f"(excluded values: {reg.exclude_from_write})"
+            )
 
         if reg.min_val is not None and float(value) < reg.min_val:
             raise ValueError(
@@ -585,6 +599,7 @@ class IdmModbusClient:
             r
             for r in register_list
             if r.name not in self._permanently_failed_registers
+            and not r.write_only
         ]
         if not valid_regs:
             return {}
