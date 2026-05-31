@@ -25,6 +25,7 @@ from .const import (
     MAX_HEATING_CIRCUITS,
     MAX_RETRIES,
     MAX_ZONE_MODULES,
+    MODEL_NAVIGATOR_10,
     MODEL_NAVIGATOR_20,
     MODEL_NAVIGATOR_PRO,
     MODEL_UNKNOWN,
@@ -395,8 +396,21 @@ class IdmModbusClient:
         if has_cascade:
             features.add(FEATURE_CASCADE)
 
-        if zone_modules > 0:
-            model_name = MODEL_NAVIGATOR_PRO
+        # Determine model name
+        # Prefer Navigator 10 when we see strong indicators (newer registers present)
+        has_navigator_10_indicators = False
+        try:
+            # Heat sink flow (1072) or power limit (4108) are good Navigator 10 signals
+            hs = await self.probe_register(1072, 1)
+            pl = await self.probe_register(4108, 2)
+            if (hs is not None) or (pl is not None):
+                has_navigator_10_indicators = True
+        except Exception:
+            pass
+
+        if has_navigator_10_indicators or zone_modules > 0:
+            # Navigator 10 is the current generation; also report Pro-like capabilities
+            model_name = MODEL_NAVIGATOR_10 if has_navigator_10_indicators else MODEL_NAVIGATOR_PRO
         elif active_circuits:
             model_name = MODEL_NAVIGATOR_20
         else:

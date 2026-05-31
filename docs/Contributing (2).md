@@ -84,7 +84,7 @@
                 </div>
                 <div class="feature">
                     <h3>🏠 Zone Modules</h3>
-                    <p>Up to 10 zones with 8 rooms each (room thermostat function)</p>
+                    <p>Up to 10 zones with 6 rooms each (room thermostat function) — Navigator 10 / current hardware</p>
                 </div>
                 <div class="feature">
                     <h3>☀️ Solar &amp; PV</h3>

@@ -62,7 +62,7 @@ After initial setup, options can be changed via **Settings → Devices & Service
 
 - **Scan interval** – Polling frequency (5–300 seconds)
 - **Active heating circuits** – Enable/disable individual heating circuits A through G
-- **Zone modules** – Number of connected zone modules (each supports up to 8 rooms)
+- **Zone modules** – Number of connected zone modules (each supports up to 6 rooms on Navigator 10 / current hardware)
 - **Room names** – Custom names for rooms in each zone module
 
 ### Reconfiguration
