@@ -62,6 +62,7 @@ CIRCUIT_MODE_OPTIONS: dict[int, str] = {
     3: "Eco",
     4: "Manual Heat",
     5: "Manual Cool",
+    255: "Not configured / Unavailable",
 }
 
 
@@ -121,6 +122,7 @@ ISC_MODE_OPTIONS: dict[int, str] = {
     1: "Heating",
     4: "DHW",
     8: "Heat Source",
+    255: "Not configured / Unavailable",
 }
 
 
@@ -128,6 +130,7 @@ ACTIVE_HC_MODE_OPTIONS: dict[int, str] = {
     0: "Off",
     1: "Heating",
     2: "Cooling",
+    255: "Not configured / Unavailable",
 }
 
 

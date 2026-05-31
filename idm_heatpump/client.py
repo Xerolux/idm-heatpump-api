@@ -709,13 +709,24 @@ class IdmModbusClient:
                 self._register_failures[reg.name] = failures
                 if failures >= _PERMANENT_FAILURE_THRESHOLD:
                     self._permanently_failed_registers.add(reg.name)
-                    _LOGGER.warning(
-                        "Register %s (address %d) has failed %d times. "
-                        "Marking as permanently failed.",
-                        reg.name,
-                        reg.address,
-                        failures,
-                    )
+
+                    # Some registers (e.g. firmware_version on certain Navigator 10 firmwares)
+                    # are expected to be missing or unreliable. Log at debug level for those.
+                    if "firmware" in reg.name.lower():
+                        _LOGGER.debug(
+                            "Register %s (address %d) is not available on this device. "
+                            "Marking as permanently failed (this is normal on some firmware versions).",
+                            reg.name,
+                            reg.address,
+                        )
+                    else:
+                        _LOGGER.warning(
+                            "Register %s (address %d) has failed %d times. "
+                            "Marking as permanently failed.",
+                            reg.name,
+                            reg.address,
+                            failures,
+                        )
                 else:
                     _LOGGER.debug(
                         "Register %s (address %d) failed: %s (%d/%d attempts)",
