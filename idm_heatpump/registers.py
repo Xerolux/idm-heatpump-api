@@ -551,6 +551,13 @@ def _energy_registers() -> dict[str, RegisterDef]:
             name="power_consumption_hp",
             unit="kW",
         ),
+        "firmware_version": RegisterDef(
+            address=4120,
+            datatype=DataType.UINT16,
+            name="firmware_version",
+            # May not be present or may return invalid data on some Navigator 10 firmwares.
+            # The client will mark it as permanently failed if it consistently fails.
+        ),
         "thermal_power_flow_sensor": RegisterDef(
             address=4126,
             datatype=DataType.FLOAT,
