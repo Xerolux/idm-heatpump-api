@@ -24,9 +24,20 @@ classifiers = [
     "Operating System :: OS Independent",
     "Intended Audience :: Developers",
     "Topic :: Home Automation",
+    "Topic :: System :: Hardware",
+    "Framework :: AsyncIO",
+    "Development Status :: 4 - Beta",
 ]
+
+keywords = ["idm", "heatpump", "modbus", "navigator", "home-assistant", "hass", "heating", "modbus-tcp"]
 dependencies = [
     "pymodbus>=3.7.0,<4.0.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
 ]
 
 [project.urls]
