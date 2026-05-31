@@ -1,5 +1,16 @@
 # IDM Heatpump API
 
+[![PyPI](https://img.shields.io/pypi/v/idm-heatpump?style=for-the-badge&logo=pypi&logoColor=white)](https://pypi.org/project/idm-heatpump/)
+[![Python](https://img.shields.io/pypi/pyversions/idm-heatpump?style=for-the-badge&logo=python&logoColor=white)](https://pypi.org/project/idm-heatpump/)
+[![License: MIT](https://img.shields.io/github/license/Xerolux/idm-heatpump-api?style=for-the-badge)](LICENSE)
+[![GitHub Release](https://img.shields.io/github/v/release/Xerolux/idm-heatpump-api?style=for-the-badge&logo=github)](https://github.com/Xerolux/idm-heatpump-api/releases)
+
+[![GitHub Sponsors](https://img.shields.io/github/sponsors/xerolux?logo=github&style=for-the-badge&color=blue)](https://github.com/sponsors/xerolux)
+[![Ko-Fi](https://img.shields.io/badge/Ko--fi-xerolux-blue?logo=ko-fi&style=for-the-badge)](https://ko-fi.com/xerolux)
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-xerolux-yellow?logo=buy-me-a-coffee&style=for-the-badge)](https://www.buymeacoffee.com/xerolux)
+[![PayPal](https://img.shields.io/badge/PayPal-xerolux-blue?logo=paypal&style=for-the-badge)](https://paypal.me/xerolux)
+[![Tesla Referral](https://img.shields.io/badge/Tesla-Referral-red?logo=tesla&style=for-the-badge)](https://ts.la/sebastian564489)
+
 **Official Python library** for communicating with IDM Navigator heat pumps (2.0, Pro, and Navigator 10) over Modbus TCP.
 
 This package is published on PyPI as `idm-heatpump` and is the core dependency for the [Home Assistant integration](https://github.com/Xerolux/idm-heatpump-hass).
@@ -8,17 +19,20 @@ This package is published on PyPI as `idm-heatpump` and is the core dependency f
 pip install idm-heatpump
 ```
 
+---
+
 ## Documentation
 
 - GitHub Pages: https://xerolux.github.io/idm-heatpump-api/
 - GitHub Wiki: https://github.com/Xerolux/idm-heatpump-api/wiki
 - Project Repository: https://github.com/Xerolux/idm-heatpump-api
+- PyPI: https://pypi.org/project/idm-heatpump/
 
 The `docs/` directory is the single source of truth:
 - GitHub Pages is deployed automatically from `docs/`.
 - GitHub Wiki is synchronized automatically from `docs/`.
 
-## Supported Devices (Current Status)
+## Supported Devices
 
 | Device | Firmware | Heating Circuits | Zone Modules | Status |
 |-------|----------|------------|-------------|--------|
@@ -30,20 +44,22 @@ The `docs/` directory is the single source of truth:
 
 ## Requirements
 
-- Modbus TCP must be enabled in the IDM controller (Settings → Building Management → Modbus TCP = On).
+- Modbus TCP must be enabled in the IDM controller (Settings -> Building Management -> Modbus TCP = On).
 - Default port: `502`
 - Default slave ID: `1`
 
-## New in Navigator 10 Support
+## Navigator 10 Support
 
-The library now fully covers the official 2025 Navigator 10 Modbus TCP specification, including:
+The library fully covers the official 2025 Navigator 10 Modbus TCP specification, including:
 
-- Heat sink / plate heat exchanger sensors (flow rate in l/min at 1072 — excellent for filter monitoring)
+- Heat sink / plate heat exchanger sensors (flow rate in l/min at 1072)
 - Power limitation registers (4108 / 4112) for demand response / peak shaving
 - Complete Booster A + B (second heat generator) monitoring
 - Additional source pump faults and external pump demand control
 - Groundwater temperatures and more cascade bivalence points
 - All zone module rooms (6 rooms per module on current hardware)
+- PV / energy management, solar thermal, and ISC (Intelligent Surface Cooling)
+- Cascade temperatures and bivalence points
 
 ## Installation
 
@@ -54,3 +70,17 @@ pip install idm-heatpump
 ## Contributing
 
 Please open an issue or pull request for bug reports, improvements, and documentation updates.
+
+## Support
+
+This library is developed in my spare time. If you find it useful, consider supporting:
+
+[![GitHub Sponsors](https://img.shields.io/github/sponsors/xerolux?logo=github&style=for-the-badge&color=blue)](https://github.com/sponsors/xerolux)
+[![Ko-Fi](https://img.shields.io/badge/Ko--fi-xerolux-blue?logo=ko-fi&style=for-the-badge)](https://ko-fi.com/xerolux)
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-xerolux-yellow?logo=buy-me-a-coffee&style=for-the-badge)](https://www.buymeacoffee.com/xerolux)
+[![PayPal](https://img.shields.io/badge/PayPal-xerolux-blue?logo=paypal&style=for-the-badge)](https://paypal.me/xerolux)
+[![Tesla Referral](https://img.shields.io/badge/Tesla-Referral-red?logo=tesla&style=for-the-badge)](https://ts.la/sebastian564489)
+
+- Star the repository on GitHub
+- [Report bugs](https://github.com/Xerolux/idm-heatpump-api/issues)
+- Share with other IDM heat pump owners

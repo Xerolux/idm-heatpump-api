@@ -43,3 +43,7 @@ test = [
 [project.urls]
 "Homepage" = "https://github.com/Xerolux/idm-heatpump-api"
 "Bug Tracker" = "https://github.com/Xerolux/idm-heatpump-api/issues"
+"Sponsor on GitHub" = "https://github.com/sponsors/Xerolux"
+"Ko-fi" = "https://ko-fi.com/xerolux"
+"Buy Me a Coffee" = "https://www.buymeacoffee.com/xerolux"
+"PayPal" = "https://paypal.me/xerolux"
