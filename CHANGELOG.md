@@ -48,3 +48,14 @@ jobs:
 - Clean top-level package layout.
 
 
+
+
+## [0.2.1] - 2026-06
+
+### Fixes
+- Added support for value 255 ("Not configured / Unavailable") in `ISC_MODE_OPTIONS`, `ACTIVE_HC_MODE_OPTIONS`, and `CIRCUIT_MODE_OPTIONS`.
+- Added `firmware_version` register (address 4120) to the default register map.
+- Improved logging for `firmware_version`: now logs at debug level instead of warning when it permanently fails (common on some Navigator 10 firmwares).
+- Minor improvements for better compatibility with real Navigator 10 devices.
+
+
