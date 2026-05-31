@@ -1,6 +1,12 @@
 # IDM Heatpump API
 
-Python package for interacting with IDM heatpump systems and related Home Assistant integrations.
+**Official Python library** for communicating with IDM Navigator heat pumps (2.0, Pro, and Navigator 10) over Modbus TCP.
+
+This package is published on PyPI as `idm-heatpump` and is the core dependency for the [Home Assistant integration](https://github.com/Xerolux/idm-heatpump-hass).
+
+```bash
+pip install idm-heatpump
+```
 
 ## Documentation
 

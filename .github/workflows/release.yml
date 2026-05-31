@@ -1,35 +1,99 @@
-name: Maintenance
+name: Release
 
 on:
-  schedule:
-    - cron: '0 1 * * *'
   workflow_dispatch:
+    inputs:
+      version_mode:
+        description: "Version mode"
+        required: true
+        type: choice
+        options:
+          - auto-patch
+          - auto-minor
+          - custom
+        default: auto-patch
+      custom_version:
+        description: "Custom version (e.g. 1.2.3)"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+  id-token: write
 
 jobs:
-  stale:
+  release:
     runs-on: ubuntu-latest
-    permissions:
-      issues: write
-      pull-requests: write
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: pypi
+
     steps:
-      - uses: actions/stale@v10
+      - uses: actions/checkout@v4
         with:
-          stale-issue-message: |
-            This issue has been automatically marked as stale because it has had no recent activity. 
-            It will be closed in 7 days if no further activity occurs.
-          stale-pr-message: |
-            This pull request has been automatically marked as stale because it has had no recent activity. 
-            It will be closed in 7 days if no further activity occurs.
-          close-issue-message: |
-            This issue was automatically closed due to inactivity. 
-            Feel free to reopen if this is still relevant.
-          close-pr-message: |
-            This PR was automatically closed due to inactivity. 
-            Feel free to reopen if you'd like to continue working on this.
-          stale-issue-label: 'stale'
-          stale-pr-label: 'stale'
-          days-before-stale: 60
-          days-before-close: 7
-          exempt-issue-labels: 'bug,enhancement,help wanted,pinned'
-          exempt-pr-labels: 'work-in-progress,awaiting-review,pinned'
-          operations-per-run: 100
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Determine next version
+        id: version
+        run: |
+          import re, sys, subprocess, os
+
+          mode = "${{ github.event.inputs.version_mode }}"
+          custom = "${{ github.event.inputs.custom_version }}".strip()
+
+          with open("pyproject.toml") as f:
+              content = f.read()
+          m = re.search(r'version\s*=\s*"(\d+)\.(\d+)\.(\d+)"', content)
+          if not m:
+              print("ERROR: cannot parse version from pyproject.toml")
+              sys.exit(1)
+
+          major, minor, patch = int(m.group(1)), int(m.group(2)), int(m.group(3))
+
+          if mode == "custom":
+              if not custom:
+                  print("ERROR: custom_version is empty")
+                  sys.exit(1)
+              if not re.match(r"^\d+\.\d+\.\d+$", custom):
+                  print(f"ERROR: invalid version format: {custom}")
+                  sys.exit(1)
+              new_version = custom
+          elif mode == "auto-minor":
+              new_version = f"{major}.{minor + 1}.0"
+          else:
+              new_version = f"{major}.{minor}.{patch + 1}"
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              print(f"version={new_version}", file=out)
+        shell: python {0}
+
+      - name: Bump version in pyproject.toml
+        run: |
+          NEW="${{ steps.version.outputs.version }}"
+          sed -i "s/version = \".*\"/version = \"${NEW}\"/" pyproject.toml
+          echo "Bumped to ${NEW}"
+
+      - name: Commit and tag
+        run: |
+          NEW="${{ steps.version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml
+          git commit -m "chore: bump version to ${NEW}" || true
+          git tag "v${NEW}" || true
+          git push origin main --tags
+
+      - name: Build package
+        run: |
+          python -m pip install build
+          python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI }}
