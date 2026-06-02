@@ -79,6 +79,7 @@ jobs:
           echo "Bumped to ${NEW}"
 
       - name: Commit and tag
+        working-directory: ${{ github.workspace }}
         run: |
           NEW="${{ steps.version.outputs.version }}"
           git config user.name "github-actions[bot]"
