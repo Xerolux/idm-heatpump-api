@@ -249,12 +249,14 @@ def _hp_status_registers() -> dict[str, RegisterDef]:
             datatype=DataType.UINT16,
             name="charging_pump_status",
             unit="%",
+            state_class="measurement",
         ),
         "brine_pump_status": RegisterDef(
             address=1105,
             datatype=DataType.UINT16,
             name="brine_pump_status",
             unit="%",
+            state_class="measurement",
         ),
         "heat_source_pump_status": RegisterDef(
             address=1106,
@@ -266,12 +268,14 @@ def _hp_status_registers() -> dict[str, RegisterDef]:
             datatype=DataType.UINT16,
             name="isc_cold_storage_pump_status",
             unit="%",
+            state_class="measurement",
         ),
         "isc_recooling_pump_status": RegisterDef(
             address=1109,
             datatype=DataType.UINT16,
             name="isc_recooling_pump_status",
             unit="%",
+            state_class="measurement",
         ),
         "valve_hc_heat_cool": RegisterDef(
             address=1110,
@@ -734,6 +738,7 @@ def _heat_sink_registers() -> dict[str, RegisterDef]:
             datatype=DataType.UINT16,
             name="heat_sink_charging_pump_signal",
             unit="%",
+            state_class="measurement",
             # M73 - Ladepumpe Wärmesenke Steuersignal
         ),
     }
@@ -893,12 +898,14 @@ def _booster_registers() -> dict[str, RegisterDef]:
             datatype=DataType.UINT16,
             name="booster_a_source_pump",
             unit="%",
+            state_class="measurement",
         ),
         "booster_a_charging_pump": RegisterDef(
             address=4021,
             datatype=DataType.UINT16,
             name="booster_a_charging_pump",
             unit="%",
+            state_class="measurement",
         ),
         "booster_a_compressor": RegisterDef(
             address=4022,
@@ -941,12 +948,14 @@ def _booster_registers() -> dict[str, RegisterDef]:
             datatype=DataType.UINT16,
             name="booster_b_source_pump",
             unit="%",
+            state_class="measurement",
         ),
         "booster_b_charging_pump": RegisterDef(
             address=4051,
             datatype=DataType.UINT16,
             name="booster_b_charging_pump",
             unit="%",
+            state_class="measurement",
         ),
         "booster_b_compressor": RegisterDef(
             address=4052,
