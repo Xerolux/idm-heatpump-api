@@ -2,8 +2,8 @@
 
 from .client import (
     DataType,
-    IdmModelInfo,
     IdmModbusClient,
+    IdmModelInfo,
     RegisterDef,
     RegisterType,
 )
@@ -25,8 +25,8 @@ from .const import (
     HP_OPERATING_MODE_OPTIONS,
     ISC_MODE_OPTIONS,
     MAX_HEATING_CIRCUITS,
-    MAX_ROOMS_PER_ZONE,
     MAX_RETRIES,
+    MAX_ROOMS_PER_ZONE,
     MAX_ZONE_MODULES,
     MODEL_NAVIGATOR_10,
     MODEL_NAVIGATOR_20,
