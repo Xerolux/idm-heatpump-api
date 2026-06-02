@@ -39,6 +39,12 @@ test = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
 ]
+dev = [
+    "ruff>=0.5.0",
+    "mypy>=1.10.0",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
 
 [project.urls]
 "Homepage" = "https://github.com/Xerolux/idm-heatpump-api"
@@ -49,3 +55,21 @@ test = [
 "Ko-fi" = "https://ko-fi.com/xerolux"
 "Buy Me a Coffee" = "https://www.buymeacoffee.com/xerolux"
 "PayPal" = "https://paypal.me/xerolux"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]  # Line too long (handled by formatter)
+
+[tool.ruff.lint.isort]
+known-first-party = ["idm_heatpump"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+disallow_untyped_defs = false
