@@ -726,6 +726,7 @@ def _heat_sink_registers() -> dict[str, RegisterDef]:
             datatype=DataType.UCHAR,
             name="heat_sink_flow_rate",
             unit="L/min",
+            state_class="measurement",
             # B2 - Durchfluss Wärmesenke (only available with plate heat exchanger / TWT)
         ),
         "heat_sink_charging_pump_signal": RegisterDef(
@@ -1324,6 +1325,7 @@ def get_zone_module_registers(
             datatype=DataType.UCHAR,
             name=f"zm{z}_room{room}_humidity",
             unit="%",
+            state_class="measurement",
         )
         regs[f"zm{z}_room{room}_mode"] = RegisterDef(
             address=room_base + 5,
@@ -1478,6 +1480,7 @@ def build_register_map(
         datatype=DataType.FLOAT,
         name="humidity_sensor",
         unit="%",
+        state_class="measurement",
     )
 
     return all_regs
