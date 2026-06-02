@@ -491,66 +491,77 @@ def _energy_registers() -> dict[str, RegisterDef]:
             datatype=DataType.FLOAT,
             name="energy_heating",
             unit="kWh",
+            state_class="total_increasing",
         ),
         "energy_total": RegisterDef(
             address=1750,
             datatype=DataType.FLOAT,
             name="energy_total",
             unit="kWh",
+            state_class="total_increasing",
         ),
         "energy_cooling": RegisterDef(
             address=1752,
             datatype=DataType.FLOAT,
             name="energy_cooling",
             unit="kWh",
+            state_class="total_increasing",
         ),
         "energy_dhw": RegisterDef(
             address=1754,
             datatype=DataType.FLOAT,
             name="energy_dhw",
             unit="kWh",
+            state_class="total_increasing",
         ),
         "energy_defrost": RegisterDef(
             address=1756,
             datatype=DataType.FLOAT,
             name="energy_defrost",
             unit="kWh",
+            state_class="total_increasing",
         ),
         "energy_passive_cooling": RegisterDef(
             address=1758,
             datatype=DataType.FLOAT,
             name="energy_passive_cooling",
             unit="kWh",
+            state_class="total_increasing",
         ),
         "energy_solar": RegisterDef(
             address=1760,
             datatype=DataType.FLOAT,
             name="energy_solar",
             unit="kWh",
+            state_class="total_increasing",
         ),
         "energy_electric_heater": RegisterDef(
             address=1762,
             datatype=DataType.FLOAT,
             name="energy_electric_heater",
             unit="kWh",
+            state_class="total_increasing",
         ),
         "current_power": RegisterDef(
             address=1790,
             datatype=DataType.FLOAT,
             name="current_power",
             unit="kW",
+            state_class="measurement",
         ),
         "current_power_solar": RegisterDef(
             address=1792,
             datatype=DataType.FLOAT,
             name="current_power_solar",
             unit="kW",
+            state_class="measurement",
         ),
         "power_consumption_hp": RegisterDef(
             address=4122,
             datatype=DataType.FLOAT,
             name="power_consumption_hp",
             unit="kW",
+            state_class="measurement",
         ),
         "firmware_version": RegisterDef(
             address=4120,
@@ -562,12 +573,14 @@ def _energy_registers() -> dict[str, RegisterDef]:
             datatype=DataType.FLOAT,
             name="thermal_power_flow_sensor",
             unit="kW",
+            state_class="measurement",
         ),
         "total_heat_energy": RegisterDef(
             address=4128,
             datatype=DataType.FLOAT,
             name="total_heat_energy",
             unit="kWh",
+            state_class="total_increasing",
         ),
     }
 
@@ -643,30 +656,35 @@ def _pv_registers() -> dict[str, RegisterDef]:
             datatype=DataType.FLOAT,
             name="pv_surplus",
             unit="kW",
+            state_class="measurement",
         ),
         "electric_heater_power": RegisterDef(
             address=76,
             datatype=DataType.FLOAT,
             name="electric_heater_power",
             unit="kW",
+            state_class="measurement",
         ),
         "pv_production": RegisterDef(
             address=78,
             datatype=DataType.FLOAT,
             name="pv_production",
             unit="kW",
+            state_class="measurement",
         ),
         "house_consumption": RegisterDef(
             address=82,
             datatype=DataType.FLOAT,
             name="house_consumption",
             unit="kW",
+            state_class="measurement",
         ),
         "battery_discharge": RegisterDef(
             address=84,
             datatype=DataType.FLOAT,
             name="battery_discharge",
             unit="kW",
+            state_class="measurement",
         ),
         "battery_soc": RegisterDef(
             address=86,
@@ -707,7 +725,7 @@ def _heat_sink_registers() -> dict[str, RegisterDef]:
             address=1072,
             datatype=DataType.UCHAR,
             name="heat_sink_flow_rate",
-            unit="l/min",
+            unit="L/min",
             # B2 - Durchfluss Wärmesenke (only available with plate heat exchanger / TWT)
         ),
         "heat_sink_charging_pump_signal": RegisterDef(
@@ -998,7 +1016,7 @@ def _glt_registers() -> dict[str, RegisterDef]:
             address=1692,
             datatype=DataType.FLOAT,
             name="ext_humidity",
-            unit="%rF",
+            unit="%",
             writable=True,
             min_val=0,
             max_val=100,
@@ -1305,7 +1323,7 @@ def get_zone_module_registers(
             address=room_base + 4,
             datatype=DataType.UCHAR,
             name=f"zm{z}_room{room}_humidity",
-            unit="%rF",
+            unit="%",
         )
         regs[f"zm{z}_room{room}_mode"] = RegisterDef(
             address=room_base + 5,
@@ -1459,7 +1477,7 @@ def build_register_map(
         address=1392,
         datatype=DataType.FLOAT,
         name="humidity_sensor",
-        unit="%rF",
+        unit="%",
     )
 
     return all_regs
