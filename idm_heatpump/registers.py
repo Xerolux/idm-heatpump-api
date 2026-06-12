@@ -23,12 +23,14 @@ from .const import (
     BIVALENCE_STATE_OPTIONS,
     BOOSTER_FAULT_OPTIONS,
     CIRCUIT_MODE_OPTIONS,
+    EVU_LOCK_OPTIONS,
     HP_OPERATING_MODE_OPTIONS,
     ISC_MODE_OPTIONS,
     ROOM_MODE_OPTIONS,
     SMART_GRID_OPTIONS,
     SOLAR_MODE_OPTIONS,
     SYSTEM_MODE_OPTIONS,
+    VARIABLE_INPUT_OPTIONS,
     ZONE_MODULE_MODE_OPTIONS,
 )
 
@@ -44,6 +46,8 @@ CORE_REGISTERS: dict[str, RegisterDef] = {
         datatype=DataType.UCHAR,
         name="system_mode",
         writable=True,
+        min_val=0,
+        max_val=5,
         enum_options=SYSTEM_MODE_OPTIONS,
         eeprom_sensitive=True,
     ),
@@ -81,7 +85,11 @@ def _system_registers() -> dict[str, RegisterDef]:
             unit="°C",
         ),
         "internal_message": RegisterDef(
-            address=1004, datatype=DataType.UCHAR, name="internal_message"
+            address=1004,
+            datatype=DataType.UINT16,
+            name="internal_message",
+            # Message numbers range from 020 to 999 and therefore do not fit
+            # into a single byte, even though the official doc lists UCHAR.
         ),
         "system_mode": RegisterDef(
             address=1005,
@@ -94,10 +102,18 @@ def _system_registers() -> dict[str, RegisterDef]:
             eeprom_sensitive=True,
         ),
         "smart_grid_status": RegisterDef(
-            address=1006,
+            address=90,
             datatype=DataType.UCHAR,
             name="smart_grid_status",
             enum_options=SMART_GRID_OPTIONS,
+            # 0=Red, 1=Yellow, 2=Green, 4=Supergreen
+        ),
+        "variable_input": RegisterDef(
+            address=1006,
+            datatype=DataType.UCHAR,
+            name="variable_input",
+            enum_options=VARIABLE_INPUT_OPTIONS,
+            # "Variabler Eingang" – configurable special-function input
         ),
         "storage_temp": RegisterDef(
             address=1008, datatype=DataType.FLOAT, name="storage_temp", unit="°C"
@@ -160,6 +176,7 @@ def _system_registers() -> dict[str, RegisterDef]:
             address=1048,
             datatype=DataType.FLOAT,
             name="current_electricity_price",
+            unit="€/MWh",
         ),
         "hp_flow_temp": RegisterDef(
             address=1050, datatype=DataType.FLOAT, name="hp_flow_temp", unit="°C"
@@ -227,7 +244,10 @@ def _hp_status_registers() -> dict[str, RegisterDef]:
             address=1093, datatype=DataType.UCHAR, name="dhw_demand", binary=True
         ),
         "evu_lock": RegisterDef(
-            address=1098, datatype=DataType.UCHAR, name="evu_lock"
+            address=1098,
+            datatype=DataType.UCHAR,
+            name="evu_lock",
+            enum_options=EVU_LOCK_OPTIONS,
         ),
         "hp_sum_alarm": RegisterDef(
             address=1099, datatype=DataType.UCHAR, name="hp_sum_alarm", binary=True
@@ -244,35 +264,39 @@ def _hp_status_registers() -> dict[str, RegisterDef]:
         "compressor_status_4": RegisterDef(
             address=1103, datatype=DataType.UCHAR, name="compressor_status_4", binary=True
         ),
+        # Pump status registers are WORD with -1 = off (0 = min speed,
+        # 100 = max speed), so they must be decoded as signed values.
         "charging_pump_status": RegisterDef(
             address=1104,
-            datatype=DataType.UINT16,
+            datatype=DataType.INT16,
             name="charging_pump_status",
             unit="%",
             state_class="measurement",
         ),
         "brine_pump_status": RegisterDef(
             address=1105,
-            datatype=DataType.UINT16,
+            datatype=DataType.INT16,
             name="brine_pump_status",
             unit="%",
             state_class="measurement",
         ),
         "heat_source_pump_status": RegisterDef(
             address=1106,
-            datatype=DataType.UINT16,
+            datatype=DataType.INT16,
             name="heat_source_pump_status",
+            unit="%",
+            state_class="measurement",
         ),
         "isc_cold_storage_pump_status": RegisterDef(
             address=1108,
-            datatype=DataType.UINT16,
+            datatype=DataType.INT16,
             name="isc_cold_storage_pump_status",
             unit="%",
             state_class="measurement",
         ),
         "isc_recooling_pump_status": RegisterDef(
             address=1109,
-            datatype=DataType.UINT16,
+            datatype=DataType.INT16,
             name="isc_recooling_pump_status",
             unit="%",
             state_class="measurement",
@@ -328,6 +352,8 @@ def _hp_status_registers() -> dict[str, RegisterDef]:
             name="bivalence_point_1_2nd_gen",
             unit="°C",
             writable=True,
+            min_val=-40,
+            max_val=40,
             eeprom_sensitive=True,
         ),
         "bivalence_point_2_2nd_gen": RegisterDef(
@@ -336,6 +362,8 @@ def _hp_status_registers() -> dict[str, RegisterDef]:
             name="bivalence_point_2_2nd_gen",
             unit="°C",
             writable=True,
+            min_val=-40,
+            max_val=40,
             eeprom_sensitive=True,
         ),
         "bivalence_point_1_3rd_gen": RegisterDef(
@@ -344,6 +372,8 @@ def _hp_status_registers() -> dict[str, RegisterDef]:
             name="bivalence_point_1_3rd_gen",
             unit="°C",
             writable=True,
+            min_val=-40,
+            max_val=40,
             eeprom_sensitive=True,
         ),
         "bivalence_point_2_3rd_gen": RegisterDef(
@@ -352,6 +382,8 @@ def _hp_status_registers() -> dict[str, RegisterDef]:
             name="bivalence_point_2_3rd_gen",
             unit="°C",
             writable=True,
+            min_val=-40,
+            max_val=40,
             eeprom_sensitive=True,
         ),
         "bivalence_state": RegisterDef(
@@ -646,55 +678,71 @@ def _isc_registers() -> dict[str, RegisterDef]:
             address=1874,
             datatype=DataType.UCHAR,
             name="isc_mode",
-            writable=True,
             enum_options=ISC_MODE_OPTIONS,
-            exclude_from_write={255},
+            # Read-only per official Navigator 10 doc (0/1/4/8)
         ),
     }
 
 
 def _pv_registers() -> dict[str, RegisterDef]:
+    """PV / energy-management registers (addresses 74-88).
+
+    All of these are RW/RO per the official doc: a building management system
+    (GLT) writes the values to the heat pump, e.g. the PV surplus via address 74.
+    """
     return {
         "pv_surplus": RegisterDef(
             address=74,
             datatype=DataType.FLOAT,
             name="pv_surplus",
             unit="kW",
-            state_class="measurement",
+            writable=True,
         ),
         "electric_heater_power": RegisterDef(
             address=76,
             datatype=DataType.FLOAT,
             name="electric_heater_power",
             unit="kW",
-            state_class="measurement",
+            writable=True,
         ),
         "pv_production": RegisterDef(
             address=78,
             datatype=DataType.FLOAT,
             name="pv_production",
             unit="kW",
-            state_class="measurement",
+            writable=True,
         ),
         "house_consumption": RegisterDef(
             address=82,
             datatype=DataType.FLOAT,
             name="house_consumption",
             unit="kW",
-            state_class="measurement",
+            writable=True,
         ),
         "battery_discharge": RegisterDef(
             address=84,
             datatype=DataType.FLOAT,
             name="battery_discharge",
             unit="kW",
-            state_class="measurement",
+            writable=True,
         ),
         "battery_soc": RegisterDef(
             address=86,
-            datatype=DataType.FLOAT,
+            datatype=DataType.INT16,
             name="battery_soc",
             unit="%",
+            writable=True,
+            min_val=0,
+            max_val=100,
+            # WORD per official doc (single register, not FLOAT), -1 = unavailable
+        ),
+        "pv_target_value": RegisterDef(
+            address=88,
+            datatype=DataType.FLOAT,
+            name="pv_target_value",
+            unit="kW",
+            writable=True,
+            # PV target value (Smartfox and Solar-Log)
         ),
     }
 
@@ -735,11 +783,11 @@ def _heat_sink_registers() -> dict[str, RegisterDef]:
         ),
         "heat_sink_charging_pump_signal": RegisterDef(
             address=1074,
-            datatype=DataType.UINT16,
+            datatype=DataType.INT16,
             name="heat_sink_charging_pump_signal",
             unit="%",
             state_class="measurement",
-            # M73 - Ladepumpe Wärmesenke Steuersignal
+            # M73 - Ladepumpe Wärmesenke Steuersignal (WORD, -1 = off)
         ),
     }
 
@@ -799,19 +847,24 @@ def _external_pump_demand_registers() -> dict[str, RegisterDef]:
     return {
         "ext_demand_groundwater_pump_m15": RegisterDef(
             address=1714,
-            datatype=DataType.UINT16,
+            datatype=DataType.UCHAR,
             name="ext_demand_groundwater_pump_m15",
             unit="%",
             writable=True,
-            # Model specific (SW/SWM/SW Twin). See official doc for applicability.
+            min_val=0,
+            max_val=100,
+            # Groundwater pump M15 (SW/SWM/SW Twin) and brine/intermediate
+            # circuit pump M16 (SW/SWM/SW Twin/SW Max). UCHAR per official doc.
         ),
-        "ext_demand_brine_pump_m16": RegisterDef(
+        "ext_demand_groundwater_pump_m15_sw_max": RegisterDef(
             address=1715,
-            datatype=DataType.UINT16,
-            name="ext_demand_brine_pump_m16",
+            datatype=DataType.UCHAR,
+            name="ext_demand_groundwater_pump_m15_sw_max",
             unit="%",
             writable=True,
-            # For SW Max and similar
+            min_val=0,
+            max_val=100,
+            # Groundwater pump M15 on SW Max. UCHAR per official doc.
         ),
     }
 
@@ -895,17 +948,19 @@ def _booster_registers() -> dict[str, RegisterDef]:
         ),
         "booster_a_source_pump": RegisterDef(
             address=4020,
-            datatype=DataType.UINT16,
+            datatype=DataType.INT16,
             name="booster_a_source_pump",
             unit="%",
             state_class="measurement",
+            # WORD per official doc, -1 = off
         ),
         "booster_a_charging_pump": RegisterDef(
             address=4021,
-            datatype=DataType.UINT16,
+            datatype=DataType.INT16,
             name="booster_a_charging_pump",
             unit="%",
             state_class="measurement",
+            # WORD per official doc, -1 = off
         ),
         "booster_a_compressor": RegisterDef(
             address=4022,
@@ -945,17 +1000,19 @@ def _booster_registers() -> dict[str, RegisterDef]:
         ),
         "booster_b_source_pump": RegisterDef(
             address=4050,
-            datatype=DataType.UINT16,
+            datatype=DataType.INT16,
             name="booster_b_source_pump",
             unit="%",
             state_class="measurement",
+            # WORD per official doc, -1 = off
         ),
         "booster_b_charging_pump": RegisterDef(
             address=4051,
-            datatype=DataType.UINT16,
+            datatype=DataType.INT16,
             name="booster_b_charging_pump",
             unit="%",
             state_class="measurement",
+            # WORD per official doc, -1 = off
         ),
         "booster_b_compressor": RegisterDef(
             address=4052,
@@ -974,6 +1031,8 @@ def _more_cascade_registers() -> dict[str, RegisterDef]:
             name="cascade_bivalence_heating_parallel",
             unit="°C",
             writable=True,
+            min_val=-40,
+            max_val=40,
         ),
         "cascade_bivalence_heating_alternative": RegisterDef(
             address=1227,
@@ -981,6 +1040,8 @@ def _more_cascade_registers() -> dict[str, RegisterDef]:
             name="cascade_bivalence_heating_alternative",
             unit="°C",
             writable=True,
+            min_val=-40,
+            max_val=40,
         ),
         "cascade_bivalence_cooling_parallel": RegisterDef(
             address=1228,
@@ -988,6 +1049,8 @@ def _more_cascade_registers() -> dict[str, RegisterDef]:
             name="cascade_bivalence_cooling_parallel",
             unit="°C",
             writable=True,
+            min_val=-40,
+            max_val=40,
         ),
         "cascade_bivalence_cooling_alternative": RegisterDef(
             address=1229,
@@ -995,6 +1058,8 @@ def _more_cascade_registers() -> dict[str, RegisterDef]:
             name="cascade_bivalence_cooling_alternative",
             unit="°C",
             writable=True,
+            min_val=-40,
+            max_val=40,
         ),
         "cascade_bivalence_dhw_parallel": RegisterDef(
             address=1230,
@@ -1002,6 +1067,8 @@ def _more_cascade_registers() -> dict[str, RegisterDef]:
             name="cascade_bivalence_dhw_parallel",
             unit="°C",
             writable=True,
+            min_val=-40,
+            max_val=40,
         ),
         "cascade_bivalence_dhw_alternative": RegisterDef(
             address=1231,
@@ -1009,6 +1076,8 @@ def _more_cascade_registers() -> dict[str, RegisterDef]:
             name="cascade_bivalence_dhw_alternative",
             unit="°C",
             writable=True,
+            min_val=-40,
+            max_val=40,
         ),
     }
 
@@ -1288,15 +1357,18 @@ def get_zone_module_registers(
 ) -> dict[str, RegisterDef]:
     """Return all registers for a specific zone module (1-10).
 
-    Each zone module on Navigator 10 / current hardware supports 6 rooms (1-6).
-    Older references sometimes mentioned 8 rooms — the library defaults to 6 for accuracy.
+    Each zone module supports up to 6 rooms (1-6).
     Zone module base addresses: 2000, 2065, 2130, 2195, 2260, 2325, 2390, 2455, 2520, 2585
-    (65 registers / 0x41 bytes per zone module).
+    (65 addresses apart; registers used per module: base .. base+43).
+
+    Room register layout (verified against the official Navigator 10 doc):
+    each room occupies 7 registers starting at base+2, e.g. zone module 1:
+    room 1 = 2002/2004/2006/2007/2008, room 2 = 2009/2011/2013/2014/2015, ...
     """
     if not (1 <= zone_index <= 10):
         raise ValueError(f"Zone index must be 1-10, got {zone_index}")
-    if not (1 <= room_count <= 8):
-        raise ValueError(f"Room count must be 1-8, got {room_count} (Navigator 10 typically uses 6)")
+    if not (1 <= room_count <= 6):
+        raise ValueError(f"Room count must be 1-6, got {room_count}")
 
     base = 2000 + (zone_index - 1) * 65
     z = zone_index
@@ -1315,12 +1387,16 @@ def get_zone_module_registers(
     )
 
     for room in range(1, room_count + 1):
-        room_base = base + 2 + (room - 1) * 8
+        room_base = base + 2 + (room - 1) * 7
         regs[f"zm{z}_room{room}_temp"] = RegisterDef(
             address=room_base,
             datatype=DataType.FLOAT,
             name=f"zm{z}_room{room}_temp",
             unit="°C",
+            writable=True,
+            min_val=15,
+            max_val=30,
+            # RW when using external (GLT) room sensors, RO with iDM sensors
         )
         regs[f"zm{z}_room{room}_setpoint"] = RegisterDef(
             address=room_base + 2,
@@ -1328,19 +1404,25 @@ def get_zone_module_registers(
             name=f"zm{z}_room{room}_setpoint",
             unit="°C",
             writable=True,
+            # Setpoint can only be communicated in 0.5 °C steps
         )
         regs[f"zm{z}_room{room}_humidity"] = RegisterDef(
             address=room_base + 4,
             datatype=DataType.UCHAR,
             name=f"zm{z}_room{room}_humidity",
             unit="%",
-            state_class="measurement",
+            writable=True,
+            min_val=0,
+            max_val=100,
+            # RW when using external (GLT) room sensors, RO with iDM sensors
         )
         regs[f"zm{z}_room{room}_mode"] = RegisterDef(
             address=room_base + 5,
             datatype=DataType.UCHAR,
             name=f"zm{z}_room{room}_mode",
             writable=True,
+            min_val=0,
+            max_val=4,
             enum_options=ROOM_MODE_OPTIONS,
         )
         regs[f"zm{z}_room{room}_relay"] = RegisterDef(
