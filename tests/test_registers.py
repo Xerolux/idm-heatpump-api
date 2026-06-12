@@ -2,10 +2,13 @@
 
 import pytest
 
+from idm_heatpump.client import DataType
 from idm_heatpump.registers import (
     _energy_registers,
     _heat_sink_registers,
+    _hp_status_registers,
     _pv_registers,
+    _system_registers,
     build_register_map,
     get_heating_circuit_registers,
     get_zone_module_registers,
@@ -45,17 +48,106 @@ class TestEnergyRegisters:
 
 
 class TestPVRegisters:
-    """Test PV register definitions."""
+    """Test PV register definitions (addresses 74-88, all RW/RO per official doc)."""
 
-    def test_pv_power_registers_have_state_class(self):
-        """All read-only PV power registers should have state_class=measurement."""
+    def test_pv_power_registers(self):
+        """All PV power registers are FLOAT kW and writable (RW/RO)."""
         regs = _pv_registers()
-        power_keys = ["pv_surplus", "electric_heater_power", "pv_production", "house_consumption", "battery_discharge"]
+        power_keys = ["pv_surplus", "electric_heater_power", "pv_production", "house_consumption", "battery_discharge", "pv_target_value"]
 
         for key in power_keys:
             reg = regs[key]
             assert reg.unit == "kW", f"{key} should have unit=kW"
-            assert reg.state_class == "measurement", f"{key} should have state_class=measurement"
+            assert reg.datatype == DataType.FLOAT, f"{key} should be FLOAT"
+            assert reg.writable, f"{key} should be writable (RW/RO)"
+
+    def test_pv_addresses(self):
+        """PV register addresses match the official Navigator 10 doc."""
+        regs = _pv_registers()
+        expected = {
+            "pv_surplus": 74,
+            "electric_heater_power": 76,
+            "pv_production": 78,
+            "house_consumption": 82,
+            "battery_discharge": 84,
+            "battery_soc": 86,
+            "pv_target_value": 88,
+        }
+        for key, addr in expected.items():
+            assert regs[key].address == addr, f"{key} should be at address {addr}"
+
+    def test_battery_soc_is_single_register(self):
+        """battery_soc (86) is WORD (1 register, signed: -1 = unavailable), not FLOAT."""
+        reg = _pv_registers()["battery_soc"]
+        assert reg.datatype == DataType.INT16
+        assert reg.size == 1
+
+
+class TestSystemRegisters:
+    """Verify system register addresses/types against the official doc."""
+
+    def test_smart_grid_status_address(self):
+        """Smart Grid status is at address 90 on Navigator 10 (not 1006)."""
+        regs = _system_registers()
+        assert regs["smart_grid_status"].address == 90
+
+    def test_variable_input_address(self):
+        """Address 1006 is the variable input ('Variabler Eingang')."""
+        regs = _system_registers()
+        reg = regs["variable_input"]
+        assert reg.address == 1006
+        assert not reg.writable
+
+    def test_internal_message_is_uint16(self):
+        """Message numbers go up to 999, so 1004 must not be masked to one byte."""
+        regs = _system_registers()
+        assert regs["internal_message"].datatype == DataType.UINT16
+
+    def test_dhw_setpoint_range(self):
+        """DHW setpoint (1032) range is 35-95 °C per official doc."""
+        reg = _system_registers()["dhw_setpoint"]
+        assert reg.min_val == 35
+        assert reg.max_val == 95
+
+
+class TestHpStatusRegisters:
+    """Verify heat pump status registers against the official doc."""
+
+    def test_pump_status_registers_signed(self):
+        """Pump status WORD registers use -1 = off and must decode signed."""
+        regs = _hp_status_registers()
+        for key in [
+            "charging_pump_status",
+            "brine_pump_status",
+            "heat_source_pump_status",
+            "isc_cold_storage_pump_status",
+            "isc_recooling_pump_status",
+        ]:
+            reg = regs[key]
+            assert reg.datatype == DataType.INT16, f"{key} should be INT16"
+            assert reg.unit == "%", f"{key} should have unit=%"
+
+    def test_bivalence_points_range(self):
+        """Bivalence points (1120-1123) accept -40..40 °C."""
+        regs = _hp_status_registers()
+        for key in [
+            "bivalence_point_1_2nd_gen",
+            "bivalence_point_2_2nd_gen",
+            "bivalence_point_1_3rd_gen",
+            "bivalence_point_2_3rd_gen",
+        ]:
+            reg = regs[key]
+            assert reg.min_val == -40, f"{key} min should be -40"
+            assert reg.max_val == 40, f"{key} max should be 40"
+            assert reg.datatype == DataType.INT16, f"{key} should be INT16"
+
+
+class TestIscMode:
+    """ISC mode (1874) is read-only per official doc."""
+
+    def test_isc_mode_read_only(self):
+        regs = build_register_map()
+        assert not regs["isc_mode"].writable
 
 
 class TestHeatSinkRegisters:
@@ -144,9 +236,79 @@ class TestZoneModules:
         with pytest.raises(ValueError):
             get_zone_module_registers(11)
 
-    def test_zone_module_humidity_has_state_class(self):
-        """Zone module humidity registers should have state_class."""
+    def test_zone_module_invalid_room_count(self):
+        """Zone modules support at most 6 rooms."""
+        with pytest.raises(ValueError):
+            get_zone_module_registers(1, room_count=7)
+        with pytest.raises(ValueError):
+            get_zone_module_registers(1, room_count=0)
+
+    def test_zone_module_humidity(self):
+        """Zone module humidity registers are % and writable (RW/RO for GLT sensors)."""
         regs = get_zone_module_registers(1, room_count=1)
         humidity_reg = regs["zm1_room1_humidity"]
         assert humidity_reg.unit == "%"
-        assert humidity_reg.state_class == "measurement"
+        assert humidity_reg.writable
+        assert humidity_reg.min_val == 0
+        assert humidity_reg.max_val == 100
+
+    def test_zone_module_room_addresses(self):
+        """Room blocks are 7 registers wide; addresses match the official doc."""
+        regs = get_zone_module_registers(1, room_count=6)
+        # Zone module 1, room 1: 2002/2004/2006/2007/2008
+        assert regs["zm1_room1_temp"].address == 2002
+        assert regs["zm1_room1_setpoint"].address == 2004
+        assert regs["zm1_room1_humidity"].address == 2006
+        assert regs["zm1_room1_mode"].address == 2007
+        assert regs["zm1_room1_relay"].address == 2008
+        # Zone module 1, room 2 starts at 2009
+        assert regs["zm1_room2_temp"].address == 2009
+        assert regs["zm1_room2_setpoint"].address == 2011
+        assert regs["zm1_room2_humidity"].address == 2013
+        assert regs["zm1_room2_mode"].address == 2014
+        assert regs["zm1_room2_relay"].address == 2015
+        # Zone module 1, room 6 ends at 2043
+        assert regs["zm1_room6_temp"].address == 2037
+        assert regs["zm1_room6_relay"].address == 2043
+
+        # Zone module 2 starts at 2065, room 1 temp at 2067
+        regs2 = get_zone_module_registers(2, room_count=1)
+        assert regs2["zm2_mode_heat_cool"].address == 2065
+        assert regs2["zm2_room1_temp"].address == 2067
+
+        # Zone module 10 starts at 2585, last relay at 2628
+        regs10 = get_zone_module_registers(10, room_count=6)
+        assert regs10["zm10_mode_heat_cool"].address == 2585
+        assert regs10["zm10_room6_relay"].address == 2628
+
+
+class TestHeatingCircuitAddresses:
+    """Verify heating circuit addresses against the official doc."""
+
+    def test_circuit_a_addresses(self):
+        regs = get_heating_circuit_registers("A")
+        assert regs["hc_a_flow_temp"].address == 1350
+        assert regs["hc_a_room_temp"].address == 1364
+        assert regs["hc_a_setpoint_flow_temp"].address == 1378
+        assert regs["hc_a_mode"].address == 1393
+        assert regs["hc_a_room_setpoint_heat_normal"].address == 1401
+        assert regs["hc_a_heating_curve"].address == 1429
+        assert regs["hc_a_heating_limit"].address == 1442
+        assert regs["hc_a_active_mode"].address == 1498
+        assert regs["hc_a_parallel_shift"].address == 1505
+        assert regs["hc_a_ext_room_temp"].address == 1650
+
+    def test_circuit_g_addresses(self):
+        regs = get_heating_circuit_registers("G")
+        assert regs["hc_g_flow_temp"].address == 1362
+        assert regs["hc_g_mode"].address == 1399
+        assert regs["hc_g_heating_limit"].address == 1448
+        assert regs["hc_g_setpoint_flow_cooling"].address == 1497
+        assert regs["hc_g_parallel_shift"].address == 1511
+        assert regs["hc_g_ext_room_temp"].address == 1662
+
+    def test_heating_curve_range(self):
+        regs = get_heating_circuit_registers("A")
+        curve = regs["hc_a_heating_curve"]
+        assert curve.min_val == 0.1
+        assert curve.max_val == 3.5
