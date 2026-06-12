@@ -84,7 +84,7 @@ ROOM_MODE_OPTIONS: dict[int, str] = {
 
 
 HP_OPERATING_MODE_OPTIONS: dict[int, str] = {
-    0: "Off",
+    0: "Standby",
     1: "Heating",
     2: "Cooling",
     4: "DHW",
@@ -92,11 +92,28 @@ HP_OPERATING_MODE_OPTIONS: dict[int, str] = {
 }
 
 
+# Address 90 (Navigator 10): Smart Grid status
 SMART_GRID_OPTIONS: dict[int, str] = {
-    0: "EVU Lock + No Cheap Power",
-    1: "EVU Draw + No Cheap Power",
-    2: "No EVU Draw + Cheap Power",
-    4: "EVU Lock + Cheap Power",
+    0: "Red",
+    1: "Yellow",
+    2: "Green",
+    4: "Supergreen",
+}
+
+
+# Address 1006 (Navigator 10): variable input ("Variabler Eingang")
+VARIABLE_INPUT_OPTIONS: dict[int, str] = {
+    0: "Not configured",
+    1: "External DHW Charging",
+    2: "PV / Digital Input",
+    3: "External Heat/Cool Switch",
+}
+
+
+# Address 1098: EVU lock contact (0 = locked / "gesperrt")
+EVU_LOCK_OPTIONS: dict[int, str] = {
+    0: "Locked",
+    1: "Not Locked",
 }
 
 
