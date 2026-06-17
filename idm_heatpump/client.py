@@ -18,10 +18,12 @@ from pymodbus.exceptions import ConnectionException, ModbusException
 from .const import (
     DEFAULT_TIMEOUT,
     FEATURE_CASCADE,
+    FEATURE_HEATING_CIRCUITS,
     FEATURE_ISC,
     FEATURE_PV,
     FEATURE_SOLAR,
     FEATURE_ZONE_MODULES,
+    HEATING_CIRCUIT_LETTERS,
     MAX_HEATING_CIRCUITS,
     MAX_RETRIES,
     MAX_ZONE_MODULES,
@@ -390,7 +392,7 @@ class IdmModbusClient:
 
         features: set[str] = set()
         if active_circuits:
-            features.add(FEATURE_ZONE_MODULES if False else "heating_circuits")
+            features.add(FEATURE_HEATING_CIRCUITS)
         if zone_modules > 0:
             features.add(FEATURE_ZONE_MODULES)
         if has_solar:
@@ -766,6 +768,3 @@ class IdmModbusClient:
         self._register_failures.clear()
         _LOGGER.info("Permanently failed registers have been reset")
 
-
-# Required for detect_model circuit letter lookup
-HEATING_CIRCUIT_LETTERS = list("ABCDEFG")
