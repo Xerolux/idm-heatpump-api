@@ -767,4 +767,3 @@ class IdmModbusClient:
         self._permanently_failed_registers.clear()
         self._register_failures.clear()
         _LOGGER.info("Permanently failed registers have been reset")
-
