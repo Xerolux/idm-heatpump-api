@@ -13,6 +13,7 @@ from idm_heatpump.const import (
     FEATURE_ZONE_MODULES,
     MODEL_NAVIGATOR_10,
     MODEL_NAVIGATOR_20,
+    MODEL_UNKNOWN,
 )
 
 
@@ -72,5 +73,5 @@ def test_model_name_defaults_when_detection_inconclusive() -> None:
 
     model_info = asyncio.run(client.detect_model())
 
-    assert model_info.model_name == "Unknown"
+    assert model_info.model_name == MODEL_UNKNOWN
     assert client.model_name == MODEL_NAVIGATOR_20
