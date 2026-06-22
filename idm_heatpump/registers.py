@@ -57,10 +57,10 @@ CORE_REGISTERS: dict[str, RegisterDef] = {
         name="storage_temp",
         unit="°C",
     ),
-    "heatpump_status": RegisterDef(
+    "hp_operating_mode": RegisterDef(
         address=1090,
         datatype=DataType.UCHAR,
-        name="heatpump_status",
+        name="hp_operating_mode",
         enum_options=HP_OPERATING_MODE_OPTIONS,
     ),
     "error_acknowledge": RegisterDef(

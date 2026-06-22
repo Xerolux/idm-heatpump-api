@@ -75,7 +75,7 @@ jobs:
       - name: Bump version in pyproject.toml
         run: |
           NEW="${{ steps.version.outputs.version }}"
-          sed -i "s/version = \".*\"/version = \"${NEW}\"/" pyproject.toml
+          sed -i 's/^version = ".*"/version = "'"${NEW}"'"/' pyproject.toml
           echo "Bumped to ${NEW}"
 
       - name: Commit and tag

@@ -9,7 +9,7 @@ exclude = ["custom_components*", "images*", "docs*", "tests*", "*.egg-info*"]
 
 [project]
 name = "idm-heatpump-api"
-version = "0.3.3"
+version = "0.3.4"
 authors = [
   { name="Basti (Xerolux)", email="git@xerolux.de" },
 ]
@@ -31,7 +31,7 @@ classifiers = [
 
 keywords = ["idm", "heatpump", "modbus", "navigator", "home-assistant", "hass", "heating", "modbus-tcp"]
 dependencies = [
-    "pymodbus>=3.7.0,<4.0.0",
+    "pymodbus>=3.7.0",
 ]
 
 [project.optional-dependencies]
@@ -58,7 +58,7 @@ dev = [
 
 [tool.ruff]
 line-length = 100
-target-version = "0.3.3"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
@@ -68,7 +68,7 @@ ignore = ["E501"]  # Line too long (handled by formatter)
 known-first-party = ["idm_heatpump"]
 
 [tool.mypy]
-python_version = "0.3.3"
+python_version = "3.12"
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true

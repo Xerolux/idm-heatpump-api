@@ -6,7 +6,6 @@ import enum
 
 DEFAULT_PORT: int = 502
 DEFAULT_SLAVE_ID: int = 1
-UNUSED_VALUE: float = -1.0
 DEFAULT_TIMEOUT: float = 10.0
 MAX_RETRIES: int = 3
 RETRY_BACKOFF_BASE: float = 0.5
