@@ -33,9 +33,9 @@ jobs:
       - name: Run linting
         run: |
           pip install ruff
-          ruff check idm_heatpump tests --exit-zero
+          ruff check idm_heatpump tests
 
       - name: Check type hints
         run: |
           pip install mypy
-          mypy idm_heatpump --ignore-missing-imports || true
+          mypy idm_heatpump --ignore-missing-imports

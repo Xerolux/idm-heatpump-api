@@ -41,7 +41,6 @@ _MAX_GROUP_SIZE = 40
 _PERMANENT_FAILURE_THRESHOLD = 3
 
 _DETECT_HC_FLOW_BASE = 1350
-_DETECT_HC_ROOM_BASE = 1364
 _DETECT_HC_STEP = 2
 _DETECT_ZONE_MODULE_BASE = 2000
 _DETECT_ZONE_MODULE_STEP = 65
@@ -160,6 +159,8 @@ class IdmModbusClient:
             raise ValueError(f"Port must be between 1 and 65535, got {port}")
         if not (1 <= slave_id <= 247):
             raise ValueError(f"Slave ID must be between 1 and 247, got {slave_id}")
+        if max_retries < 1:
+            raise ValueError(f"max_retries must be >= 1, got {max_retries}")
 
         self._host = host
         self._port = int(port)
@@ -211,7 +212,7 @@ class IdmModbusClient:
         )
         if not await self._client.connect():
             self._client = None
-            raise ConnectionException(
+            raise ConnectionException(  # type: ignore[no-untyped-call]
                 f"Failed to connect to {self._host}:{self._port}"
             )
         _LOGGER.debug("Connected to %s:%s", self._host, self._port)
@@ -234,7 +235,7 @@ class IdmModbusClient:
     def _require_client(self) -> AsyncModbusTcpClient:
         """Return the client or raise if not connected (call while holding lock)."""
         if self._client is None or not self._client.connected:
-            raise ConnectionException(
+            raise ConnectionException(  # type: ignore[no-untyped-call]
                 f"Not connected to {self._host}:{self._port}"
             )
         return self._client
@@ -260,7 +261,7 @@ class IdmModbusClient:
                             address=address, count=count, **kwargs
                         )
                     if result.isError():
-                        raise ModbusException(
+                        raise ModbusException(  # type: ignore[no-untyped-call]
                             f"Modbus error reading address {address}: {result}"
                         )
                     return list(result.registers)
@@ -273,7 +274,7 @@ class IdmModbusClient:
                     if attempt == self._max_retries - 1:
                         raise
                     await asyncio.sleep(RETRY_BACKOFF_BASE * (2 ** attempt))
-            raise ModbusException("Unexpected: all retries exhausted")
+            raise RuntimeError("Unreachable: max_retries validated to be >= 1")
 
     async def _try_reconnect(self) -> None:
         """Attempt a single reconnect (must be called while holding self._lock)."""
@@ -299,7 +300,7 @@ class IdmModbusClient:
                         **kwargs,
                     )
                     if result.isError():
-                        raise ModbusException(
+                        raise ModbusException(  # type: ignore[no-untyped-call]
                             f"Modbus error writing address {address}: {result}"
                         )
                     return
