@@ -196,6 +196,17 @@ class IdmModbusClient:
     def model_info(self) -> IdmModelInfo | None:
         return self._model_info
 
+    @property
+    def model_name(self) -> str:
+        """Return the detected model name, falling back to the default model.
+
+        Falls back to MODEL_NAVIGATOR_20 if detect_model() has not been
+        called yet, or if detection was inconclusive (MODEL_UNKNOWN).
+        """
+        if self._model_info is None or self._model_info.model_name == MODEL_UNKNOWN:
+            return MODEL_NAVIGATOR_20
+        return self._model_info.model_name
+
     async def connect(self) -> None:
         """Establish a connection to the Modbus device."""
         async with self._lock:
