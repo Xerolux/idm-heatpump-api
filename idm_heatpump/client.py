@@ -95,6 +95,7 @@ class IdmModelInfo:
     has_pv: bool
     has_cascade: bool
     features: set[str] = field(default_factory=set)
+    firmware_version: float | None = None
 
     @property
     def is_pro(self) -> bool:
@@ -195,6 +196,17 @@ class IdmModbusClient:
     @property
     def model_info(self) -> IdmModelInfo | None:
         return self._model_info
+
+    @property
+    def model_name(self) -> str:
+        """Return the detected model name, falling back to the default model.
+
+        Falls back to MODEL_NAVIGATOR_20 if detect_model() has not been
+        called yet, or if detection was inconclusive (MODEL_UNKNOWN).
+        """
+        if self._model_info is None or self._model_info.model_name == MODEL_UNKNOWN:
+            return MODEL_NAVIGATOR_20
+        return self._model_info.model_name
 
     async def connect(self) -> None:
         """Establish a connection to the Modbus device."""
@@ -425,6 +437,17 @@ class IdmModbusClient:
         else:
             model_name = MODEL_UNKNOWN
 
+        firmware_version: float | None = None
+        fw_regs = await self.probe_register(4120, 2)
+        if fw_regs is not None:
+            try:
+                raw = struct.pack("<HH", fw_regs[0], fw_regs[1])
+                val = struct.unpack("<f", raw)[0]
+                if not (math.isnan(val) or math.isinf(val)):
+                    firmware_version = round(val, 2)
+            except (struct.error, ValueError):
+                pass
+
         info = IdmModelInfo(
             model_name=model_name,
             active_heating_circuits=active_circuits,
@@ -434,10 +457,11 @@ class IdmModbusClient:
             has_pv=has_pv,
             has_cascade=has_cascade,
             features=features,
+            firmware_version=firmware_version,
         )
         self._model_info = info
         _LOGGER.info(
-            "Detected IDM model: %s (circuits=%s, zones=%d, solar=%s, isc=%s, pv=%s, cascade=%s)",
+            "Detected IDM model: %s (circuits=%s, zones=%d, solar=%s, isc=%s, pv=%s, cascade=%s, firmware=%s)",
             model_name,
             active_circuits,
             zone_modules,
@@ -445,6 +469,7 @@ class IdmModbusClient:
             has_isc,
             has_pv,
             has_cascade,
+            firmware_version,
         )
         return info
 

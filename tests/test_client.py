@@ -12,6 +12,8 @@ from idm_heatpump.const import (
     FEATURE_SOLAR,
     FEATURE_ZONE_MODULES,
     MODEL_NAVIGATOR_10,
+    MODEL_NAVIGATOR_20,
+    MODEL_UNKNOWN,
 )
 
 
@@ -40,6 +42,7 @@ def test_detect_model_uses_shared_feature_constants() -> None:
             (74, 2): [0, 16968],
             (1147, 1): [1],
             (1072, 1): [1],
+            (4120, 2): [26214, 16622],  # firmware version 7.45
         }
     )
 
@@ -56,3 +59,22 @@ def test_detect_model_uses_shared_feature_constants() -> None:
         FEATURE_PV,
         FEATURE_CASCADE,
     }
+    assert model_info.firmware_version == 7.45
+    assert client.model_name == MODEL_NAVIGATOR_10
+
+
+def test_model_name_defaults_before_detection() -> None:
+    """model_name should fall back to the default model until detection runs."""
+    client = IdmModbusClient("127.0.0.1")
+    assert client.model_name == MODEL_NAVIGATOR_20
+
+
+def test_model_name_defaults_when_detection_inconclusive() -> None:
+    """model_name should fall back to the default model when detection is inconclusive."""
+    client = ProbeOnlyClient({})
+
+    model_info = asyncio.run(client.detect_model())
+
+    assert model_info.model_name == MODEL_UNKNOWN
+    assert client.model_name == MODEL_NAVIGATOR_20
+    assert model_info.firmware_version is None

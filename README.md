@@ -67,7 +67,7 @@ async def main():
 
         # Auto-detect model and capabilities
         model_info = await client.detect_model()
-        print(f"Detected: {model_info.model_name}")
+        print(f"Detected: {model_info.model_name} (firmware {model_info.firmware_version})")
         print(f"Circuits: {model_info.active_heating_circuits}")
         print(f"Solar: {model_info.has_solar}, ISC: {model_info.has_isc}")
 
