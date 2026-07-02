@@ -19,6 +19,7 @@ This library is primarily designed to power the unofficial [IDM Heatpump Home As
 > - GitHub Pages: https://xerolux.github.io/idm-heatpump-api/
 > - GitHub Wiki: https://github.com/Xerolux/idm-heatpump-api/wiki
 > - PyPI: https://pypi.org/project/idm-heatpump-api/
+> - API contract: [docs/API-Contract.md](docs/API-Contract.md)
 >
 > The `docs/` directory is the single source of truth and is used for both GitHub Pages and Wiki sync.
 
