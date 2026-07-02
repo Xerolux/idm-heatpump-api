@@ -39,7 +39,7 @@ jobs:
       - name: Check type hints
         run: |
           pip install mypy
-          mypy idm_heatpump --ignore-missing-imports
+          mypy idm_heatpump
 
       - name: Check typed package metadata
         run: |
@@ -62,7 +62,7 @@ jobs:
           reveal_type(registers)
           PY
 
-          mypy /tmp/idm_type_consumer.py --ignore-missing-imports
+          mypy /tmp/idm_type_consumer.py
 
       - name: Build and inspect package artifacts
         run: |

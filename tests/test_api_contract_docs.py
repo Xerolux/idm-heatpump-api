@@ -35,6 +35,13 @@ def test_typed_package_marker_is_shipped() -> None:
     assert 'idm_heatpump = ["py.typed"]' in pyproject
 
 
+def test_mypy_configuration_is_strict() -> None:
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert "strict = true" in pyproject
+    assert "disallow_untyped_defs = false" not in pyproject
+
+
 def test_ci_builds_and_import_checks_distribution_artifacts() -> None:
     workflow = (ROOT / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
 
