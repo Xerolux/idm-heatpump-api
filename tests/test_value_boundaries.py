@@ -6,7 +6,15 @@ import asyncio
 
 import pytest
 
-from idm_heatpump.client import DataType, IdmModbusClient, RegisterDef, RegisterType, WriteClass
+from idm_heatpump.client import (
+    DataType,
+    IdmModbusClient,
+    IdmModelInfo,
+    RegisterDef,
+    RegisterType,
+    WriteClass,
+)
+from idm_heatpump.const import MODEL_NAVIGATOR_10, MODEL_NAVIGATOR_20
 
 from .fake_modbus import FakeModbusTransport
 
@@ -245,6 +253,43 @@ def test_failed_eeprom_write_does_not_start_throttle_window() -> None:
         asyncio.run(client.write_register(reg, 1))
 
     assert client._last_eeprom_writes == {}
+
+
+def test_write_register_rejects_register_unavailable_for_detected_model() -> None:
+    client = IdmModbusClient("127.0.0.1")
+    client._model_info = IdmModelInfo(
+        model_name=MODEL_NAVIGATOR_20,
+        active_heating_circuits=["A"],
+        zone_modules=0,
+        has_solar=False,
+        has_isc=False,
+        has_pv=False,
+        has_cascade=False,
+    )
+    reg = RegisterDef(4108, DataType.FLOAT, "power_limit_hp", writable=True)
+
+    with pytest.raises(ValueError, match="not available for detected model"):
+        asyncio.run(client.write_register(reg, -1.0))
+
+
+def test_write_register_accepts_register_available_for_detected_model() -> None:
+    transport = FakeModbusTransport()
+    client = IdmModbusClient("127.0.0.1")
+    client._client = transport  # type: ignore[assignment]
+    client._model_info = IdmModelInfo(
+        model_name=MODEL_NAVIGATOR_10,
+        active_heating_circuits=["A"],
+        zone_modules=0,
+        has_solar=False,
+        has_isc=False,
+        has_pv=False,
+        has_cascade=False,
+    )
+    reg = RegisterDef(4108, DataType.FLOAT, "power_limit_hp", writable=True)
+
+    asyncio.run(client.write_register(reg, -1.0))
+
+    assert transport.write_calls == [(4108, client.encode_value(-1.0, reg))]
 
 
 def test_cyclic_write_sets_and_expires_heartbeat_deadline() -> None:

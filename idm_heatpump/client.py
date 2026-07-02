@@ -645,6 +645,8 @@ class IdmModbusClient:
         self._record_successful_write(reg)
 
     def _validate_write_allowed(self, reg: RegisterDef, value: Any) -> None:
+        self._validate_model_availability(reg)
+
         if reg.exclude_from_write and int(value) in reg.exclude_from_write:
             raise ValueError(
                 f"Value {value} for '{reg.name}' is not writable "
@@ -667,6 +669,19 @@ class IdmModbusClient:
                         f"EEPROM-sensitive register '{reg.name}' was written too recently "
                         f"(try again in {remaining:.1f}s)"
                     )
+
+    def _validate_model_availability(self, reg: RegisterDef) -> None:
+        if self._model_info is None:
+            return
+
+        from .registers import build_register_map
+
+        available = build_register_map(model_info=self._model_info).get(reg.name)
+        if available is None or available.address != reg.address:
+            raise ValueError(
+                f"Register '{reg.name}' is not available for detected model "
+                f"{self._model_info.model_name}"
+            )
 
     def _record_successful_write(self, reg: RegisterDef) -> None:
         if reg.write_class is WriteClass.EEPROM:
