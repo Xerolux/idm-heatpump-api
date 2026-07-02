@@ -111,6 +111,17 @@ class IdmModelInfo:
         return self.zone_modules > 0
 
 
+@dataclass(frozen=True)
+class ModbusErrorContext:
+    operation: str
+    address: int
+    count: int
+    register_type: str
+    error_type: str
+    message: str
+    attempt: int
+
+
 @dataclass
 class RegisterDef:
     address: int
@@ -219,6 +230,7 @@ class IdmModbusClient:
         self._model_info: IdmModelInfo | None = None
         self._last_eeprom_writes: dict[str, float] = {}
         self._cyclic_write_deadlines: dict[str, float] = {}
+        self._last_error_context: ModbusErrorContext | None = None
         self._eeprom_write_interval = DEFAULT_EEPROM_WRITE_INTERVAL
         self._time = time.monotonic
 
@@ -331,12 +343,28 @@ class IdmModbusClient:
                             f"got {len(registers)} registers, expected {count}"
                         )
                     return registers
-                except ConnectionException:
+                except ConnectionException as err:
+                    self._record_error_context(
+                        "read",
+                        address,
+                        count,
+                        reg_type,
+                        err,
+                        attempt + 1,
+                    )
                     if attempt == self._max_retries - 1:
                         raise
                     await self._try_reconnect()
                     await asyncio.sleep(RETRY_BACKOFF_BASE * (2**attempt))
-                except ModbusException:
+                except ModbusException as err:
+                    self._record_error_context(
+                        "read",
+                        address,
+                        count,
+                        reg_type,
+                        err,
+                        attempt + 1,
+                    )
                     if attempt == self._max_retries - 1:
                         raise
                     await asyncio.sleep(RETRY_BACKOFF_BASE * (2**attempt))
@@ -370,15 +398,56 @@ class IdmModbusClient:
                             f"Modbus error writing address {address}: {result}"
                         )
                     return
-                except ConnectionException:
+                except ConnectionException as err:
+                    self._record_error_context(
+                        "write",
+                        address,
+                        len(values),
+                        RegisterType.HOLDING,
+                        err,
+                        attempt + 1,
+                    )
                     if attempt == self._max_retries - 1:
                         raise
                     await self._try_reconnect()
                     await asyncio.sleep(RETRY_BACKOFF_BASE * (2**attempt))
-                except ModbusException:
+                except ModbusException as err:
+                    self._record_error_context(
+                        "write",
+                        address,
+                        len(values),
+                        RegisterType.HOLDING,
+                        err,
+                        attempt + 1,
+                    )
                     if attempt == self._max_retries - 1:
                         raise
                     await asyncio.sleep(RETRY_BACKOFF_BASE * (2**attempt))
+
+    def _record_error_context(
+        self,
+        operation: str,
+        address: int,
+        count: int,
+        reg_type: RegisterType,
+        err: Exception,
+        attempt: int,
+    ) -> None:
+        self._last_error_context = ModbusErrorContext(
+            operation=operation,
+            address=address,
+            count=count,
+            register_type=reg_type.value,
+            error_type=type(err).__name__,
+            message=str(err),
+            attempt=attempt,
+        )
+
+    def get_last_error_context(self) -> ModbusErrorContext | None:
+        return self._last_error_context
+
+    def clear_last_error_context(self) -> None:
+        self._last_error_context = None
 
     async def probe_register(self, address: int, count: int = 1) -> list[int] | None:
         """Try to read a register without affecting failure tracking.

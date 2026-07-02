@@ -134,8 +134,9 @@ from idm_heatpump import IdmModbusClient, build_register_map
 The public API is the package root `__all__` contract and is protected by a
 snapshot test. It currently includes:
 
-- Client and metadata types: `IdmModbusClient`, `IdmModelInfo`, `RegisterDef`,
-  `DataType`, `RegisterType`, `WriteClass`
+- Client and metadata types: `IdmModbusClient`, `IdmModelInfo`,
+  `ModbusErrorContext`, `RegisterDef`, `DataType`, `RegisterType`,
+  `WriteClass`
 - Register builders: `build_register_map`, `get_all_registers`, `get_register`,
   `get_detection_registers`, `get_heating_circuit_registers`,
   `get_zone_module_registers`

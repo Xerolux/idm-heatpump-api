@@ -95,6 +95,19 @@ def test_incomplete_fake_response_raises_modbus_exception() -> None:
     with pytest.raises(ModbusException, match="got 1 registers, expected 2"):
         asyncio.run(client._read_registers(1000, 2))
 
+    error = client.get_last_error_context()
+    assert error is not None
+    assert error.operation == "read"
+    assert error.address == 1000
+    assert error.count == 2
+    assert error.register_type == "input"
+    assert error.error_type == "ModbusException"
+    assert "127.0.0.1" not in error.message
+
+    client.clear_last_error_context()
+
+    assert client.get_last_error_context() is None
+
 
 def test_timeout_exception_is_deterministic() -> None:
     client = IdmModbusClient("127.0.0.1", max_retries=1)
@@ -131,6 +144,25 @@ def test_connection_exception_triggers_reconnect() -> None:
     client._client = disconnected  # type: ignore[assignment]
 
     assert asyncio.run(client._read_registers(1000, 1)) == [7]
+
+
+def test_write_error_context_is_redacted_and_omits_written_values() -> None:
+    client = IdmModbusClient("127.0.0.1", max_retries=1)
+    client._client = FakeModbusTransport(error_writes={1200})  # type: ignore[assignment]
+
+    with pytest.raises(ModbusException, match="Modbus error writing address 1200"):
+        asyncio.run(client._write_registers(1200, [123]))
+
+    error = client.get_last_error_context()
+
+    assert error is not None
+    assert error.operation == "write"
+    assert error.address == 1200
+    assert error.count == 1
+    assert error.register_type == "holding"
+    assert error.error_type == "ModbusException"
+    assert "127.0.0.1" not in error.message
+    assert "123" not in error.message
 
 
 def test_batch_groups_split_by_gap_and_size_limits() -> None:

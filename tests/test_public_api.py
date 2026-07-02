@@ -42,6 +42,7 @@ EXPECTED_PUBLIC_API = [
     "DataType",
     "IdmModelInfo",
     "IdmModbusClient",
+    "ModbusErrorContext",
     "RegisterDef",
     "RegisterType",
     "WriteClass",
