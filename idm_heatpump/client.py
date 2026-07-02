@@ -7,6 +7,7 @@ import inspect
 import logging
 import math
 import struct
+import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
@@ -39,6 +40,7 @@ _LOGGER = logging.getLogger(__name__)
 _MAX_GROUP_GAP = 10
 _MAX_GROUP_SIZE = 40
 _PERMANENT_FAILURE_THRESHOLD = 3
+DEFAULT_EEPROM_WRITE_INTERVAL = 60.0
 
 _DETECT_HC_FLOW_BASE = 1350
 _DETECT_HC_STEP = 2
@@ -208,6 +210,9 @@ class IdmModbusClient:
         self._register_failures: dict[str, int] = {}
         self._permanently_failed_registers: set[str] = set()
         self._model_info: IdmModelInfo | None = None
+        self._last_eeprom_writes: dict[str, float] = {}
+        self._eeprom_write_interval = DEFAULT_EEPROM_WRITE_INTERVAL
+        self._time = time.monotonic
 
     def __repr__(self) -> str:
         connected = self._client is not None and self._client.connected
@@ -624,6 +629,14 @@ class IdmModbusClient:
         if not reg.writable:
             raise ValueError(f"Register '{reg.name}' is read-only")
 
+        self._validate_write_allowed(reg, value)
+
+        await self._ensure_connected()
+        encoded = self.encode_value(value, reg)
+        await self._write_registers(reg.address, encoded)
+        self._record_successful_write(reg)
+
+    def _validate_write_allowed(self, reg: RegisterDef, value: Any) -> None:
         if reg.exclude_from_write and int(value) in reg.exclude_from_write:
             raise ValueError(
                 f"Value {value} for '{reg.name}' is not writable "
@@ -635,9 +648,27 @@ class IdmModbusClient:
         if reg.max_val is not None and float(value) > reg.max_val:
             raise ValueError(f"Value {value} for '{reg.name}' exceeds maximum {reg.max_val}")
 
-        await self._ensure_connected()
-        encoded = self.encode_value(value, reg)
-        await self._write_registers(reg.address, encoded)
+        if reg.write_class is WriteClass.EEPROM:
+            now = self._time()
+            last_write = self._last_eeprom_writes.get(reg.name)
+            if last_write is not None:
+                elapsed = now - last_write
+                if elapsed < self._eeprom_write_interval:
+                    remaining = self._eeprom_write_interval - elapsed
+                    raise ValueError(
+                        f"EEPROM-sensitive register '{reg.name}' was written too recently "
+                        f"(try again in {remaining:.1f}s)"
+                    )
+
+    def _record_successful_write(self, reg: RegisterDef) -> None:
+        if reg.write_class is WriteClass.EEPROM:
+            self._last_eeprom_writes[reg.name] = self._time()
+
+    def reset_write_throttle(self, reg: RegisterDef | None = None) -> None:
+        if reg is None:
+            self._last_eeprom_writes.clear()
+        else:
+            self._last_eeprom_writes.pop(reg.name, None)
 
     async def read_batch(self, register_list: list[RegisterDef]) -> dict[str, Any]:
         """Read multiple registers efficiently using grouped batch reads."""

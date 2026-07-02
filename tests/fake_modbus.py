@@ -27,6 +27,7 @@ class FakeModbusTransport:
         input_registers: dict[int, int] | None = None,
         holding_registers: dict[int, int] | None = None,
         error_reads: set[tuple[str, int, int]] | None = None,
+        error_writes: set[int] | None = None,
         exception_reads: dict[tuple[str, int, int], Exception] | None = None,
         short_reads: dict[tuple[str, int, int], list[int]] | None = None,
         delay: float = 0,
@@ -34,6 +35,7 @@ class FakeModbusTransport:
         self.input_registers = input_registers or {}
         self.holding_registers = holding_registers or {}
         self.error_reads = error_reads or set()
+        self.error_writes = error_writes or set()
         self.exception_reads = exception_reads or {}
         self.short_reads = short_reads or {}
         self.delay = delay
@@ -55,6 +57,8 @@ class FakeModbusTransport:
         await self._enter_request()
         try:
             self.write_calls.append((address, list(values)))
+            if address in self.error_writes:
+                return FakeModbusResponse(error=True)
             for offset, value in enumerate(values):
                 self.holding_registers[address + offset] = int(value)
             return FakeModbusResponse()

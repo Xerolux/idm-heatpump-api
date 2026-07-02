@@ -180,3 +180,50 @@ def test_eeprom_and_cyclic_write_classes_are_mutually_exclusive() -> None:
             eeprom_sensitive=True,
             cyclic_required=True,
         )
+
+
+def test_eeprom_write_throttle_blocks_repeated_writes_until_window_expires() -> None:
+    current_time = 1000.0
+    transport = FakeModbusTransport()
+    client = IdmModbusClient("127.0.0.1")
+    client._client = transport  # type: ignore[assignment]
+    client._time = lambda: current_time
+    reg = RegisterDef(1200, DataType.UCHAR, "eeprom", writable=True, eeprom_sensitive=True)
+
+    asyncio.run(client.write_register(reg, 1))
+
+    with pytest.raises(ValueError, match=r"try again in 60\.0s"):
+        asyncio.run(client.write_register(reg, 2))
+
+    current_time += 60.0
+    asyncio.run(client.write_register(reg, 3))
+
+    assert transport.write_calls == [(1200, [1]), (1200, [3])]
+
+
+def test_eeprom_write_throttle_can_be_reset_after_process_restart() -> None:
+    transport = FakeModbusTransport()
+    client = IdmModbusClient("127.0.0.1")
+    client._client = transport  # type: ignore[assignment]
+    client._time = lambda: 1000.0
+    reg = RegisterDef(1200, DataType.UCHAR, "eeprom", writable=True, eeprom_sensitive=True)
+
+    asyncio.run(client.write_register(reg, 1))
+    client.reset_write_throttle(reg)
+    asyncio.run(client.write_register(reg, 2))
+
+    assert transport.write_calls == [(1200, [1]), (1200, [2])]
+
+
+def test_failed_eeprom_write_does_not_start_throttle_window() -> None:
+    current_time = 1000.0
+    transport = FakeModbusTransport(error_writes={1200})
+    client = IdmModbusClient("127.0.0.1", max_retries=1)
+    client._client = transport  # type: ignore[assignment]
+    client._time = lambda: current_time
+    reg = RegisterDef(1200, DataType.UCHAR, "eeprom", writable=True, eeprom_sensitive=True)
+
+    with pytest.raises(Exception, match="Modbus error writing address 1200"):
+        asyncio.run(client.write_register(reg, 1))
+
+    assert client._last_eeprom_writes == {}
