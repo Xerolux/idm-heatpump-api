@@ -65,6 +65,16 @@ def test_ci_builds_and_import_checks_distribution_artifacts() -> None:
     assert "python -m pip install dist/*.whl" in workflow
 
 
+def test_ci_enforces_coverage_floor() -> None:
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
+
+    assert "pytest-cov>=5.0.0" in pyproject
+    assert "fail_under = 50" in pyproject
+    assert "--cov=idm_heatpump" in workflow
+    assert "--cov-fail-under=50" in workflow
+
+
 def test_hass_compatibility_matrix_covers_current_api_version() -> None:
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     current_version = pyproject["project"]["version"]

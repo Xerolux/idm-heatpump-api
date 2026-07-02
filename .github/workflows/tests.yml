@@ -32,7 +32,7 @@ jobs:
           pip install "${{ matrix.pymodbus-spec }}"
 
       - name: Run tests
-        run: pytest tests/ -v --tb=short
+        run: pytest tests/ -v --tb=short --cov=idm_heatpump --cov-report=term-missing --cov-fail-under=50
 
       - name: Run linting
         run: |
