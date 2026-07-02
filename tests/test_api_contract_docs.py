@@ -70,9 +70,9 @@ def test_ci_enforces_coverage_floor() -> None:
     workflow = (ROOT / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
 
     assert "pytest-cov>=5.0.0" in pyproject
-    assert "fail_under = 65" in pyproject
+    assert "fail_under = 75" in pyproject
     assert "--cov=idm_heatpump" in workflow
-    assert "--cov-fail-under=65" in workflow
+    assert "--cov-fail-under=75" in workflow
 
 
 def test_hass_compatibility_matrix_covers_current_api_version() -> None:
