@@ -1,9 +1,12 @@
 """Tests for the documented API release contract."""
 
+import json
+import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 API_CONTRACT = ROOT / "docs" / "API-Contract.md"
+COMPATIBILITY_MATRIX = ROOT / "docs" / "compatibility-matrix.json"
 
 
 def test_api_contract_documents_versioning_and_deprecation_policy() -> None:
@@ -60,3 +63,20 @@ def test_ci_builds_and_import_checks_distribution_artifacts() -> None:
     assert "twine check dist/*" in workflow
     assert "python -m venv /tmp/idm_heatpump_api_import" in workflow
     assert "python -m pip install dist/*.whl" in workflow
+
+
+def test_hass_compatibility_matrix_covers_current_api_version() -> None:
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    current_version = pyproject["project"]["version"]
+    matrix = json.loads(COMPATIBILITY_MATRIX.read_text(encoding="utf-8"))
+    entries = matrix["entries"]
+
+    assert matrix["schema_version"] == 1
+    assert {
+        "api_version": "0.3.7",
+        "hass_integration_version": "0.7.3",
+        "status": "tested",
+        "notes": "Baseline for Navigator 2.0 filtering and Navigator 10 register map.",
+    } in entries
+    assert any(entry["api_version"] == current_version for entry in entries)
+    assert "docs/compatibility-matrix.json" in API_CONTRACT.read_text(encoding="utf-8")

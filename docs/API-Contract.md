@@ -93,12 +93,9 @@ the Home Assistant integration and the latest installable 3.x release. A future
 ## Home Assistant Compatibility
 
 Each API release consumed by the Home Assistant custom integration should have
-an explicit integration compatibility entry. Until this is machine-readable,
-use this table:
+an explicit integration compatibility entry in
+`docs/compatibility-matrix.json`.
 
 | API version | HASS integration version | Compatibility |
 |-------------|--------------------------|---------------|
 | 0.3.7 | 0.7.3 | Tested baseline for Navigator 2.0 filtering and Navigator 10 register map |
-
-Future releases should replace this table with a machine-readable compatibility
-matrix that can be checked in CI.
