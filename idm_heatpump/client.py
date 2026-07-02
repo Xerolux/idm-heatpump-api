@@ -49,9 +49,7 @@ _DETECT_ZONE_MODULE_STEP = 65
 def _get_slave_param() -> str:
     """Return the pymodbus slave parameter name for the installed version."""
     try:
-        params = inspect.signature(
-            AsyncModbusTcpClient.read_input_registers
-        ).parameters
+        params = inspect.signature(AsyncModbusTcpClient.read_input_registers).parameters
         if "device_id" in params:
             return "device_id"
         return "slave"
@@ -130,25 +128,15 @@ class RegisterDef:
         if not isinstance(self.register_type, RegisterType):
             raise ValueError(f"Invalid register type: {self.register_type}")
         if self.address < 0:
-            raise ValueError(
-                f"Register address must be non-negative, got {self.address}"
-            )
+            raise ValueError(f"Register address must be non-negative, got {self.address}")
         if not math.isfinite(self.multiplier) or self.multiplier == 0:
-            raise ValueError(
-                f"Multiplier must be finite and non-zero, got {self.multiplier}"
-            )
+            raise ValueError(f"Multiplier must be finite and non-zero, got {self.multiplier}")
         if self.min_val is not None and not math.isfinite(self.min_val):
             raise ValueError(f"Minimum value must be finite, got {self.min_val}")
         if self.max_val is not None and not math.isfinite(self.max_val):
             raise ValueError(f"Maximum value must be finite, got {self.max_val}")
-        if (
-            self.min_val is not None
-            and self.max_val is not None
-            and self.min_val > self.max_val
-        ):
-            raise ValueError(
-                f"Minimum value {self.min_val} exceeds maximum {self.max_val}"
-            )
+        if self.min_val is not None and self.max_val is not None and self.min_val > self.max_val:
+            raise ValueError(f"Minimum value {self.min_val} exceeds maximum {self.max_val}")
         self.size = 2 if self.datatype == DataType.FLOAT else 1
 
 
@@ -305,11 +293,11 @@ class IdmModbusClient:
                     if attempt == self._max_retries - 1:
                         raise
                     await self._try_reconnect()
-                    await asyncio.sleep(RETRY_BACKOFF_BASE * (2 ** attempt))
+                    await asyncio.sleep(RETRY_BACKOFF_BASE * (2**attempt))
                 except ModbusException:
                     if attempt == self._max_retries - 1:
                         raise
-                    await asyncio.sleep(RETRY_BACKOFF_BASE * (2 ** attempt))
+                    await asyncio.sleep(RETRY_BACKOFF_BASE * (2**attempt))
             raise RuntimeError("Unreachable: max_retries validated to be >= 1")
 
     async def _try_reconnect(self) -> None:
@@ -344,15 +332,13 @@ class IdmModbusClient:
                     if attempt == self._max_retries - 1:
                         raise
                     await self._try_reconnect()
-                    await asyncio.sleep(RETRY_BACKOFF_BASE * (2 ** attempt))
+                    await asyncio.sleep(RETRY_BACKOFF_BASE * (2**attempt))
                 except ModbusException:
                     if attempt == self._max_retries - 1:
                         raise
-                    await asyncio.sleep(RETRY_BACKOFF_BASE * (2 ** attempt))
+                    await asyncio.sleep(RETRY_BACKOFF_BASE * (2**attempt))
 
-    async def probe_register(
-        self, address: int, count: int = 1
-    ) -> list[int] | None:
+    async def probe_register(self, address: int, count: int = 1) -> list[int] | None:
         """Try to read a register without affecting failure tracking.
 
         Returns the register values or None if the read fails.
@@ -501,13 +487,10 @@ class IdmModbusClient:
     def decode_value(self, registers: list[int], reg: RegisterDef) -> Any:
         """Decode raw Modbus register values into a Python value."""
         if not registers:
-            raise ValueError(
-                f"Empty register list for {reg.name} (expected {reg.size})"
-            )
+            raise ValueError(f"Empty register list for {reg.name} (expected {reg.size})")
         if len(registers) < reg.size:
             raise ValueError(
-                f"Not enough registers for {reg.name}: "
-                f"got {len(registers)}, need {reg.size}"
+                f"Not enough registers for {reg.name}: got {len(registers)}, need {reg.size}"
             )
 
         if reg.datatype == DataType.FLOAT:
@@ -566,17 +549,13 @@ class IdmModbusClient:
         if reg.datatype == DataType.UCHAR:
             val = int(round(float(value) / reg.multiplier))
             if not (0 <= val <= 255):
-                raise ValueError(
-                    f"Value {value} out of UCHAR range for {reg.name}"
-                )
+                raise ValueError(f"Value {value} out of UCHAR range for {reg.name}")
             return [val & 0xFF]
 
         if reg.datatype == DataType.INT8:
             val = int(round(float(value) / reg.multiplier))
             if not (-128 <= val <= 127):
-                raise ValueError(
-                    f"Value {value} out of INT8 range for {reg.name}"
-                )
+                raise ValueError(f"Value {value} out of INT8 range for {reg.name}")
             if val < 0:
                 val += 256
             return [val & 0xFF]
@@ -584,9 +563,7 @@ class IdmModbusClient:
         if reg.datatype == DataType.INT16:
             val = int(round(float(value) / reg.multiplier))
             if not (-32768 <= val <= 32767):
-                raise ValueError(
-                    f"Value {value} out of INT16 range for {reg.name}"
-                )
+                raise ValueError(f"Value {value} out of INT16 range for {reg.name}")
             if val < 0:
                 val += 65536
             return [val & 0xFFFF]
@@ -594,9 +571,7 @@ class IdmModbusClient:
         if reg.datatype == DataType.UINT16:
             val = int(round(float(value) / reg.multiplier))
             if not (0 <= val <= 65535):
-                raise ValueError(
-                    f"Value {value} out of UINT16 range for {reg.name}"
-                )
+                raise ValueError(f"Value {value} out of UINT16 range for {reg.name}")
             return [val & 0xFFFF]
 
         if reg.datatype == DataType.BOOL:
@@ -612,9 +587,7 @@ class IdmModbusClient:
         if reg.write_only:
             raise ValueError(f"Register '{reg.name}' is write-only")
         await self._ensure_connected()
-        registers = await self._read_registers(
-            reg.address, reg.size, reg.register_type
-        )
+        registers = await self._read_registers(reg.address, reg.size, reg.register_type)
         return self.decode_value(registers, reg)
 
     async def write_register(self, reg: RegisterDef, value: Any) -> None:
@@ -629,21 +602,15 @@ class IdmModbusClient:
             )
 
         if reg.min_val is not None and float(value) < reg.min_val:
-            raise ValueError(
-                f"Value {value} for '{reg.name}' is below minimum {reg.min_val}"
-            )
+            raise ValueError(f"Value {value} for '{reg.name}' is below minimum {reg.min_val}")
         if reg.max_val is not None and float(value) > reg.max_val:
-            raise ValueError(
-                f"Value {value} for '{reg.name}' exceeds maximum {reg.max_val}"
-            )
+            raise ValueError(f"Value {value} for '{reg.name}' exceeds maximum {reg.max_val}")
 
         await self._ensure_connected()
         encoded = self.encode_value(value, reg)
         await self._write_registers(reg.address, encoded)
 
-    async def read_batch(
-        self, register_list: list[RegisterDef]
-    ) -> dict[str, Any]:
+    async def read_batch(self, register_list: list[RegisterDef]) -> dict[str, Any]:
         """Read multiple registers efficiently using grouped batch reads."""
         if not register_list:
             return {}
@@ -651,8 +618,7 @@ class IdmModbusClient:
         valid_regs = [
             r
             for r in register_list
-            if r.name not in self._permanently_failed_registers
-            and not r.write_only
+            if r.name not in self._permanently_failed_registers and not r.write_only
         ]
         if not valid_regs:
             return {}
@@ -717,14 +683,11 @@ class IdmModbusClient:
         try:
             registers = await self._read_registers(start, count, reg_type)
         except ConnectionException:
-            _LOGGER.warning(
-                "Connection lost while reading group at address %d", start
-            )
+            _LOGGER.warning("Connection lost while reading group at address %d", start)
             raise
         except ModbusException as err:
             _LOGGER.debug(
-                "Group read at address %d failed: %s. "
-                "Falling back to individual reads.",
+                "Group read at address %d failed: %s. Falling back to individual reads.",
                 start,
                 err,
             )
@@ -761,9 +724,7 @@ class IdmModbusClient:
         data: dict[str, Any] = {}
         for reg in group:
             try:
-                registers = await self._read_registers(
-                    reg.address, reg.size, reg_type
-                )
+                registers = await self._read_registers(reg.address, reg.size, reg_type)
                 data[reg.name] = self.decode_value(registers, reg)
             except ConnectionException:
                 _LOGGER.warning(

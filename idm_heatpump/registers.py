@@ -1513,9 +1513,7 @@ def build_register_map(
     # Preserve the complete map for callers without detection data. Once a
     # model has been detected, do not poll Navigator 10-only addresses on
     # older controllers: they respond with Modbus "Illegal Data Address".
-    include_navigator_10 = (
-        model_info is None or model_info.model_name == MODEL_NAVIGATOR_10
-    )
+    include_navigator_10 = model_info is None or model_info.model_name == MODEL_NAVIGATOR_10
     if include_navigator_10:
         all_regs.update(_heat_sink_registers())
         all_regs.update(_groundwater_registers())

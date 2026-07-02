@@ -13,7 +13,7 @@
 
 An asynchronous Python library for communicating with **IDM Navigator heat pumps** (2.0, Pro, and Navigator 10) over Modbus TCP.
 
-This library is primarily designed to power the official [IDM Heatpump Home Assistant Integration](https://github.com/Xerolux/idm-heatpump-hass), but it can be used independently for any Python project that needs to monitor or control an IDM heat pump.
+This library is primarily designed to power the unofficial [IDM Heatpump Home Assistant custom integration](https://github.com/Xerolux/idm-heatpump-hass), but it can be used independently for any Python project that needs to monitor or control an IDM heat pump.
 
 > **Documentation:**
 > - GitHub Pages: https://xerolux.github.io/idm-heatpump-api/

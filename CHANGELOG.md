@@ -125,7 +125,7 @@ All register definitions were verified line by line against the official iDM
 ### Breaking / Important
 
 - Restructured package for clean PyPI distribution (`import idm_heatpump`).
-- The library is now the official core for the Home Assistant integration (migration Option B).
+- The library is now the shared Modbus/register core for the Home Assistant custom integration (migration Option B).
 
 ### Features
 

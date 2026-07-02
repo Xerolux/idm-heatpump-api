@@ -32,18 +32,27 @@ class TestEnergyRegisters:
         for key in energy_keys:
             reg = regs[key]
             assert reg.unit == "kWh", f"{key} should have unit=kWh"
-            assert reg.state_class == "total_increasing", f"{key} should have state_class=total_increasing"
+            assert reg.state_class == "total_increasing", (
+                f"{key} should have state_class=total_increasing"
+            )
 
     def test_power_registers_have_state_class(self):
         """All read-only kW power registers should have state_class=measurement."""
         regs = _energy_registers()
-        power_keys = ["current_power", "current_power_solar", "power_consumption_hp", "thermal_power_flow_sensor"]
+        power_keys = [
+            "current_power",
+            "current_power_solar",
+            "power_consumption_hp",
+            "thermal_power_flow_sensor",
+        ]
 
         for key in power_keys:
             if key in regs:
                 reg = regs[key]
                 assert reg.unit == "kW", f"{key} should have unit=kW"
-                assert reg.state_class == "measurement", f"{key} should have state_class=measurement"
+                assert reg.state_class == "measurement", (
+                    f"{key} should have state_class=measurement"
+                )
 
     def test_total_heat_energy_has_state_class(self):
         """total_heat_energy should have proper state_class."""
@@ -59,7 +68,14 @@ class TestPVRegisters:
     def test_pv_power_registers(self):
         """All PV power registers are FLOAT kW and writable (RW/RO)."""
         regs = _pv_registers()
-        power_keys = ["pv_surplus", "electric_heater_power", "pv_production", "house_consumption", "battery_discharge", "pv_target_value"]
+        power_keys = [
+            "pv_surplus",
+            "electric_heater_power",
+            "pv_production",
+            "house_consumption",
+            "battery_discharge",
+            "pv_target_value",
+        ]
 
         for key in power_keys:
             reg = regs[key]
@@ -180,7 +196,9 @@ class TestHumidityRegisters:
             assert reg.unit == "%", f"{key} should have unit=% (not %rF)"
             # Only read-only humidity registers should have state_class
             if not reg.writable:
-                assert reg.state_class == "measurement", f"{key} should have state_class=measurement"
+                assert reg.state_class == "measurement", (
+                    f"{key} should have state_class=measurement"
+                )
 
 
 class TestBuildRegisterMap:
@@ -206,14 +224,12 @@ class TestBuildRegisterMap:
 
         for key, reg in regs.items():
             if reg.writable:
-                assert reg.state_class is None, f"Writable register {key} should not have state_class"
+                assert reg.state_class is None, (
+                    f"Writable register {key} should not have state_class"
+                )
 
-    @pytest.mark.parametrize(
-        "model_name", [MODEL_NAVIGATOR_20, MODEL_NAVIGATOR_PRO, MODEL_UNKNOWN]
-    )
-    def test_older_or_unknown_model_excludes_navigator_10_registers(
-        self, model_name: str
-    ) -> None:
+    @pytest.mark.parametrize("model_name", [MODEL_NAVIGATOR_20, MODEL_NAVIGATOR_PRO, MODEL_UNKNOWN])
+    def test_older_or_unknown_model_excludes_navigator_10_registers(self, model_name: str) -> None:
         model_info = IdmModelInfo(
             model_name=model_name,
             active_heating_circuits=["A"],

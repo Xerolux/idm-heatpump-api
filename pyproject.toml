@@ -13,7 +13,7 @@ version = "0.3.7"
 authors = [
   { name="Basti (Xerolux)", email="git@xerolux.de" },
 ]
-description = "Python library for communicating with IDM Navigator heat pumps via Modbus TCP. Used by the official Home Assistant integration."
+description = "Python library for communicating with IDM Navigator heat pumps via Modbus TCP. Used by the IDM Heatpump Home Assistant custom integration."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
@@ -21,6 +21,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Operating System :: OS Independent",
     "Intended Audience :: Developers",
     "Topic :: Home Automation",
