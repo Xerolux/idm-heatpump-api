@@ -22,6 +22,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   model detection.
 - Restore the GitHub bug-report template, which accidentally contained funding configuration.
 
+## [0.3.5] - 2026-06-23
+
+### Added
+
+- Added firmware-version detection to `detect_model()` results.
+- Added the `model_name` convenience property with the Navigator 2.0 fallback for
+  unknown or not-yet-detected models.
+
+### Changed
+
+- Improved automatic heat-pump model detection coverage.
+
+## [0.3.4] - 2026-06-22
+
+### Fixed
+
+- Fixed package tool configuration for Ruff and mypy.
+- Hardened CI and removed dead code around model/register handling.
+
+## [0.3.3] - 2026-06-18
+
+### Fixed
+
+- Fixed model-detection feature handling.
+
 ## [0.3.2] - 2026-06
 
 All register definitions were verified line by line against the official iDM
@@ -80,7 +105,11 @@ All register definitions were verified line by line against the official iDM
 - `docs/Modbus-Register.md` regenerated as a verified register reference (it previously
   contained unrelated contributing guidelines).
 
-## [0.2.2] - 2026-05
+## [0.3.1] - 2026-06-02
+
+### Changed
+
+- Added the first 0.3.x release-flow metadata updates after the package rename.
 
 ## [0.3.0] - 2026-06
 
@@ -110,6 +139,13 @@ All register definitions were verified line by line against the official iDM
 - `read_register()` and `read_batch()` now properly skip write-only registers
 - `write_register()` now validates `exclude_from_write` values before sending to device
 - Removed unused `RegisterType` import from `registers.py`
+
+## [0.2.2] - 2026-05
+
+### Changed
+
+- Historical release without a dedicated changelog entry before changelog
+  continuity checks were added.
 
 ## [0.2.1] - 2026-05
 
