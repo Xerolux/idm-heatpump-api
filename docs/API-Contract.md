@@ -12,12 +12,23 @@ Supported consumers should import from the package root:
 from idm_heatpump import IdmModbusClient, build_register_map
 ```
 
+Optional local web supplement consumers should also import from the package root:
+
+```python
+from idm_heatpump import create_optional_navigator10_web_client
+```
+
 The package root `__all__` list is the public import contract. It is protected
 by `tests/test_public_api.py`.
 
 Imports from implementation modules such as `idm_heatpump.client` and
 `idm_heatpump.registers` are tolerated for internal tests and local debugging,
 but they are not the preferred consumer contract.
+
+The optional local web supplement is read-only and additive. Consumers must keep
+Modbus as the baseline data path and treat web data as optional enrichment. If no
+local network PIN is configured, consumers should not create a web client and
+must continue Modbus-only operation without surfacing a web error.
 
 ## Versioning Rules
 

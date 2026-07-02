@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Add an optional read-only local web supplement for Navigator 10 and Navigator 2.0.
+  Navigator 10 uses the local WebSocket interface and Navigator 2.0 uses the local
+  HTTP interface with CSRF handling.
+- Expose web supplement data for values that are missing or incomplete in Modbus,
+  including software version, flow rate, hot gas temperature, pressure values,
+  board and battery voltage, additional hot-water station values, runtime counters,
+  heat quantities, and infosystem notifications.
+- Add optional web-client factories that return `None` when no local network PIN is
+  configured so consumers can keep Modbus-only operation error-free.
+
 ## [0.3.7] - 2026-07-02
 
 ### Fixed

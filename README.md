@@ -128,6 +128,67 @@ deadline. Consumers can inspect `get_active_cyclic_writes()` and
 `get_expired_cyclic_writes()` to detect stale external demands and can clear the
 state with `reset_cyclic_write_state()` on reload or shutdown.
 
+## Optional Local Web Supplement
+
+Some IDM values are available in the local web interface but not in the
+published Modbus map, for example flow rate, hot gas temperature, refrigerant
+pressure values, board temperature, central-unit battery voltage, and the
+controller software version. The optional `idm_heatpump.web` module is read-only
+and is intended to run alongside the Modbus client.
+
+Install the optional dependency when using the web client:
+
+```bash
+pip install "idm-heatpump-api[web]"
+```
+
+Navigator 2.0 uses the local HTTP interface with CSRF token handling. Navigator
+10 uses the local WebSocket interface on port `61220`. A Home Assistant
+consumer should poll Modbus and web data in parallel, or start the web poll a few
+milliseconds after the Modbus poll if the controller needs gentler pacing:
+
+```python
+import asyncio
+from idm_heatpump import (
+    IdmModbusClient,
+    build_register_map,
+    create_optional_navigator10_web_client,
+)
+
+async def main():
+    modbus = IdmModbusClient("192.168.1.100")
+    web = create_optional_navigator10_web_client("192.168.1.100", pin="1234")
+
+    await modbus.connect()
+    model_info = await modbus.detect_model()
+    registers = build_register_map(model_info=model_info)
+
+    if web is None:
+        modbus_values = await modbus.read_batch(list(registers.values()))
+        web_data = None
+    else:
+        modbus_task = modbus.read_batch(list(registers.values()))
+        web_task = web.read_data()
+        modbus_values, web_data = await asyncio.gather(modbus_task, web_task)
+
+    if web_data is not None:
+        print(web_data.navigator_version)
+        print(web_data.software_version)
+        print(web_data.heatpump_model)
+        print(web_data.simple_values.get("flowmeter"))
+
+    if web is not None:
+        await web.close()
+    await modbus.disconnect()
+
+asyncio.run(main())
+```
+
+If the user does not configure a local network PIN, consumers should not create
+a web client. `create_optional_navigator10_web_client()` and
+`create_optional_navigator20_web_client()` return `None` for `None`, empty, or
+whitespace-only PIN values so Modbus-only operation can continue without errors.
+
 ## Public API
 
 Supported consumers should import from the package root:
