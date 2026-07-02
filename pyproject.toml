@@ -9,7 +9,7 @@ exclude = ["custom_components*", "images*", "docs*", "tests*", "*.egg-info*"]
 
 [project]
 name = "idm-heatpump-api"
-version = "0.3.5"
+version = "0.3.6"
 authors = [
   { name="Basti (Xerolux)", email="git@xerolux.de" },
 ]
