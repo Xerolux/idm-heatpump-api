@@ -47,6 +47,8 @@ _DETECT_HC_FLOW_BASE = 1350
 _DETECT_HC_STEP = 2
 _DETECT_ZONE_MODULE_BASE = 2000
 _DETECT_ZONE_MODULE_STEP = 65
+DEFAULT_REGISTER_SOURCE = "official_idm_modbus"
+DEFAULT_REGISTER_SOURCE_VERSION = "MODBUS TCP NAVIGATOR 10 2025-06-18 plus Navigator 2.0/Pro legacy docs"
 
 
 def _get_slave_param() -> str:
@@ -143,6 +145,13 @@ class RegisterDef:
     icon: str | None = None
     write_only: bool = False
     exclude_from_write: set[int] | None = None
+    source: str = DEFAULT_REGISTER_SOURCE
+    source_version: str = DEFAULT_REGISTER_SOURCE_VERSION
+    supported_models: tuple[str, ...] = field(
+        default_factory=lambda: (MODEL_NAVIGATOR_10, MODEL_NAVIGATOR_20, MODEL_NAVIGATOR_PRO)
+    )
+    sentinel_values: tuple[int | float | str, ...] = ()
+    last_verified: str | None = None
     size: int = field(init=False)
 
     def __post_init__(self) -> None:
@@ -152,6 +161,12 @@ class RegisterDef:
             raise ValueError(f"Invalid register type: {self.register_type}")
         if self.address < 0:
             raise ValueError(f"Register address must be non-negative, got {self.address}")
+        if not self.source:
+            raise ValueError(f"Register source must not be empty for {self.name}")
+        if not self.source_version:
+            raise ValueError(f"Register source version must not be empty for {self.name}")
+        if not self.supported_models:
+            raise ValueError(f"Register {self.name} must declare at least one supported model")
         if not math.isfinite(self.multiplier) or self.multiplier == 0:
             raise ValueError(f"Multiplier must be finite and non-zero, got {self.multiplier}")
         if self.min_val is not None and not math.isfinite(self.min_val):
@@ -161,10 +176,7 @@ class RegisterDef:
         if self.min_val is not None and self.max_val is not None and self.min_val > self.max_val:
             raise ValueError(f"Minimum value {self.min_val} exceeds maximum {self.max_val}")
         if not self.writable and (
-            self.eeprom_sensitive
-            or self.cyclic_required
-            or self.write_only
-            or self.exclude_from_write
+            self.eeprom_sensitive or self.cyclic_required or self.write_only or self.exclude_from_write
         ):
             raise ValueError(f"Write metadata requires writable=True for register {self.name}")
         if self.eeprom_sensitive and self.cyclic_required:
@@ -237,8 +249,7 @@ class IdmModbusClient:
     def __repr__(self) -> str:
         connected = self._client is not None and self._client.connected
         return (
-            f"IdmModbusClient(host={self._host!r}, port={self._port}, "
-            f"slave_id={self._slave_id}, connected={connected})"
+            f"IdmModbusClient(host={self._host!r}, port={self._port}, slave_id={self._slave_id}, connected={connected})"
         )
 
     @property
@@ -325,13 +336,9 @@ class IdmModbusClient:
                     client = self._require_client()
                     kwargs: Any = {_PMODBUS_SLAVE_PARAM: self._slave_id}
                     if reg_type == RegisterType.HOLDING:
-                        result = await client.read_holding_registers(
-                            address=address, count=count, **kwargs
-                        )
+                        result = await client.read_holding_registers(address=address, count=count, **kwargs)
                     else:
-                        result = await client.read_input_registers(
-                            address=address, count=count, **kwargs
-                        )
+                        result = await client.read_input_registers(address=address, count=count, **kwargs)
                     if result.isError():
                         raise ModbusException(  # type: ignore[no-untyped-call]
                             f"Modbus error reading address {address}: {result}"
@@ -600,9 +607,7 @@ class IdmModbusClient:
         if not registers:
             raise ValueError(f"Empty register list for {reg.name} (expected {reg.size})")
         if len(registers) < reg.size:
-            raise ValueError(
-                f"Not enough registers for {reg.name}: got {len(registers)}, need {reg.size}"
-            )
+            raise ValueError(f"Not enough registers for {reg.name}: got {len(registers)}, need {reg.size}")
 
         if reg.datatype == DataType.FLOAT:
             low_word, high_word = registers[0], registers[1]
@@ -718,8 +723,7 @@ class IdmModbusClient:
 
         if reg.exclude_from_write and int(value) in reg.exclude_from_write:
             raise ValueError(
-                f"Value {value} for '{reg.name}' is not writable "
-                f"(excluded values: {reg.exclude_from_write})"
+                f"Value {value} for '{reg.name}' is not writable (excluded values: {reg.exclude_from_write})"
             )
 
         if reg.min_val is not None and float(value) < reg.min_val:
@@ -747,10 +751,7 @@ class IdmModbusClient:
 
         available = build_register_map(model_info=self._model_info).get(reg.name)
         if available is None or available.address != reg.address:
-            raise ValueError(
-                f"Register '{reg.name}' is not available for detected model "
-                f"{self._model_info.model_name}"
-            )
+            raise ValueError(f"Register '{reg.name}' is not available for detected model {self._model_info.model_name}")
 
     def _record_successful_write(self, reg: RegisterDef) -> None:
         if reg.write_class is WriteClass.EEPROM:
@@ -767,11 +768,7 @@ class IdmModbusClient:
 
     def get_active_cyclic_writes(self) -> dict[str, float]:
         now = self._time()
-        return {
-            name: deadline
-            for name, deadline in self._cyclic_write_deadlines.items()
-            if deadline > now
-        }
+        return {name: deadline for name, deadline in self._cyclic_write_deadlines.items() if deadline > now}
 
     def get_expired_cyclic_writes(self) -> set[str]:
         now = self._time()
@@ -788,11 +785,7 @@ class IdmModbusClient:
         if not register_list:
             return {}
 
-        valid_regs = [
-            r
-            for r in register_list
-            if r.name not in self._permanently_failed_registers and not r.write_only
-        ]
+        valid_regs = [r for r in register_list if r.name not in self._permanently_failed_registers and not r.write_only]
         if not valid_regs:
             return {}
 
@@ -923,8 +916,7 @@ class IdmModbusClient:
                         )
                     else:
                         _LOGGER.warning(
-                            "Register %s (address %d) has failed %d times. "
-                            "Marking as permanently failed.",
+                            "Register %s (address %d) has failed %d times. Marking as permanently failed.",
                             reg.name,
                             reg.address,
                             failures,

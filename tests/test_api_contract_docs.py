@@ -25,6 +25,20 @@ def test_api_contract_documents_versioning_and_deprecation_policy() -> None:
         assert heading in text
 
 
+def test_api_contract_documents_register_quality_metadata() -> None:
+    text = API_CONTRACT.read_text(encoding="utf-8")
+
+    for field in [
+        "`source`",
+        "`source_version`",
+        "`supported_models`",
+        "`sentinel_values`",
+        "`last_verified`",
+        "tests/fixtures/register_schema_v1.json",
+    ]:
+        assert field in text
+
+
 def test_readme_links_api_contract() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
 

@@ -81,6 +81,17 @@ Register changes must include:
 - datatype, size, unit, min/max, writable, write-only, and sentinel behavior;
 - test coverage for address, datatype, and model inclusion/exclusion.
 
+Every `RegisterDef` exposes machine-readable quality metadata:
+
+- `source`: source family for the register definition;
+- `source_version`: document or verification version;
+- `supported_models`: controller models where the register is expected;
+- `sentinel_values`: values that need context-specific unavailable handling;
+- `last_verified`: optional date or verification label for hardware checks.
+
+The versioned schema snapshot in `tests/fixtures/register_schema_v1.json`
+serializes these fields for every generated register map.
+
 Registers observed in a device UI but not confirmed over Modbus must not be
 added as supported Modbus registers.
 

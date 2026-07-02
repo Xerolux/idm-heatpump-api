@@ -31,7 +31,7 @@ This library is primarily designed to power the unofficial [IDM Heatpump Home As
 * **Batch Reads:** Intelligent grouping and batching of register reads for maximum efficiency.
 * **Resilient:** Configurable retries with exponential backoff and permanent failure tracking for unavailable registers.
 * **Write Support:** Safe register writes with validation, min/max bounds, and EEPROM-sensitive write protection.
-* **Metadata:** Each register includes `binary`, `state_class`, `icon`, `enabled_by_default`, `write_only`, and `exclude_from_write` metadata for direct Home Assistant entity mapping.
+* **Metadata:** Each register includes Home Assistant mapping fields plus source, source version, supported models, sentinel values, and verification metadata.
 
 ## Supported Devices
 
@@ -116,6 +116,11 @@ print(reg.enabled_by_default)    # True
 print(reg.state_class)           # None (or "measurement", "total_increasing")
 print(reg.icon)                  # None (or "mdi:thermometer")
 print(reg.exclude_from_write)    # None (or {255})
+print(reg.source)                # official_idm_modbus
+print(reg.source_version)        # source document / verification version
+print(reg.supported_models)      # expected Navigator models
+print(reg.sentinel_values)       # context-specific unavailable values
+print(reg.last_verified)         # optional hardware verification label
 ```
 
 Successful writes to cyclic GLT registers refresh an in-memory heartbeat
