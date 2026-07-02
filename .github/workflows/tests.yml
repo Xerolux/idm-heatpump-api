@@ -87,3 +87,17 @@ jobs:
           assert IdmModbusClient("127.0.0.1").host == "127.0.0.1"
           assert "outdoor_temp" in build_register_map(circuits=["A"])
           PY
+
+      - name: Check out Home Assistant integration contract tests
+        uses: actions/checkout@v4
+        with:
+          repository: Xerolux/idm-heatpump-hass
+          ref: Codex/roadmap-phase0
+          path: integration-contract
+
+      - name: Run Home Assistant integration contract tests
+        run: |
+          PYTHONPATH="$PWD:$PWD/integration-contract" pytest \
+            integration-contract/tests/test_library_client.py \
+            integration-contract/tests/test_adapter_helpers.py \
+            -q

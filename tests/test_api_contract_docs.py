@@ -90,3 +90,12 @@ def test_hass_compatibility_matrix_covers_current_api_version() -> None:
     } in entries
     assert any(entry["api_version"] == current_version for entry in entries)
     assert "docs/compatibility-matrix.json" in API_CONTRACT.read_text(encoding="utf-8")
+
+
+def test_ci_runs_home_assistant_integration_contract_tests() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
+
+    assert "repository: Xerolux/idm-heatpump-hass" in workflow
+    assert "integration-contract/tests/test_library_client.py" in workflow
+    assert "integration-contract/tests/test_adapter_helpers.py" in workflow
+    assert 'PYTHONPATH="$PWD:$PWD/integration-contract"' in workflow
