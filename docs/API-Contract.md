@@ -84,6 +84,12 @@ Register changes must include:
 Registers observed in a device UI but not confirmed over Modbus must not be
 added as supported Modbus registers.
 
+## Runtime Dependency Compatibility
+
+The package supports `pymodbus>=3.12.1,<4.0`. CI tests the version pinned by
+the Home Assistant integration and the latest installable 3.x release. A future
+`pymodbus` major version must be validated before the upper bound is raised.
+
 ## Home Assistant Compatibility
 
 Each API release consumed by the Home Assistant custom integration should have

@@ -42,6 +42,17 @@ def test_mypy_configuration_is_strict() -> None:
     assert "disallow_untyped_defs = false" not in pyproject
 
 
+def test_pymodbus_compatibility_is_bounded_and_matrix_tested() -> None:
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
+    contract = API_CONTRACT.read_text(encoding="utf-8")
+
+    assert '"pymodbus>=3.12.1,<4.0"' in pyproject
+    assert "pymodbus==3.12.1" in workflow
+    assert "pymodbus>=3.12.1,<4.0" in workflow
+    assert "Runtime Dependency Compatibility" in contract
+
+
 def test_ci_builds_and_import_checks_distribution_artifacts() -> None:
     workflow = (ROOT / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
 

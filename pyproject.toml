@@ -35,7 +35,7 @@ classifiers = [
 
 keywords = ["idm", "heatpump", "modbus", "navigator", "home-assistant", "hass", "heating", "modbus-tcp"]
 dependencies = [
-    "pymodbus>=3.7.0",
+    "pymodbus>=3.12.1,<4.0",
 ]
 
 [project.optional-dependencies]
