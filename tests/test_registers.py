@@ -2,7 +2,13 @@
 
 import pytest
 
-from idm_heatpump.client import DataType
+from idm_heatpump.client import DataType, IdmModelInfo
+from idm_heatpump.const import (
+    MODEL_NAVIGATOR_10,
+    MODEL_NAVIGATOR_20,
+    MODEL_NAVIGATOR_PRO,
+    MODEL_UNKNOWN,
+)
 from idm_heatpump.registers import (
     _energy_registers,
     _heat_sink_registers,
@@ -201,6 +207,53 @@ class TestBuildRegisterMap:
         for key, reg in regs.items():
             if reg.writable:
                 assert reg.state_class is None, f"Writable register {key} should not have state_class"
+
+    @pytest.mark.parametrize(
+        "model_name", [MODEL_NAVIGATOR_20, MODEL_NAVIGATOR_PRO, MODEL_UNKNOWN]
+    )
+    def test_older_or_unknown_model_excludes_navigator_10_registers(
+        self, model_name: str
+    ) -> None:
+        model_info = IdmModelInfo(
+            model_name=model_name,
+            active_heating_circuits=["A"],
+            zone_modules=0,
+            has_solar=False,
+            has_isc=False,
+            has_pv=False,
+            has_cascade=False,
+        )
+
+        regs = build_register_map(model_info=model_info)
+
+        assert "outdoor_temp" in regs
+        assert "hc_a_flow_temp" in regs
+        assert "power_limit_hp" not in regs
+        assert all(reg.address != 4108 for reg in regs.values())
+        assert "booster_fault" not in regs
+        assert "heat_sink_flow_rate" not in regs
+
+    def test_navigator_10_model_includes_navigator_10_registers(self) -> None:
+        model_info = IdmModelInfo(
+            model_name=MODEL_NAVIGATOR_10,
+            active_heating_circuits=["A"],
+            zone_modules=0,
+            has_solar=False,
+            has_isc=False,
+            has_pv=False,
+            has_cascade=False,
+        )
+
+        regs = build_register_map(model_info=model_info)
+
+        assert regs["power_limit_hp"].address == 4108
+        assert "booster_fault" in regs
+        assert "heat_sink_flow_rate" in regs
+
+    def test_manual_map_keeps_complete_backward_compatible_register_set(self) -> None:
+        regs = build_register_map(circuits=["A"])
+
+        assert regs["power_limit_hp"].address == 4108
 
 
 class TestHeatingCircuits:

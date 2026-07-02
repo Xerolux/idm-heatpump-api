@@ -26,6 +26,7 @@ from .const import (
     EVU_LOCK_OPTIONS,
     HP_OPERATING_MODE_OPTIONS,
     ISC_MODE_OPTIONS,
+    MODEL_NAVIGATOR_10,
     ROOM_MODE_OPTIONS,
     SMART_GRID_OPTIONS,
     SOLAR_MODE_OPTIONS,
@@ -1509,13 +1510,19 @@ def build_register_map(
     all_regs.update(_hp_status_registers())
     all_regs.update(_energy_registers())
 
-    # Always include Navigator 10 additions (safe to probe; many are read-only)
-    all_regs.update(_heat_sink_registers())
-    all_regs.update(_groundwater_registers())
-    all_regs.update(_additional_fault_registers())
-    all_regs.update(_external_pump_demand_registers())
-    all_regs.update(_power_limit_registers())
-    all_regs.update(_booster_registers())
+    # Preserve the complete map for callers without detection data. Once a
+    # model has been detected, do not poll Navigator 10-only addresses on
+    # older controllers: they respond with Modbus "Illegal Data Address".
+    include_navigator_10 = (
+        model_info is None or model_info.model_name == MODEL_NAVIGATOR_10
+    )
+    if include_navigator_10:
+        all_regs.update(_heat_sink_registers())
+        all_regs.update(_groundwater_registers())
+        all_regs.update(_additional_fault_registers())
+        all_regs.update(_external_pump_demand_registers())
+        all_regs.update(_power_limit_registers())
+        all_regs.update(_booster_registers())
 
     active_circuits: list[str]
     num_zones: int
