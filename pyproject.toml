@@ -87,6 +87,6 @@ branch = true
 source = ["idm_heatpump"]
 
 [tool.coverage.report]
-fail_under = 50
+fail_under = 65
 show_missing = true
 skip_covered = true
