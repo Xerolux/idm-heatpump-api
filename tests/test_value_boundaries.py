@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from idm_heatpump.client import DataType, IdmModbusClient, RegisterDef, RegisterType
+from idm_heatpump.client import DataType, IdmModbusClient, RegisterDef, RegisterType, WriteClass
 
 from .fake_modbus import FakeModbusTransport
 
@@ -129,3 +129,54 @@ def test_unsupported_datatype_paths_are_guarded() -> None:
         client.decode_value([1], reg)
     with pytest.raises(ValueError, match="Unsupported datatype"):
         client.encode_value(1, reg)
+
+
+@pytest.mark.parametrize(
+    ("reg", "write_class"),
+    [
+        (RegisterDef(1, DataType.UCHAR, "read_only"), WriteClass.FORBIDDEN),
+        (RegisterDef(1, DataType.UCHAR, "volatile", writable=True), WriteClass.VOLATILE),
+        (
+            RegisterDef(1, DataType.UCHAR, "cyclic", writable=True, cyclic_required=True),
+            WriteClass.CYCLIC,
+        ),
+        (
+            RegisterDef(1, DataType.UCHAR, "eeprom", writable=True, eeprom_sensitive=True),
+            WriteClass.EEPROM,
+        ),
+        (
+            RegisterDef(1, DataType.UCHAR, "write_only", writable=True, write_only=True),
+            WriteClass.WRITE_ONLY,
+        ),
+    ],
+)
+def test_register_write_class_is_derived_from_write_metadata(
+    reg: RegisterDef, write_class: WriteClass
+) -> None:
+    assert reg.write_class is write_class
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"eeprom_sensitive": True},
+        {"cyclic_required": True},
+        {"write_only": True},
+        {"exclude_from_write": {255}},
+    ],
+)
+def test_write_metadata_requires_writable_registers(kwargs: dict[str, object]) -> None:
+    with pytest.raises(ValueError, match="Write metadata requires writable=True"):
+        RegisterDef(1, DataType.UCHAR, "invalid", **kwargs)
+
+
+def test_eeprom_and_cyclic_write_classes_are_mutually_exclusive() -> None:
+    with pytest.raises(ValueError, match="cannot be both EEPROM-sensitive and cyclic"):
+        RegisterDef(
+            1,
+            DataType.UCHAR,
+            "invalid",
+            writable=True,
+            eeprom_sensitive=True,
+            cyclic_required=True,
+        )

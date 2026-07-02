@@ -83,6 +83,14 @@ class RegisterType(Enum):
     HOLDING = "holding"
 
 
+class WriteClass(Enum):
+    FORBIDDEN = "forbidden"
+    VOLATILE = "volatile"
+    CYCLIC = "cyclic"
+    EEPROM = "eeprom"
+    WRITE_ONLY = "write_only"
+
+
 @dataclass
 class IdmModelInfo:
     model_name: str
@@ -137,7 +145,28 @@ class RegisterDef:
             raise ValueError(f"Maximum value must be finite, got {self.max_val}")
         if self.min_val is not None and self.max_val is not None and self.min_val > self.max_val:
             raise ValueError(f"Minimum value {self.min_val} exceeds maximum {self.max_val}")
+        if not self.writable and (
+            self.eeprom_sensitive
+            or self.cyclic_required
+            or self.write_only
+            or self.exclude_from_write
+        ):
+            raise ValueError(f"Write metadata requires writable=True for register {self.name}")
+        if self.eeprom_sensitive and self.cyclic_required:
+            raise ValueError(f"Register {self.name} cannot be both EEPROM-sensitive and cyclic")
         self.size = 2 if self.datatype == DataType.FLOAT else 1
+
+    @property
+    def write_class(self) -> WriteClass:
+        if not self.writable:
+            return WriteClass.FORBIDDEN
+        if self.write_only:
+            return WriteClass.WRITE_ONLY
+        if self.cyclic_required:
+            return WriteClass.CYCLIC
+        if self.eeprom_sensitive:
+            return WriteClass.EEPROM
+        return WriteClass.VOLATILE
 
 
 class IdmModbusClient:

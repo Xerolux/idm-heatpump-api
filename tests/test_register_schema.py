@@ -35,6 +35,7 @@ def _serialize_register(reg: RegisterDef) -> dict[str, Any]:
         "state_class": reg.state_class,
         "icon": reg.icon,
         "write_only": reg.write_only,
+        "write_class": reg.write_class.value,
         "exclude_from_write": sorted(reg.exclude_from_write or []),
         "size": reg.size,
     }

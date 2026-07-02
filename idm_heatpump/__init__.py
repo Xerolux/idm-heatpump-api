@@ -6,6 +6,7 @@ from .client import (
     IdmModelInfo,
     RegisterDef,
     RegisterType,
+    WriteClass,
 )
 from .const import (
     ACTIVE_HC_MODE_OPTIONS,
@@ -92,6 +93,7 @@ __all__ = [
     "IdmModbusClient",
     "RegisterDef",
     "RegisterType",
+    "WriteClass",
     "build_register_map",
     "get_all_registers",
     "get_detection_registers",

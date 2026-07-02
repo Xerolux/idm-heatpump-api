@@ -44,6 +44,7 @@ EXPECTED_PUBLIC_API = [
     "IdmModbusClient",
     "RegisterDef",
     "RegisterType",
+    "WriteClass",
     "build_register_map",
     "get_all_registers",
     "get_detection_registers",
