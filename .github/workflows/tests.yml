@@ -40,3 +40,26 @@ jobs:
         run: |
           pip install mypy
           mypy idm_heatpump --ignore-missing-imports
+
+      - name: Check typed package metadata
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          import idm_heatpump
+
+          marker = Path(idm_heatpump.__file__).with_name("py.typed")
+          assert marker.is_file(), f"Missing typed package marker: {marker}"
+          PY
+
+          cat > /tmp/idm_type_consumer.py <<'PY'
+          from idm_heatpump import IdmModbusClient, build_register_map
+
+          client: IdmModbusClient = IdmModbusClient("127.0.0.1")
+          registers = build_register_map()
+
+          reveal_type(client)
+          reveal_type(registers)
+          PY
+
+          mypy /tmp/idm_type_consumer.py --ignore-missing-imports

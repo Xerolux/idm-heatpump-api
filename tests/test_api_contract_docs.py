@@ -26,3 +26,10 @@ def test_readme_links_api_contract() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
     assert "docs/API-Contract.md" in readme
+
+
+def test_typed_package_marker_is_shipped() -> None:
+    assert (ROOT / "idm_heatpump" / "py.typed").is_file()
+
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert 'idm_heatpump = ["py.typed"]' in pyproject

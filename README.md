@@ -147,6 +147,9 @@ snapshot test. It currently includes:
   `DEFAULT_PORT`, `DEFAULT_SLAVE_ID`, `DEFAULT_TIMEOUT`, `MAX_RETRIES`,
   `RETRY_BACKOFF_BASE`, `EEPROM_SENSITIVE_ADDRESSES`
 
+The package ships a `py.typed` marker so type checkers can consume its inline
+type annotations.
+
 Imports from submodules such as `idm_heatpump.client` or
 `idm_heatpump.registers` are internal convenience imports and may change as the
 library is reorganized.

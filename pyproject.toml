@@ -7,6 +7,9 @@ where = ["."]
 include = ["idm_heatpump*"]
 exclude = ["custom_components*", "images*", "docs*", "tests*", "*.egg-info*"]
 
+[tool.setuptools.package-data]
+idm_heatpump = ["py.typed"]
+
 [project]
 name = "idm-heatpump-api"
 version = "0.3.7"
