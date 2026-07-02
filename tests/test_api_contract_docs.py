@@ -33,3 +33,12 @@ def test_typed_package_marker_is_shipped() -> None:
 
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     assert 'idm_heatpump = ["py.typed"]' in pyproject
+
+
+def test_ci_builds_and_import_checks_distribution_artifacts() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
+
+    assert "python -m build" in workflow
+    assert "twine check dist/*" in workflow
+    assert "python -m venv /tmp/idm_heatpump_api_import" in workflow
+    assert "python -m pip install dist/*.whl" in workflow

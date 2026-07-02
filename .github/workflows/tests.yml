@@ -63,3 +63,23 @@ jobs:
           PY
 
           mypy /tmp/idm_type_consumer.py --ignore-missing-imports
+
+      - name: Build and inspect package artifacts
+        run: |
+          pip install build twine
+          python -m build
+          twine check dist/*
+
+          python -m venv /tmp/idm_heatpump_api_import
+          /tmp/idm_heatpump_api_import/bin/python -m pip install --upgrade pip
+          /tmp/idm_heatpump_api_import/bin/python -m pip install dist/*.whl
+          /tmp/idm_heatpump_api_import/bin/python - <<'PY'
+          from pathlib import Path
+
+          import idm_heatpump
+          from idm_heatpump import IdmModbusClient, build_register_map
+
+          assert Path(idm_heatpump.__file__).with_name("py.typed").is_file()
+          assert IdmModbusClient("127.0.0.1").host == "127.0.0.1"
+          assert "outdoor_temp" in build_register_map(circuits=["A"])
+          PY
