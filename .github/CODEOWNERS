@@ -1,0 +1,7 @@
+* @Xerolux
+
+idm_heatpump/client.py @Xerolux
+idm_heatpump/registers.py @Xerolux
+idm_heatpump/data_types.py @Xerolux
+idm_heatpump/validation.py @Xerolux
+tests/fixtures/register_schema_v1.json @Xerolux

@@ -48,7 +48,9 @@ _DETECT_HC_STEP = 2
 _DETECT_ZONE_MODULE_BASE = 2000
 _DETECT_ZONE_MODULE_STEP = 65
 DEFAULT_REGISTER_SOURCE = "official_idm_modbus"
-DEFAULT_REGISTER_SOURCE_VERSION = "MODBUS TCP NAVIGATOR 10 2025-06-18 plus Navigator 2.0/Pro legacy docs"
+DEFAULT_REGISTER_SOURCE_VERSION = (
+    "MODBUS TCP NAVIGATOR 10 2025-06-18 plus Navigator 2.0/Pro legacy docs"
+)
 
 
 def _get_slave_param() -> str:
@@ -176,7 +178,10 @@ class RegisterDef:
         if self.min_val is not None and self.max_val is not None and self.min_val > self.max_val:
             raise ValueError(f"Minimum value {self.min_val} exceeds maximum {self.max_val}")
         if not self.writable and (
-            self.eeprom_sensitive or self.cyclic_required or self.write_only or self.exclude_from_write
+            self.eeprom_sensitive
+            or self.cyclic_required
+            or self.write_only
+            or self.exclude_from_write
         ):
             raise ValueError(f"Write metadata requires writable=True for register {self.name}")
         if self.eeprom_sensitive and self.cyclic_required:
@@ -248,9 +253,7 @@ class IdmModbusClient:
 
     def __repr__(self) -> str:
         connected = self._client is not None and self._client.connected
-        return (
-            f"IdmModbusClient(host={self._host!r}, port={self._port}, slave_id={self._slave_id}, connected={connected})"
-        )
+        return f"IdmModbusClient(host={self._host!r}, port={self._port}, slave_id={self._slave_id}, connected={connected})"
 
     @property
     def host(self) -> str:
@@ -336,9 +339,13 @@ class IdmModbusClient:
                     client = self._require_client()
                     kwargs: Any = {_PMODBUS_SLAVE_PARAM: self._slave_id}
                     if reg_type == RegisterType.HOLDING:
-                        result = await client.read_holding_registers(address=address, count=count, **kwargs)
+                        result = await client.read_holding_registers(
+                            address=address, count=count, **kwargs
+                        )
                     else:
-                        result = await client.read_input_registers(address=address, count=count, **kwargs)
+                        result = await client.read_input_registers(
+                            address=address, count=count, **kwargs
+                        )
                     if result.isError():
                         raise ModbusException(  # type: ignore[no-untyped-call]
                             f"Modbus error reading address {address}: {result}"
@@ -607,7 +614,9 @@ class IdmModbusClient:
         if not registers:
             raise ValueError(f"Empty register list for {reg.name} (expected {reg.size})")
         if len(registers) < reg.size:
-            raise ValueError(f"Not enough registers for {reg.name}: got {len(registers)}, need {reg.size}")
+            raise ValueError(
+                f"Not enough registers for {reg.name}: got {len(registers)}, need {reg.size}"
+            )
 
         if reg.datatype == DataType.FLOAT:
             low_word, high_word = registers[0], registers[1]
@@ -751,7 +760,9 @@ class IdmModbusClient:
 
         available = build_register_map(model_info=self._model_info).get(reg.name)
         if available is None or available.address != reg.address:
-            raise ValueError(f"Register '{reg.name}' is not available for detected model {self._model_info.model_name}")
+            raise ValueError(
+                f"Register '{reg.name}' is not available for detected model {self._model_info.model_name}"
+            )
 
     def _record_successful_write(self, reg: RegisterDef) -> None:
         if reg.write_class is WriteClass.EEPROM:
@@ -768,7 +779,11 @@ class IdmModbusClient:
 
     def get_active_cyclic_writes(self) -> dict[str, float]:
         now = self._time()
-        return {name: deadline for name, deadline in self._cyclic_write_deadlines.items() if deadline > now}
+        return {
+            name: deadline
+            for name, deadline in self._cyclic_write_deadlines.items()
+            if deadline > now
+        }
 
     def get_expired_cyclic_writes(self) -> set[str]:
         now = self._time()
@@ -785,7 +800,11 @@ class IdmModbusClient:
         if not register_list:
             return {}
 
-        valid_regs = [r for r in register_list if r.name not in self._permanently_failed_registers and not r.write_only]
+        valid_regs = [
+            r
+            for r in register_list
+            if r.name not in self._permanently_failed_registers and not r.write_only
+        ]
         if not valid_regs:
             return {}
 

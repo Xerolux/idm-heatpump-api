@@ -46,7 +46,9 @@ def test_integer_encode_decode_boundaries(datatype: DataType, minimum: int, maxi
         (DataType.UINT16, [-1, 65536]),
     ],
 )
-def test_integer_encode_rejects_out_of_range_values(datatype: DataType, invalid_values: list[int]) -> None:
+def test_integer_encode_rejects_out_of_range_values(
+    datatype: DataType, invalid_values: list[int]
+) -> None:
     client = IdmModbusClient("127.0.0.1")
     reg = RegisterDef(1, datatype, datatype.value)
 
@@ -169,7 +171,9 @@ def test_register_quality_metadata_is_required(kwargs: dict[str, object]) -> Non
         ),
     ],
 )
-def test_register_write_class_is_derived_from_write_metadata(reg: RegisterDef, write_class: WriteClass) -> None:
+def test_register_write_class_is_derived_from_write_metadata(
+    reg: RegisterDef, write_class: WriteClass
+) -> None:
     assert reg.write_class is write_class
 
 

@@ -17,6 +17,10 @@ on:
         required: false
         type: string
         default: ""
+      release_notes:
+        description: "Curated release notes for GitHub and PyPI users"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -30,13 +34,25 @@ jobs:
       name: pypi
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.x"
+
+      - name: Install validation dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Validate current package
+        run: |
+          pytest tests/ -v --tb=short --cov=idm_heatpump --cov-report=term-missing --cov-fail-under=75
+          ruff check idm_heatpump tests
+          ruff format idm_heatpump tests --check
+          mypy idm_heatpump
 
       - name: Determine next version
         id: version
@@ -78,6 +94,15 @@ jobs:
           sed -i 's/^version = ".*"/version = "'"${NEW}"'"/' pyproject.toml
           echo "Bumped to ${NEW}"
 
+      - name: Validate version and tag
+        run: |
+          NEW="${{ steps.version.outputs.version }}"
+          grep -q "^version = \"${NEW}\"$" pyproject.toml
+          if git rev-parse "v${NEW}" >/dev/null 2>&1; then
+            echo "Tag v${NEW} already exists"
+            exit 1
+          fi
+
       - name: Commit and tag
         working-directory: ${{ github.workspace }}
         run: |
@@ -85,8 +110,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add pyproject.toml
-          git commit -m "chore: bump version to ${NEW}" || true
-          git tag "v${NEW}" || true
+          git commit -m "chore: bump version to ${NEW}"
+          git tag "v${NEW}"
           git push origin main --tags
 
       - name: Parse commits since last release
@@ -133,11 +158,27 @@ jobs:
 
       - name: Build package
         run: |
-          python -m pip install build
           python -m build
+          twine check dist/*
+
+      - name: Inspect built package
+        run: |
+          python -m venv /tmp/idm_heatpump_api_release
+          /tmp/idm_heatpump_api_release/bin/python -m pip install --upgrade pip
+          /tmp/idm_heatpump_api_release/bin/python -m pip install dist/*.whl
+          /tmp/idm_heatpump_api_release/bin/python - <<'PY'
+          from pathlib import Path
+
+          import idm_heatpump
+          from idm_heatpump import IdmModbusClient, build_register_map
+
+          assert Path(idm_heatpump.__file__).with_name("py.typed").is_file()
+          assert IdmModbusClient("127.0.0.1").host == "127.0.0.1"
+          assert "outdoor_temp" in build_register_map(circuits=["A"])
+          PY
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
         with:
           tag_name: "v${{ steps.version.outputs.version }}"
           body: |
@@ -150,7 +191,7 @@ jobs:
             [![Tesla Referral](https://img.shields.io/badge/Tesla-Referral-red?logo=tesla&style=for-the-badge)](https://ts.la/sebastian564489)
 
             ### New Features
-            ${{ steps.commits.outputs.new-features }}
+            ${{ inputs.release_notes }}
 
             ### Improvements
             ${{ steps.commits.outputs.improvements }}
@@ -191,6 +232,6 @@ jobs:
             dist/*
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b
         with:
           password: ${{ secrets.PYPI }}
