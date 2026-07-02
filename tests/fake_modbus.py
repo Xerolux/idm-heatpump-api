@@ -27,12 +27,14 @@ class FakeModbusTransport:
         input_registers: dict[int, int] | None = None,
         holding_registers: dict[int, int] | None = None,
         error_reads: set[tuple[str, int, int]] | None = None,
+        exception_reads: dict[tuple[str, int, int], Exception] | None = None,
         short_reads: dict[tuple[str, int, int], list[int]] | None = None,
         delay: float = 0,
     ) -> None:
         self.input_registers = input_registers or {}
         self.holding_registers = holding_registers or {}
         self.error_reads = error_reads or set()
+        self.exception_reads = exception_reads or {}
         self.short_reads = short_reads or {}
         self.delay = delay
         self.read_calls: list[tuple[str, int, int]] = []
@@ -70,6 +72,8 @@ class FakeModbusTransport:
         try:
             key = (kind, address, count)
             self.read_calls.append(key)
+            if key in self.exception_reads:
+                raise self.exception_reads[key]
             if key in self.error_reads:
                 return FakeModbusResponse(error=True)
             if key in self.short_reads:

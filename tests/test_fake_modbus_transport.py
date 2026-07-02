@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import math
+import struct
 
 import pytest
 from pymodbus.exceptions import ConnectionException, ModbusException
@@ -27,6 +29,10 @@ class ReconnectingClient(IdmModbusClient):
 
 def _float_words(client: IdmModbusClient, value: float) -> list[int]:
     return client.encode_value(value, RegisterDef(1, DataType.FLOAT, "float"))
+
+
+def _raw_float_words(value: float) -> list[int]:
+    return list(struct.unpack("<HH", struct.pack("<f", value)))
 
 
 def test_fake_transport_reads_writes_and_float_byteorder() -> None:
@@ -90,6 +96,16 @@ def test_incomplete_fake_response_raises_modbus_exception() -> None:
         asyncio.run(client._read_registers(1000, 2))
 
 
+def test_timeout_exception_is_deterministic() -> None:
+    client = IdmModbusClient("127.0.0.1", max_retries=1)
+    client._client = FakeModbusTransport(  # type: ignore[assignment]
+        exception_reads={("input", 1000, 1): TimeoutError("fake timeout")}
+    )
+
+    with pytest.raises(TimeoutError, match="fake timeout"):
+        asyncio.run(client._read_registers(1000, 1))
+
+
 def test_permanently_failed_registers_can_be_reset() -> None:
     client = IdmModbusClient("127.0.0.1", max_retries=1)
     client._client = FakeModbusTransport(error_reads={("input", 1000, 1)})  # type: ignore[assignment]
@@ -107,13 +123,39 @@ def test_permanently_failed_registers_can_be_reset() -> None:
 
 
 def test_connection_exception_triggers_reconnect() -> None:
-    disconnected = FakeModbusTransport()
-    disconnected.connected = False
+    disconnected = FakeModbusTransport(
+        exception_reads={("input", 1000, 1): ConnectionException("fake abort")}
+    )
     working = FakeModbusTransport(input_registers={1000: 7})
     client = ReconnectingClient([working])
     client._client = disconnected  # type: ignore[assignment]
 
     assert asyncio.run(client._read_registers(1000, 1)) == [7]
+
+
+def test_batch_groups_split_by_gap_and_size_limits() -> None:
+    registers = [
+        RegisterDef(1000, DataType.UCHAR, "a"),
+        RegisterDef(1011, DataType.UCHAR, "b"),
+        RegisterDef(1052, DataType.UCHAR, "c"),
+    ]
+
+    groups = IdmModbusClient._group_registers(registers)
+
+    assert [[reg.name for reg in group] for group in groups] == [["a", "b"], ["c"]]
+
+
+def test_sentinel_and_non_finite_values_are_decoded_safely() -> None:
+    client = IdmModbusClient("127.0.0.1")
+
+    assert client.decode_value([65535], RegisterDef(1, DataType.INT16, "sentinel_minus_one")) == -1
+    assert client.decode_value([255], RegisterDef(1, DataType.UCHAR, "sentinel_255")) == 255
+
+    nan_words = _raw_float_words(math.nan)
+    inf_words = _raw_float_words(math.inf)
+
+    assert client.decode_value(nan_words, RegisterDef(1, DataType.FLOAT, "nan_value")) is None
+    assert client.decode_value(inf_words, RegisterDef(1, DataType.FLOAT, "inf_value")) is None
 
 
 def test_client_lock_serializes_parallel_requests() -> None:
