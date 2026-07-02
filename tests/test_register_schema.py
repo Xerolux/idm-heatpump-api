@@ -30,6 +30,7 @@ def _serialize_register(reg: RegisterDef) -> dict[str, Any]:
         "register_type": reg.register_type.value,
         "eeprom_sensitive": reg.eeprom_sensitive,
         "cyclic_required": reg.cyclic_required,
+        "cyclic_write_ttl": reg.cyclic_write_ttl,
         "binary": reg.binary,
         "enabled_by_default": reg.enabled_by_default,
         "state_class": reg.state_class,

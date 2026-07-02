@@ -111,11 +111,17 @@ reg = registers["compressor_status_1"]
 print(reg.binary)                # True -> BinarySensor
 print(reg.writable)              # False
 print(reg.write_only)            # False
+print(reg.write_class)           # forbidden / volatile / cyclic / eeprom / write_only
 print(reg.enabled_by_default)    # True
 print(reg.state_class)           # None (or "measurement", "total_increasing")
 print(reg.icon)                  # None (or "mdi:thermometer")
 print(reg.exclude_from_write)    # None (or {255})
 ```
+
+Successful writes to cyclic GLT registers refresh an in-memory heartbeat
+deadline. Consumers can inspect `get_active_cyclic_writes()` and
+`get_expired_cyclic_writes()` to detect stale external demands and can clear the
+state with `reset_cyclic_write_state()` on reload or shutdown.
 
 ## Public API
 

@@ -182,6 +182,24 @@ def test_eeprom_and_cyclic_write_classes_are_mutually_exclusive() -> None:
         )
 
 
+def test_cyclic_ttl_requires_cyclic_write_class() -> None:
+    with pytest.raises(ValueError, match="Cyclic write TTL requires cyclic_required=True"):
+        RegisterDef(1, DataType.FLOAT, "invalid", writable=True, cyclic_write_ttl=60)
+
+
+@pytest.mark.parametrize("ttl", [0, -1, float("inf")])
+def test_cyclic_ttl_must_be_positive_and_finite(ttl: float) -> None:
+    with pytest.raises(ValueError, match="Cyclic write TTL must be finite and positive"):
+        RegisterDef(
+            1,
+            DataType.FLOAT,
+            "invalid",
+            writable=True,
+            cyclic_required=True,
+            cyclic_write_ttl=ttl,
+        )
+
+
 def test_eeprom_write_throttle_blocks_repeated_writes_until_window_expires() -> None:
     current_time = 1000.0
     transport = FakeModbusTransport()
@@ -227,3 +245,56 @@ def test_failed_eeprom_write_does_not_start_throttle_window() -> None:
         asyncio.run(client.write_register(reg, 1))
 
     assert client._last_eeprom_writes == {}
+
+
+def test_cyclic_write_sets_and_expires_heartbeat_deadline() -> None:
+    current_time = 1000.0
+    transport = FakeModbusTransport()
+    client = IdmModbusClient("127.0.0.1")
+    client._client = transport  # type: ignore[assignment]
+    client._time = lambda: current_time
+    reg = RegisterDef(
+        1696,
+        DataType.FLOAT,
+        "glt_temp_demand_heating",
+        writable=True,
+        cyclic_required=True,
+        cyclic_write_ttl=30,
+    )
+
+    asyncio.run(client.write_register(reg, 42.5))
+
+    assert client.get_active_cyclic_writes() == {"glt_temp_demand_heating": 1030.0}
+    assert client.get_expired_cyclic_writes() == set()
+
+    current_time = 1030.0
+
+    assert client.get_active_cyclic_writes() == {}
+    assert client.get_expired_cyclic_writes() == {"glt_temp_demand_heating"}
+
+
+def test_cyclic_write_heartbeat_refreshes_deadline_and_can_be_reset() -> None:
+    current_time = 1000.0
+    transport = FakeModbusTransport()
+    client = IdmModbusClient("127.0.0.1")
+    client._client = transport  # type: ignore[assignment]
+    client._time = lambda: current_time
+    reg = RegisterDef(
+        1696,
+        DataType.FLOAT,
+        "glt_temp_demand_heating",
+        writable=True,
+        cyclic_required=True,
+        cyclic_write_ttl=30,
+    )
+
+    asyncio.run(client.write_register(reg, 40.0))
+    current_time = 1010.0
+    asyncio.run(client.write_register(reg, 41.0))
+
+    assert client.get_active_cyclic_writes() == {"glt_temp_demand_heating": 1040.0}
+
+    client.reset_cyclic_write_state(reg)
+
+    assert client.get_active_cyclic_writes() == {}
+    assert client.get_expired_cyclic_writes() == set()

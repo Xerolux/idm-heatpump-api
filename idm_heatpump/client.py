@@ -41,6 +41,7 @@ _MAX_GROUP_GAP = 10
 _MAX_GROUP_SIZE = 40
 _PERMANENT_FAILURE_THRESHOLD = 3
 DEFAULT_EEPROM_WRITE_INTERVAL = 60.0
+DEFAULT_CYCLIC_WRITE_TTL = 300.0
 
 _DETECT_HC_FLOW_BASE = 1350
 _DETECT_HC_STEP = 2
@@ -124,6 +125,7 @@ class RegisterDef:
     register_type: RegisterType = RegisterType.INPUT
     eeprom_sensitive: bool = False
     cyclic_required: bool = False
+    cyclic_write_ttl: float | None = None
     binary: bool = False
     enabled_by_default: bool = True
     state_class: str | None = None
@@ -156,6 +158,11 @@ class RegisterDef:
             raise ValueError(f"Write metadata requires writable=True for register {self.name}")
         if self.eeprom_sensitive and self.cyclic_required:
             raise ValueError(f"Register {self.name} cannot be both EEPROM-sensitive and cyclic")
+        if self.cyclic_write_ttl is not None:
+            if not self.cyclic_required:
+                raise ValueError(f"Cyclic write TTL requires cyclic_required=True for {self.name}")
+            if not math.isfinite(self.cyclic_write_ttl) or self.cyclic_write_ttl <= 0:
+                raise ValueError(f"Cyclic write TTL must be finite and positive for {self.name}")
         self.size = 2 if self.datatype == DataType.FLOAT else 1
 
     @property
@@ -211,6 +218,7 @@ class IdmModbusClient:
         self._permanently_failed_registers: set[str] = set()
         self._model_info: IdmModelInfo | None = None
         self._last_eeprom_writes: dict[str, float] = {}
+        self._cyclic_write_deadlines: dict[str, float] = {}
         self._eeprom_write_interval = DEFAULT_EEPROM_WRITE_INTERVAL
         self._time = time.monotonic
 
@@ -663,12 +671,33 @@ class IdmModbusClient:
     def _record_successful_write(self, reg: RegisterDef) -> None:
         if reg.write_class is WriteClass.EEPROM:
             self._last_eeprom_writes[reg.name] = self._time()
+        if reg.write_class is WriteClass.CYCLIC:
+            ttl = reg.cyclic_write_ttl or DEFAULT_CYCLIC_WRITE_TTL
+            self._cyclic_write_deadlines[reg.name] = self._time() + ttl
 
     def reset_write_throttle(self, reg: RegisterDef | None = None) -> None:
         if reg is None:
             self._last_eeprom_writes.clear()
         else:
             self._last_eeprom_writes.pop(reg.name, None)
+
+    def get_active_cyclic_writes(self) -> dict[str, float]:
+        now = self._time()
+        return {
+            name: deadline
+            for name, deadline in self._cyclic_write_deadlines.items()
+            if deadline > now
+        }
+
+    def get_expired_cyclic_writes(self) -> set[str]:
+        now = self._time()
+        return {name for name, deadline in self._cyclic_write_deadlines.items() if deadline <= now}
+
+    def reset_cyclic_write_state(self, reg: RegisterDef | None = None) -> None:
+        if reg is None:
+            self._cyclic_write_deadlines.clear()
+        else:
+            self._cyclic_write_deadlines.pop(reg.name, None)
 
     async def read_batch(self, register_list: list[RegisterDef]) -> dict[str, Any]:
         """Read multiple registers efficiently using grouped batch reads."""
