@@ -116,6 +116,40 @@ print(reg.icon)                  # None (or "mdi:thermometer")
 print(reg.exclude_from_write)    # None (or {255})
 ```
 
+## Public API
+
+Supported consumers should import from the package root:
+
+```python
+from idm_heatpump import IdmModbusClient, build_register_map
+```
+
+The public API is the package root `__all__` contract and is protected by a
+snapshot test. It currently includes:
+
+- Client and metadata types: `IdmModbusClient`, `IdmModelInfo`, `RegisterDef`,
+  `DataType`, `RegisterType`
+- Register builders: `build_register_map`, `get_all_registers`, `get_register`,
+  `get_detection_registers`, `get_heating_circuit_registers`,
+  `get_zone_module_registers`
+- Register collections and option maps: `CORE_REGISTERS`,
+  `SYSTEM_MODE_OPTIONS`, `CIRCUIT_MODE_OPTIONS`, `ROOM_MODE_OPTIONS`,
+  `ZONE_MODULE_MODE_OPTIONS`, `ACTIVE_HC_MODE_OPTIONS`, `SOLAR_MODE_OPTIONS`,
+  `SMART_GRID_OPTIONS`, `ISC_MODE_OPTIONS`, `HP_OPERATING_MODE_OPTIONS`,
+  `BIVALENCE_STATE_OPTIONS`, `BOOSTER_FAULT_OPTIONS`, `EVU_LOCK_OPTIONS`,
+  `VARIABLE_INPUT_OPTIONS`
+- Model, feature, and connection constants: `MODEL_NAVIGATOR_20`,
+  `MODEL_NAVIGATOR_PRO`, `MODEL_NAVIGATOR_10`, `MODEL_UNKNOWN`,
+  `FEATURE_HEATING_CIRCUITS`, `FEATURE_ZONE_MODULES`, `FEATURE_SOLAR`,
+  `FEATURE_ISC`, `FEATURE_PV`, `FEATURE_CASCADE`, `HEATING_CIRCUIT_LETTERS`,
+  `MAX_HEATING_CIRCUITS`, `MAX_ZONE_MODULES`, `MAX_ROOMS_PER_ZONE`,
+  `DEFAULT_PORT`, `DEFAULT_SLAVE_ID`, `DEFAULT_TIMEOUT`, `MAX_RETRIES`,
+  `RETRY_BACKOFF_BASE`, `EEPROM_SENSITIVE_ADDRESSES`
+
+Imports from submodules such as `idm_heatpump.client` or
+`idm_heatpump.registers` are internal convenience imports and may change as the
+library is reorganized.
+
 ## Navigator 10 Support
 
 The library fully covers the official 2025 Navigator 10 Modbus TCP specification, including:
