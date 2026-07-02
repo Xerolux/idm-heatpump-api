@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Reject invalid register data types, register types, scaling multipliers, and value bounds
+  when register metadata is created, instead of failing later during device I/O.
+- Reject incomplete Modbus responses and ignore malformed capability probes during automatic
+  model detection.
+- Restore the GitHub bug-report template, which accidentally contained funding configuration.
+
 ## [0.3.2] - 2026-06
 
 All register definitions were verified line by line against the official iDM

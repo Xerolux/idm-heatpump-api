@@ -3,7 +3,10 @@
 import asyncio
 from typing import Any
 
-from idm_heatpump.client import IdmModbusClient
+import pytest
+from pymodbus.exceptions import ModbusException
+
+from idm_heatpump.client import DataType, IdmModbusClient, RegisterDef, RegisterType
 from idm_heatpump.const import (
     FEATURE_CASCADE,
     FEATURE_HEATING_CIRCUITS,
@@ -29,6 +32,15 @@ class ProbeOnlyClient(IdmModbusClient):
 
     async def probe_register(self, address: int, count: int = 1) -> list[int] | None:
         return self._probes.get((address, count))
+
+
+class IncompleteResponseClient:
+    """Minimal connected pymodbus double returning a short response."""
+
+    connected = True
+
+    async def read_input_registers(self, **kwargs: Any) -> Any:
+        return type("Response", (), {"isError": lambda self: False, "registers": [1]})()
 
 
 def test_detect_model_uses_shared_feature_constants() -> None:
@@ -78,3 +90,77 @@ def test_model_name_defaults_when_detection_inconclusive() -> None:
     assert model_info.model_name == MODEL_UNKNOWN
     assert client.model_name == MODEL_NAVIGATOR_20
     assert model_info.firmware_version is None
+
+
+def test_detect_model_ignores_incomplete_probe_responses() -> None:
+    """Short Modbus responses must not crash detection or imply capabilities."""
+    client = ProbeOnlyClient(
+        {
+            (1350, 2): [0],
+            (2000, 1): [],
+            (1850, 2): [0],
+            (1870, 2): [],
+            (74, 2): [0],
+            (1147, 1): [],
+            (1072, 1): [],
+            (4108, 2): [0],
+            (4120, 2): [0],
+        }
+    )
+
+    model_info = asyncio.run(client.detect_model())
+
+    assert model_info.model_name != MODEL_NAVIGATOR_10
+    assert model_info.active_heating_circuits == []
+    assert not model_info.has_solar
+    assert not model_info.has_isc
+    assert not model_info.has_pv
+    assert not model_info.has_cascade
+    assert model_info.firmware_version is None
+
+
+def test_read_registers_rejects_incomplete_modbus_response() -> None:
+    """Successful but short protocol responses must not reach value decoding."""
+    client = IdmModbusClient("127.0.0.1", max_retries=1)
+    client._client = IncompleteResponseClient()  # type: ignore[assignment]
+
+    with pytest.raises(ModbusException, match="got 1 registers, expected 2"):
+        asyncio.run(client._read_registers(1000, 2))
+
+
+@pytest.mark.parametrize("field,value", [("datatype", "FLOAT"), ("register_type", "input")])
+def test_register_definition_rejects_invalid_enum_values(field: str, value: str) -> None:
+    """String lookalikes must not bypass register metadata validation."""
+    values: dict[str, object] = {
+        "address": 1,
+        "datatype": DataType.FLOAT,
+        "name": "invalid",
+        field: value,
+    }
+
+    with pytest.raises(ValueError):
+        RegisterDef(**values)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("multiplier", [0, float("nan"), float("inf")])
+def test_register_definition_rejects_invalid_multiplier(multiplier: float) -> None:
+    with pytest.raises(ValueError):
+        RegisterDef(1, DataType.FLOAT, "invalid", multiplier=multiplier)
+
+
+@pytest.mark.parametrize(
+    "min_val,max_val",
+    [(float("nan"), None), (None, float("inf")), (2, 1)],
+)
+def test_register_definition_rejects_invalid_bounds(
+    min_val: float | None, max_val: float | None
+) -> None:
+    with pytest.raises(ValueError):
+        RegisterDef(
+            1,
+            DataType.FLOAT,
+            "invalid",
+            min_val=min_val,
+            max_val=max_val,
+            register_type=RegisterType.INPUT,
+        )

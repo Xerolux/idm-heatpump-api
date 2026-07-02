@@ -125,11 +125,29 @@ class RegisterDef:
     size: int = field(init=False)
 
     def __post_init__(self) -> None:
-        if self.datatype not in DataType:
+        if not isinstance(self.datatype, DataType):
             raise ValueError(f"Invalid datatype: {self.datatype}")
+        if not isinstance(self.register_type, RegisterType):
+            raise ValueError(f"Invalid register type: {self.register_type}")
         if self.address < 0:
             raise ValueError(
                 f"Register address must be non-negative, got {self.address}"
+            )
+        if not math.isfinite(self.multiplier) or self.multiplier == 0:
+            raise ValueError(
+                f"Multiplier must be finite and non-zero, got {self.multiplier}"
+            )
+        if self.min_val is not None and not math.isfinite(self.min_val):
+            raise ValueError(f"Minimum value must be finite, got {self.min_val}")
+        if self.max_val is not None and not math.isfinite(self.max_val):
+            raise ValueError(f"Maximum value must be finite, got {self.max_val}")
+        if (
+            self.min_val is not None
+            and self.max_val is not None
+            and self.min_val > self.max_val
+        ):
+            raise ValueError(
+                f"Minimum value {self.min_val} exceeds maximum {self.max_val}"
             )
         self.size = 2 if self.datatype == DataType.FLOAT else 1
 
@@ -276,7 +294,13 @@ class IdmModbusClient:
                         raise ModbusException(  # type: ignore[no-untyped-call]
                             f"Modbus error reading address {address}: {result}"
                         )
-                    return list(result.registers)
+                    registers = list(result.registers)
+                    if len(registers) != count:
+                        raise ModbusException(  # type: ignore[no-untyped-call]
+                            f"Incomplete Modbus response at address {address}: "
+                            f"got {len(registers)} registers, expected {count}"
+                        )
+                    return registers
                 except ConnectionException:
                     if attempt == self._max_retries - 1:
                         raise
@@ -357,7 +381,7 @@ class IdmModbusClient:
         for i in range(MAX_HEATING_CIRCUITS):
             addr = _DETECT_HC_FLOW_BASE + i * _DETECT_HC_STEP
             regs = await self.probe_register(addr, 2)
-            if regs is not None:
+            if regs is not None and len(regs) == 2:
                 try:
                     raw = struct.pack("<HH", regs[0], regs[1])
                     val = struct.unpack("<f", raw)[0]
@@ -376,7 +400,7 @@ class IdmModbusClient:
 
         has_solar = False
         solar_regs = await self.probe_register(1850, 2)
-        if solar_regs is not None:
+        if solar_regs is not None and len(solar_regs) == 2:
             try:
                 raw = struct.pack("<HH", solar_regs[0], solar_regs[1])
                 val = struct.unpack("<f", raw)[0]
@@ -387,7 +411,7 @@ class IdmModbusClient:
 
         has_isc = False
         isc_regs = await self.probe_register(1870, 2)
-        if isc_regs is not None:
+        if isc_regs is not None and len(isc_regs) == 2:
             try:
                 raw = struct.pack("<HH", isc_regs[0], isc_regs[1])
                 val = struct.unpack("<f", raw)[0]
@@ -396,11 +420,12 @@ class IdmModbusClient:
             except (struct.error, ValueError):
                 has_isc = True
 
-        has_pv = await self.probe_register(74, 2) is not None
+        pv_regs = await self.probe_register(74, 2)
+        has_pv = pv_regs is not None and len(pv_regs) == 2
 
         has_cascade = False
         cascade_regs = await self.probe_register(1147, 1)
-        if cascade_regs is not None and cascade_regs[0] != 0:
+        if cascade_regs is not None and len(cascade_regs) == 1 and cascade_regs[0] != 0:
             has_cascade = True
 
         features: set[str] = set()
@@ -424,7 +449,7 @@ class IdmModbusClient:
             # Heat sink flow (1072) or power limit (4108) are good Navigator 10 signals
             hs = await self.probe_register(1072, 1)
             pl = await self.probe_register(4108, 2)
-            if (hs is not None) or (pl is not None):
+            if (hs is not None and len(hs) == 1) or (pl is not None and len(pl) == 2):
                 has_navigator_10_indicators = True
         except Exception:
             pass
@@ -439,7 +464,7 @@ class IdmModbusClient:
 
         firmware_version: float | None = None
         fw_regs = await self.probe_register(4120, 2)
-        if fw_regs is not None:
+        if fw_regs is not None and len(fw_regs) == 2:
             try:
                 raw = struct.pack("<HH", fw_regs[0], fw_regs[1])
                 val = struct.unpack("<f", raw)[0]
