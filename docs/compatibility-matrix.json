@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "api_version": "0.3.7",
+      "hass_integration_version": "0.7.3",
+      "status": "tested",
+      "notes": "Baseline for Navigator 2.0 filtering and Navigator 10 register map."
+    }
+  ]
+}

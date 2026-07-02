@@ -20,14 +20,22 @@ Describe the problem and what you expected instead.
 
 - `idm-heatpump-api` version:
 - Python version:
-- Heat-pump model and firmware:
 - `pymodbus` version:
+- Heat-pump model:
+- Controller or Navigator version:
+- Firmware version:
+- Active heating circuits:
+- Zone modules and rooms:
 
 ## Logs or traceback
 
 ```text
 Paste relevant output here. Remove credentials, hostnames, and IP addresses.
 ```
+
+## Diagnostics or register evidence
+
+Attach redacted read-only observations, schema excerpts, or Home Assistant diagnostics if the API issue was found through the integration.
 
 ## Additional context
 

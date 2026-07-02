@@ -6,18 +6,24 @@ on:
   pull_request:
     branches: [main, develop]
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.12", "3.13"]
+        python-version: ["3.12", "3.13", "3.14"]
+        pymodbus-spec:
+          - "pymodbus==3.12.1"
+          - "pymodbus>=3.12.1,<4.0"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -26,16 +32,75 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[test]"
+          pip install "${{ matrix.pymodbus-spec }}"
 
       - name: Run tests
-        run: pytest tests/ -v --tb=short
+        run: pytest tests/ -v --tb=short --cov=idm_heatpump --cov-report=term-missing --cov-fail-under=75
 
       - name: Run linting
         run: |
           pip install ruff
           ruff check idm_heatpump tests
+          ruff format idm_heatpump tests --check
 
       - name: Check type hints
         run: |
           pip install mypy
-          mypy idm_heatpump --ignore-missing-imports
+          mypy idm_heatpump
+
+      - name: Check typed package metadata
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          import idm_heatpump
+
+          marker = Path(idm_heatpump.__file__).with_name("py.typed")
+          assert marker.is_file(), f"Missing typed package marker: {marker}"
+          PY
+
+          cat > /tmp/idm_type_consumer.py <<'PY'
+          from idm_heatpump import IdmModbusClient, build_register_map
+
+          client: IdmModbusClient = IdmModbusClient("127.0.0.1")
+          registers = build_register_map()
+
+          reveal_type(client)
+          reveal_type(registers)
+          PY
+
+          mypy /tmp/idm_type_consumer.py
+
+      - name: Build and inspect package artifacts
+        run: |
+          pip install build twine
+          python -m build
+          twine check dist/*
+
+          python -m venv /tmp/idm_heatpump_api_import
+          /tmp/idm_heatpump_api_import/bin/python -m pip install --upgrade pip
+          /tmp/idm_heatpump_api_import/bin/python -m pip install dist/*.whl
+          /tmp/idm_heatpump_api_import/bin/python - <<'PY'
+          from pathlib import Path
+
+          import idm_heatpump
+          from idm_heatpump import IdmModbusClient, build_register_map
+
+          assert Path(idm_heatpump.__file__).with_name("py.typed").is_file()
+          assert IdmModbusClient("127.0.0.1").host == "127.0.0.1"
+          assert "outdoor_temp" in build_register_map(circuits=["A"])
+          PY
+
+      - name: Check out Home Assistant integration contract tests
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          repository: Xerolux/idm-heatpump-hass
+          ref: Codex/roadmap-phase0
+          path: integration-contract
+
+      - name: Run Home Assistant integration contract tests
+        run: |
+          PYTHONPATH="$PWD:$PWD/integration-contract" pytest \
+            integration-contract/tests/test_library_client.py \
+            integration-contract/tests/test_adapter_helpers.py \
+            -q

@@ -7,13 +7,16 @@ where = ["."]
 include = ["idm_heatpump*"]
 exclude = ["custom_components*", "images*", "docs*", "tests*", "*.egg-info*"]
 
+[tool.setuptools.package-data]
+idm_heatpump = ["py.typed"]
+
 [project]
 name = "idm-heatpump-api"
 version = "0.3.7"
 authors = [
   { name="Basti (Xerolux)", email="git@xerolux.de" },
 ]
-description = "Python library for communicating with IDM Navigator heat pumps via Modbus TCP. Used by the official Home Assistant integration."
+description = "Python library for communicating with IDM Navigator heat pumps via Modbus TCP. Used by the IDM Heatpump Home Assistant custom integration."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
@@ -21,6 +24,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Operating System :: OS Independent",
     "Intended Audience :: Developers",
     "Topic :: Home Automation",
@@ -31,19 +35,23 @@ classifiers = [
 
 keywords = ["idm", "heatpump", "modbus", "navigator", "home-assistant", "hass", "heating", "modbus-tcp"]
 dependencies = [
-    "pymodbus>=3.7.0",
+    "pymodbus>=3.12.1,<4.0",
 ]
 
 [project.optional-dependencies]
 test = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
+    "pytest-cov>=5.0.0",
 ]
 dev = [
+    "build>=1.2.0",
+    "twine>=5.0.0",
     "ruff>=0.5.0",
     "mypy>=1.10.0",
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
+    "pytest-cov>=5.0.0",
 ]
 
 [project.urls]
@@ -69,7 +77,16 @@ known-first-party = ["idm_heatpump"]
 
 [tool.mypy]
 python_version = "3.12"
+strict = true
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
-disallow_untyped_defs = false
+
+[tool.coverage.run]
+branch = true
+source = ["idm_heatpump"]
+
+[tool.coverage.report]
+fail_under = 75
+show_missing = true
+skip_covered = true

@@ -13,12 +13,13 @@
 
 An asynchronous Python library for communicating with **IDM Navigator heat pumps** (2.0, Pro, and Navigator 10) over Modbus TCP.
 
-This library is primarily designed to power the official [IDM Heatpump Home Assistant Integration](https://github.com/Xerolux/idm-heatpump-hass), but it can be used independently for any Python project that needs to monitor or control an IDM heat pump.
+This library is primarily designed to power the unofficial [IDM Heatpump Home Assistant custom integration](https://github.com/Xerolux/idm-heatpump-hass), but it can be used independently for any Python project that needs to monitor or control an IDM heat pump.
 
 > **Documentation:**
 > - GitHub Pages: https://xerolux.github.io/idm-heatpump-api/
 > - GitHub Wiki: https://github.com/Xerolux/idm-heatpump-api/wiki
 > - PyPI: https://pypi.org/project/idm-heatpump-api/
+> - API contract: [docs/API-Contract.md](docs/API-Contract.md)
 >
 > The `docs/` directory is the single source of truth and is used for both GitHub Pages and Wiki sync.
 
@@ -30,7 +31,7 @@ This library is primarily designed to power the official [IDM Heatpump Home Assi
 * **Batch Reads:** Intelligent grouping and batching of register reads for maximum efficiency.
 * **Resilient:** Configurable retries with exponential backoff and permanent failure tracking for unavailable registers.
 * **Write Support:** Safe register writes with validation, min/max bounds, and EEPROM-sensitive write protection.
-* **Metadata:** Each register includes `binary`, `state_class`, `icon`, `enabled_by_default`, `write_only`, and `exclude_from_write` metadata for direct Home Assistant entity mapping.
+* **Metadata:** Each register includes Home Assistant mapping fields plus source, source version, supported models, sentinel values, and verification metadata.
 
 ## Supported Devices
 
@@ -110,11 +111,60 @@ reg = registers["compressor_status_1"]
 print(reg.binary)                # True -> BinarySensor
 print(reg.writable)              # False
 print(reg.write_only)            # False
+print(reg.write_class)           # forbidden / volatile / cyclic / eeprom / write_only
 print(reg.enabled_by_default)    # True
 print(reg.state_class)           # None (or "measurement", "total_increasing")
 print(reg.icon)                  # None (or "mdi:thermometer")
 print(reg.exclude_from_write)    # None (or {255})
+print(reg.source)                # official_idm_modbus
+print(reg.source_version)        # source document / verification version
+print(reg.supported_models)      # expected Navigator models
+print(reg.sentinel_values)       # context-specific unavailable values
+print(reg.last_verified)         # optional hardware verification label
 ```
+
+Successful writes to cyclic GLT registers refresh an in-memory heartbeat
+deadline. Consumers can inspect `get_active_cyclic_writes()` and
+`get_expired_cyclic_writes()` to detect stale external demands and can clear the
+state with `reset_cyclic_write_state()` on reload or shutdown.
+
+## Public API
+
+Supported consumers should import from the package root:
+
+```python
+from idm_heatpump import IdmModbusClient, build_register_map
+```
+
+The public API is the package root `__all__` contract and is protected by a
+snapshot test. It currently includes:
+
+- Client and metadata types: `IdmModbusClient`, `IdmModelInfo`,
+  `ModbusErrorContext`, `RegisterDef`, `DataType`, `RegisterType`,
+  `WriteClass`
+- Register builders: `build_register_map`, `get_all_registers`, `get_register`,
+  `get_detection_registers`, `get_heating_circuit_registers`,
+  `get_zone_module_registers`
+- Register collections and option maps: `CORE_REGISTERS`,
+  `SYSTEM_MODE_OPTIONS`, `CIRCUIT_MODE_OPTIONS`, `ROOM_MODE_OPTIONS`,
+  `ZONE_MODULE_MODE_OPTIONS`, `ACTIVE_HC_MODE_OPTIONS`, `SOLAR_MODE_OPTIONS`,
+  `SMART_GRID_OPTIONS`, `ISC_MODE_OPTIONS`, `HP_OPERATING_MODE_OPTIONS`,
+  `BIVALENCE_STATE_OPTIONS`, `BOOSTER_FAULT_OPTIONS`, `EVU_LOCK_OPTIONS`,
+  `VARIABLE_INPUT_OPTIONS`
+- Model, feature, and connection constants: `MODEL_NAVIGATOR_20`,
+  `MODEL_NAVIGATOR_PRO`, `MODEL_NAVIGATOR_10`, `MODEL_UNKNOWN`,
+  `FEATURE_HEATING_CIRCUITS`, `FEATURE_ZONE_MODULES`, `FEATURE_SOLAR`,
+  `FEATURE_ISC`, `FEATURE_PV`, `FEATURE_CASCADE`, `HEATING_CIRCUIT_LETTERS`,
+  `MAX_HEATING_CIRCUITS`, `MAX_ZONE_MODULES`, `MAX_ROOMS_PER_ZONE`,
+  `DEFAULT_PORT`, `DEFAULT_SLAVE_ID`, `DEFAULT_TIMEOUT`, `MAX_RETRIES`,
+  `RETRY_BACKOFF_BASE`, `EEPROM_SENSITIVE_ADDRESSES`
+
+The package ships a `py.typed` marker so type checkers can consume its inline
+type annotations.
+
+Imports from submodules such as `idm_heatpump.client` or
+`idm_heatpump.registers` are internal convenience imports and may change as the
+library is reorganized.
 
 ## Navigator 10 Support
 

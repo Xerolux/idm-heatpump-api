@@ -1,0 +1,64 @@
+"""Snapshot tests for the public package-root API."""
+
+from __future__ import annotations
+
+import idm_heatpump
+
+EXPECTED_PUBLIC_API = [
+    "ACTIVE_HC_MODE_OPTIONS",
+    "BIVALENCE_STATE_OPTIONS",
+    "BOOSTER_FAULT_OPTIONS",
+    "CIRCUIT_MODE_OPTIONS",
+    "CORE_REGISTERS",
+    "DEFAULT_PORT",
+    "DEFAULT_SLAVE_ID",
+    "DEFAULT_TIMEOUT",
+    "EEPROM_SENSITIVE_ADDRESSES",
+    "EVU_LOCK_OPTIONS",
+    "FEATURE_CASCADE",
+    "FEATURE_HEATING_CIRCUITS",
+    "FEATURE_ISC",
+    "FEATURE_PV",
+    "FEATURE_SOLAR",
+    "FEATURE_ZONE_MODULES",
+    "HEATING_CIRCUIT_LETTERS",
+    "HP_OPERATING_MODE_OPTIONS",
+    "ISC_MODE_OPTIONS",
+    "MAX_HEATING_CIRCUITS",
+    "MAX_ROOMS_PER_ZONE",
+    "MAX_RETRIES",
+    "MAX_ZONE_MODULES",
+    "MODEL_NAVIGATOR_10",
+    "MODEL_NAVIGATOR_20",
+    "MODEL_NAVIGATOR_PRO",
+    "MODEL_UNKNOWN",
+    "RETRY_BACKOFF_BASE",
+    "ROOM_MODE_OPTIONS",
+    "SMART_GRID_OPTIONS",
+    "SOLAR_MODE_OPTIONS",
+    "SYSTEM_MODE_OPTIONS",
+    "VARIABLE_INPUT_OPTIONS",
+    "ZONE_MODULE_MODE_OPTIONS",
+    "DataType",
+    "IdmModelInfo",
+    "IdmModbusClient",
+    "ModbusErrorContext",
+    "RegisterDef",
+    "RegisterType",
+    "WriteClass",
+    "build_register_map",
+    "get_all_registers",
+    "get_detection_registers",
+    "get_heating_circuit_registers",
+    "get_register",
+    "get_zone_module_registers",
+]
+
+
+def test_public_api_snapshot() -> None:
+    assert idm_heatpump.__all__ == EXPECTED_PUBLIC_API
+
+
+def test_public_api_symbols_are_importable() -> None:
+    for name in EXPECTED_PUBLIC_API:
+        assert hasattr(idm_heatpump, name), f"{name} is listed in __all__ but is not importable"

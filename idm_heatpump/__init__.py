@@ -4,8 +4,10 @@ from .client import (
     DataType,
     IdmModbusClient,
     IdmModelInfo,
+    ModbusErrorContext,
     RegisterDef,
     RegisterType,
+    WriteClass,
 )
 from .const import (
     ACTIVE_HC_MODE_OPTIONS,
@@ -90,8 +92,10 @@ __all__ = [
     "DataType",
     "IdmModelInfo",
     "IdmModbusClient",
+    "ModbusErrorContext",
     "RegisterDef",
     "RegisterType",
+    "WriteClass",
     "build_register_map",
     "get_all_registers",
     "get_detection_registers",
