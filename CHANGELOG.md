@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   repeated empty responses, reducing detection time on smaller systems and proxies.
 - Retry transport-level `OSError`/timeout failures through the reconnect path instead
   of letting transient socket errors bypass the normal retry handling.
+- Reduce the default Navigator 10 web inter-request delay from 0.3s to 0.05s and
+  make it configurable through `request_delay`, improving 30s web polling latency
+  while keeping gentle pacing available.
 
 ## [0.4.0] - 2026-07-03
 

@@ -16,6 +16,7 @@ from .const import MODEL_NAVIGATOR_10, MODEL_NAVIGATOR_20
 NavigatorWebModel = Literal["Navigator 2.0 Web", "Navigator 10 Web"]
 
 DEFAULT_NAVIGATOR10_PORT = 61220
+DEFAULT_NAVIGATOR10_REQUEST_DELAY = 0.05
 DEFAULT_NAVIGATOR10_SETTING_IDS = ("4768", "4775", "4782", "4789", "4754", "13259")
 DEFAULT_NAVIGATOR20_PATHS = ("/data/settings.php", "/data/heatpump.php", "/data/info.php")
 
@@ -250,6 +251,7 @@ def create_optional_navigator10_web_client(
     *,
     port: int = DEFAULT_NAVIGATOR10_PORT,
     timeout: float = 8.0,
+    request_delay: float = DEFAULT_NAVIGATOR10_REQUEST_DELAY,
     session: Any | None = None,
 ) -> IdmNavigator10WebClient | None:
     """Create a Navigator 10 web client only when a PIN is configured."""
@@ -260,6 +262,7 @@ def create_optional_navigator10_web_client(
         pin.strip() if pin is not None else "",
         port=port,
         timeout=timeout,
+        request_delay=request_delay,
         session=session,
     )
 
@@ -503,6 +506,7 @@ class IdmNavigator10WebClient:
         *,
         port: int = DEFAULT_NAVIGATOR10_PORT,
         timeout: float = 8.0,
+        request_delay: float = DEFAULT_NAVIGATOR10_REQUEST_DELAY,
         session: Any | None = None,
     ) -> None:
         if not host:
@@ -515,6 +519,7 @@ class IdmNavigator10WebClient:
         self._pin = pin
         self._port = int(port)
         self._timeout = float(timeout)
+        self._request_delay = max(0.0, float(request_delay))
         self._session = session
         self._own_session = False
         self._ws: Any | None = None
@@ -578,7 +583,8 @@ class IdmNavigator10WebClient:
             if include_raw:
                 raw_responses[f"setting:{setting_id}"] = raw
             values.update(parse_navigator_setting_response(raw))
-            await asyncio.sleep(0.3)
+            if self._request_delay:
+                await asyncio.sleep(self._request_delay)
 
         return IdmWebData(model="Navigator 10 Web", values=values, raw_responses=raw_responses)
 

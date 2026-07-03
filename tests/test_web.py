@@ -7,6 +7,7 @@ import json
 import pytest
 
 from idm_heatpump.web import (
+    DEFAULT_NAVIGATOR10_REQUEST_DELAY,
     IdmNavigator10WebClient,
     IdmNavigator20WebClient,
     IdmWebAuthenticationError,
@@ -204,6 +205,7 @@ def test_optional_web_client_factories_create_clients_with_pin() -> None:
     assert web_pin_configured(" 1234 ")
     assert isinstance(nav10, IdmNavigator10WebClient)
     assert isinstance(nav20, IdmNavigator20WebClient)
+    assert nav10._request_delay == DEFAULT_NAVIGATOR10_REQUEST_DELAY
 
 
 class FakeWsMessage:
@@ -271,6 +273,33 @@ async def test_navigator10_client_reads_setting_details() -> None:
         }
     ]
     assert session.urls == ["ws://192.0.2.10:61220/?auth_code=1234"]
+
+
+@pytest.mark.asyncio
+async def test_navigator10_client_can_skip_inter_setting_delay(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    setting_raw = json.dumps(
+        {"settingDetail": {"id": "4768", "name": "N2_SENSORS", "value": NAV10_SENSOR_HTML}}
+    )
+    ws = FakeWs(['{"authorized":true}', setting_raw, setting_raw])
+    sleeps: list[float] = []
+
+    async def fake_sleep(delay: float) -> None:
+        sleeps.append(delay)
+
+    monkeypatch.setattr("idm_heatpump.web.asyncio.sleep", fake_sleep)
+    client = IdmNavigator10WebClient(
+        "192.0.2.10",
+        "1234",
+        timeout=1,
+        request_delay=0,
+        session=FakeSession(ws),
+    )
+
+    await client.read_data(("4768", "4775"))
+
+    assert sleeps == []
 
 
 @pytest.mark.asyncio
