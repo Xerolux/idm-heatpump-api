@@ -6,6 +6,12 @@
       "hass_integration_version": "0.7.3",
       "status": "tested",
       "notes": "Baseline for Navigator 2.0 filtering and Navigator 10 register map."
+    },
+    {
+      "api_version": "0.4.0",
+      "hass_integration_version": "pending",
+      "status": "api-prepared",
+      "notes": "Prepared API release with optional local web supplement and default-safe Navigator 10 firmware register polling."
     }
   ]
 }

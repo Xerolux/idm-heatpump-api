@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-03
+
 ### Added
 
 - Add an optional read-only local web supplement for Navigator 10 and Navigator 2.0.
@@ -18,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   heat quantities, and infosystem notifications.
 - Add optional web-client factories that return `None` when no local network PIN is
   configured so consumers can keep Modbus-only operation error-free.
+
+### Changed
+
+- Keep the Modbus `firmware_version` register available but disable it by default,
+  because some Navigator 10 firmware builds reject register 4120 while the same
+  software version is available through the local web interface.
 
 ## [0.3.7] - 2026-07-02
 
