@@ -26,7 +26,7 @@ jobs:
 
       - name: Sync docs content
         run: |
-          rsync -av --delete docs/ /tmp/wiki/
+          rsync -av --delete --exclude='.git/' docs/ /tmp/wiki/
 
       - name: Commit and push wiki changes
         working-directory: /tmp/wiki
