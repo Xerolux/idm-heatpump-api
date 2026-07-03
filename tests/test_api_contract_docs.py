@@ -79,6 +79,13 @@ def test_ci_builds_and_import_checks_distribution_artifacts() -> None:
     assert "python -m pip install dist/*.whl" in workflow
 
 
+def test_release_workflow_handles_prebumped_versions() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+
+    assert "git diff --cached --quiet" in workflow
+    assert "pyproject.toml already contains ${NEW}; no version commit needed" in workflow
+
+
 def test_ci_enforces_coverage_floor() -> None:
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     workflow = (ROOT / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
