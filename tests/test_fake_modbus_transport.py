@@ -155,6 +155,15 @@ def test_connection_exception_triggers_reconnect() -> None:
     assert asyncio.run(client._read_registers(1000, 1)) == [7]
 
 
+def test_os_error_triggers_reconnect() -> None:
+    failing = FakeModbusTransport(exception_reads={("input", 1000, 1): OSError("socket reset")})
+    working = FakeModbusTransport(input_registers={1000: 7})
+    client = ReconnectingClient([working])
+    client._client = failing  # type: ignore[assignment]
+
+    assert asyncio.run(client._read_registers(1000, 1)) == [7]
+
+
 def test_write_error_context_is_redacted_and_omits_written_values() -> None:
     client = IdmModbusClient("127.0.0.1", max_retries=1)
     client._client = FakeModbusTransport(error_writes={1200})  # type: ignore[assignment]

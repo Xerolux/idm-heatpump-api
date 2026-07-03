@@ -49,6 +49,7 @@ _DETECT_HC_FLOW_BASE = 1350
 _DETECT_HC_STEP = 2
 _DETECT_ZONE_MODULE_BASE = 2000
 _DETECT_ZONE_MODULE_STEP = 65
+_DETECT_EMPTY_SLOT_STOP_THRESHOLD = 2
 DEFAULT_REGISTER_SOURCE = "official_idm_modbus"
 DEFAULT_REGISTER_SOURCE_VERSION = (
     "MODBUS TCP NAVIGATOR 10 2025-06-18 plus Navigator 2.0/Pro legacy docs"
@@ -393,6 +394,19 @@ class IdmModbusClient:
                     if attempt == retries - 1:
                         raise
                     await asyncio.sleep(RETRY_BACKOFF_BASE * (2**attempt))
+                except OSError as err:
+                    self._record_error_context(
+                        "read",
+                        address,
+                        count,
+                        reg_type,
+                        err,
+                        attempt + 1,
+                    )
+                    if attempt == retries - 1:
+                        raise
+                    await self._try_reconnect()
+                    await asyncio.sleep(RETRY_BACKOFF_BASE * (2**attempt))
             raise RuntimeError("Unreachable: max_retries validated to be >= 1")
 
     async def _try_reconnect(self) -> None:
@@ -447,6 +461,19 @@ class IdmModbusClient:
                     )
                     if attempt == self._max_retries - 1:
                         raise
+                    await asyncio.sleep(RETRY_BACKOFF_BASE * (2**attempt))
+                except OSError as err:
+                    self._record_error_context(
+                        "write",
+                        address,
+                        len(values),
+                        RegisterType.HOLDING,
+                        err,
+                        attempt + 1,
+                    )
+                    if attempt == self._max_retries - 1:
+                        raise
+                    await self._try_reconnect()
                     await asyncio.sleep(RETRY_BACKOFF_BASE * (2**attempt))
 
     def _record_error_context(
@@ -521,6 +548,7 @@ class IdmModbusClient:
         await self._ensure_connected()
 
         active_circuits: list[str] = []
+        missing_circuit_slots = 0
         for i in range(MAX_HEATING_CIRCUITS):
             addr = _DETECT_HC_FLOW_BASE + i * _DETECT_HC_STEP
             regs = await self._probe_model_register(addr, 2)
@@ -530,16 +558,30 @@ class IdmModbusClient:
                     val = struct.unpack("<f", raw)[0]
                     if not (math.isnan(val) or math.isinf(val)) and -50 < val < 80:
                         active_circuits.append(HEATING_CIRCUIT_LETTERS[i])
+                        missing_circuit_slots = 0
+                    else:
+                        missing_circuit_slots += 1
                 except (struct.error, ValueError):
                     if regs is not None:
                         active_circuits.append(HEATING_CIRCUIT_LETTERS[i])
+                        missing_circuit_slots = 0
+            else:
+                missing_circuit_slots += 1
+            if missing_circuit_slots >= _DETECT_EMPTY_SLOT_STOP_THRESHOLD:
+                break
 
         zone_modules = 0
+        missing_zone_slots = 0
         for zm in range(MAX_ZONE_MODULES):
             addr = _DETECT_ZONE_MODULE_BASE + zm * _DETECT_ZONE_MODULE_STEP
             regs = await self._probe_model_register(addr, 1)
-            if regs is not None:
+            if regs is not None and len(regs) == 1:
                 zone_modules = zm + 1
+                missing_zone_slots = 0
+            else:
+                missing_zone_slots += 1
+            if missing_zone_slots >= _DETECT_EMPTY_SLOT_STOP_THRESHOLD:
+                break
 
         has_solar = False
         solar_regs = await self._probe_model_register(1850, 2)

@@ -26,6 +26,7 @@ class ProbeOnlyClient(IdmModbusClient):
     def __init__(self, probes: dict[tuple[int, int], list[int]]) -> None:
         super().__init__("127.0.0.1")
         self._probes = probes
+        self.probe_calls: list[tuple[int, int]] = []
 
     async def _ensure_connected(self) -> Any:
         return object()
@@ -36,6 +37,7 @@ class ProbeOnlyClient(IdmModbusClient):
         count: int = 1,
         **_: Any,
     ) -> list[int] | None:
+        self.probe_calls.append((address, count))
         return self._probes.get((address, count))
 
 
@@ -117,11 +119,27 @@ def test_detect_model_ignores_incomplete_probe_responses() -> None:
 
     assert model_info.model_name != MODEL_NAVIGATOR_10
     assert model_info.active_heating_circuits == []
+    assert model_info.zone_modules == 0
+    assert FEATURE_ZONE_MODULES not in model_info.features
     assert not model_info.has_solar
     assert not model_info.has_isc
     assert not model_info.has_pv
     assert not model_info.has_cascade
     assert model_info.firmware_version is None
+
+
+def test_detect_model_stops_after_consecutive_empty_optional_slots() -> None:
+    """Missing contiguous optional blocks should not force every possible probe."""
+    client = ProbeOnlyClient({})
+
+    asyncio.run(client.detect_model())
+
+    assert (1350, 2) in client.probe_calls
+    assert (1352, 2) in client.probe_calls
+    assert (1354, 2) not in client.probe_calls
+    assert (2000, 1) in client.probe_calls
+    assert (2065, 1) in client.probe_calls
+    assert (2130, 1) not in client.probe_calls
 
 
 def test_read_registers_rejects_incomplete_modbus_response() -> None:

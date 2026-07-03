@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Speed up automatic model and capability detection by using short, single-attempt
   Modbus probes for optional model registers. Normal polling keeps the existing
   robust timeout and retry defaults.
+- Stop probing contiguous optional heating-circuit and zone-module slots after
+  repeated empty responses, reducing detection time on smaller systems and proxies.
+- Retry transport-level `OSError`/timeout failures through the reconnect path instead
+  of letting transient socket errors bypass the normal retry handling.
 
 ## [0.4.0] - 2026-07-03
 
