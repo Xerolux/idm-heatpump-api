@@ -120,4 +120,5 @@ an explicit integration compatibility entry in
 
 | API version | HASS integration version | Compatibility |
 |-------------|--------------------------|---------------|
+| 0.4.0 | pending | API prepared with optional local web supplement and default-safe Navigator 10 firmware register polling |
 | 0.3.7 | 0.7.3 | Tested baseline for Navigator 2.0 filtering and Navigator 10 register map |

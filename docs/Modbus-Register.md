@@ -275,7 +275,7 @@ documentation (Stand 18.06.2025, software NAV10_20.23-903.iup / T_NAV10_20.23-13
 | 4052 | `booster_b_compressor` | UCHAR | RO | - |  |  |
 | 4108 | `power_limit_hp` | FLOAT | RW | kW |  |  |
 | 4112 | `power_limit_cascade` | FLOAT | RW | kW |  |  |
-| 4120 | `firmware_version` | FLOAT | RO | - |  |  |
+| 4120 | `firmware_version` | FLOAT | RO | - | not enabled by default; use local web `software_version` where available |  |
 | 4122 | `power_consumption_hp` | FLOAT | RO | kW |  |  |
 | 4124 | `power_consumption_hp_smartfox` | FLOAT | RO | kW |  |  |
 | 4126 | `thermal_power_flow_sensor` | FLOAT | RO | kW |  |  |

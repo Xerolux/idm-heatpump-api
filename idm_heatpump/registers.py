@@ -604,6 +604,9 @@ def _energy_registers() -> dict[str, RegisterDef]:
             address=4120,
             datatype=DataType.FLOAT,
             name="firmware_version",
+            # Some Navigator 10 firmware builds reject this register even though
+            # the same version is available through the local web interface.
+            enabled_by_default=False,
         ),
         "thermal_power_flow_sensor": RegisterDef(
             address=4126,
