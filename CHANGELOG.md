@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-07-03
+
+### Fixed
+
+- Speed up automatic model and capability detection by using short, single-attempt
+  Modbus probes for optional model registers. Normal polling keeps the existing
+  robust timeout and retry defaults.
+
 ## [0.4.0] - 2026-07-03
 
 ### Added

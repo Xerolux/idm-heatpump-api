@@ -28,6 +28,8 @@ from .const import (
     MAX_HEATING_CIRCUITS,
     MAX_RETRIES,
     MAX_ZONE_MODULES,
+    MODEL_DETECTION_MAX_RETRIES,
+    MODEL_DETECTION_TIMEOUT,
     MODEL_NAVIGATOR_10,
     MODEL_NAVIGATOR_20,
     MODEL_NAVIGATOR_PRO,
@@ -331,21 +333,30 @@ class IdmModbusClient:
         address: int,
         count: int,
         reg_type: RegisterType = RegisterType.INPUT,
+        *,
+        max_retries: int | None = None,
+        request_timeout: float | None = None,
     ) -> list[int]:
         """Read registers with retries and exponential backoff."""
+        retries = self._max_retries if max_retries is None else max(1, int(max_retries))
         async with self._lock:
-            for attempt in range(self._max_retries):
+            for attempt in range(retries):
                 try:
                     client = self._require_client()
                     kwargs: Any = {_PMODBUS_SLAVE_PARAM: self._slave_id}
                     if reg_type == RegisterType.HOLDING:
-                        result = await client.read_holding_registers(
+                        read_task = client.read_holding_registers(
                             address=address, count=count, **kwargs
                         )
                     else:
-                        result = await client.read_input_registers(
+                        read_task = client.read_input_registers(
                             address=address, count=count, **kwargs
                         )
+                    result = (
+                        await asyncio.wait_for(read_task, timeout=request_timeout)
+                        if request_timeout is not None
+                        else await read_task
+                    )
                     if result.isError():
                         raise ModbusException(  # type: ignore[no-untyped-call]
                             f"Modbus error reading address {address}: {result}"
@@ -366,7 +377,7 @@ class IdmModbusClient:
                         err,
                         attempt + 1,
                     )
-                    if attempt == self._max_retries - 1:
+                    if attempt == retries - 1:
                         raise
                     await self._try_reconnect()
                     await asyncio.sleep(RETRY_BACKOFF_BASE * (2**attempt))
@@ -379,7 +390,7 @@ class IdmModbusClient:
                         err,
                         attempt + 1,
                     )
-                    if attempt == self._max_retries - 1:
+                    if attempt == retries - 1:
                         raise
                     await asyncio.sleep(RETRY_BACKOFF_BASE * (2**attempt))
             raise RuntimeError("Unreachable: max_retries validated to be >= 1")
@@ -463,16 +474,37 @@ class IdmModbusClient:
     def clear_last_error_context(self) -> None:
         self._last_error_context = None
 
-    async def probe_register(self, address: int, count: int = 1) -> list[int] | None:
+    async def probe_register(
+        self,
+        address: int,
+        count: int = 1,
+        *,
+        max_retries: int | None = None,
+        timeout: float | None = None,
+    ) -> list[int] | None:
         """Try to read a register without affecting failure tracking.
 
         Returns the register values or None if the read fails.
         """
         try:
             await self._ensure_connected()
-            return await self._read_registers(address, count)
+            return await self._read_registers(
+                address,
+                count,
+                max_retries=max_retries,
+                request_timeout=timeout,
+            )
         except (ModbusException, ConnectionException, OSError):
             return None
+
+    async def _probe_model_register(self, address: int, count: int = 1) -> list[int] | None:
+        """Probe model/capability registers with short, single-attempt reads."""
+        return await self.probe_register(
+            address,
+            count,
+            max_retries=MODEL_DETECTION_MAX_RETRIES,
+            timeout=MODEL_DETECTION_TIMEOUT,
+        )
 
     async def detect_model(self) -> IdmModelInfo:
         """Detect the IDM heat pump model and capabilities by probing registers.
@@ -491,7 +523,7 @@ class IdmModbusClient:
         active_circuits: list[str] = []
         for i in range(MAX_HEATING_CIRCUITS):
             addr = _DETECT_HC_FLOW_BASE + i * _DETECT_HC_STEP
-            regs = await self.probe_register(addr, 2)
+            regs = await self._probe_model_register(addr, 2)
             if regs is not None and len(regs) == 2:
                 try:
                     raw = struct.pack("<HH", regs[0], regs[1])
@@ -505,12 +537,12 @@ class IdmModbusClient:
         zone_modules = 0
         for zm in range(MAX_ZONE_MODULES):
             addr = _DETECT_ZONE_MODULE_BASE + zm * _DETECT_ZONE_MODULE_STEP
-            regs = await self.probe_register(addr, 1)
+            regs = await self._probe_model_register(addr, 1)
             if regs is not None:
                 zone_modules = zm + 1
 
         has_solar = False
-        solar_regs = await self.probe_register(1850, 2)
+        solar_regs = await self._probe_model_register(1850, 2)
         if solar_regs is not None and len(solar_regs) == 2:
             try:
                 raw = struct.pack("<HH", solar_regs[0], solar_regs[1])
@@ -521,7 +553,7 @@ class IdmModbusClient:
                 has_solar = True
 
         has_isc = False
-        isc_regs = await self.probe_register(1870, 2)
+        isc_regs = await self._probe_model_register(1870, 2)
         if isc_regs is not None and len(isc_regs) == 2:
             try:
                 raw = struct.pack("<HH", isc_regs[0], isc_regs[1])
@@ -531,11 +563,11 @@ class IdmModbusClient:
             except (struct.error, ValueError):
                 has_isc = True
 
-        pv_regs = await self.probe_register(74, 2)
+        pv_regs = await self._probe_model_register(74, 2)
         has_pv = pv_regs is not None and len(pv_regs) == 2
 
         has_cascade = False
-        cascade_regs = await self.probe_register(1147, 1)
+        cascade_regs = await self._probe_model_register(1147, 1)
         if cascade_regs is not None and len(cascade_regs) == 1 and cascade_regs[0] != 0:
             has_cascade = True
 
@@ -558,8 +590,8 @@ class IdmModbusClient:
         has_navigator_10_indicators = False
         try:
             # Heat sink flow (1072) or power limit (4108) are good Navigator 10 signals
-            hs = await self.probe_register(1072, 1)
-            pl = await self.probe_register(4108, 2)
+            hs = await self._probe_model_register(1072, 1)
+            pl = await self._probe_model_register(4108, 2)
             if (hs is not None and len(hs) == 1) or (pl is not None and len(pl) == 2):
                 has_navigator_10_indicators = True
         except Exception:
@@ -574,7 +606,7 @@ class IdmModbusClient:
             model_name = MODEL_UNKNOWN
 
         firmware_version: float | None = None
-        fw_regs = await self.probe_register(4120, 2)
+        fw_regs = await self._probe_model_register(4120, 2)
         if fw_regs is not None and len(fw_regs) == 2:
             try:
                 raw = struct.pack("<HH", fw_regs[0], fw_regs[1])

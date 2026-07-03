@@ -12,6 +12,12 @@
       "hass_integration_version": "pending",
       "status": "api-prepared",
       "notes": "Prepared API release with optional local web supplement and default-safe Navigator 10 firmware register polling."
+    },
+    {
+      "api_version": "0.4.1",
+      "hass_integration_version": "pending",
+      "status": "api-prepared",
+      "notes": "Prepared API fix for faster Modbus model detection over proxies while preserving normal poll retry defaults."
     }
   ]
 }

@@ -30,7 +30,12 @@ class ProbeOnlyClient(IdmModbusClient):
     async def _ensure_connected(self) -> Any:
         return object()
 
-    async def probe_register(self, address: int, count: int = 1) -> list[int] | None:
+    async def probe_register(
+        self,
+        address: int,
+        count: int = 1,
+        **_: Any,
+    ) -> list[int] | None:
         return self._probes.get((address, count))
 
 

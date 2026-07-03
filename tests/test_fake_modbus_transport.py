@@ -119,6 +119,15 @@ def test_timeout_exception_is_deterministic() -> None:
         asyncio.run(client._read_registers(1000, 1))
 
 
+def test_probe_register_can_use_single_fast_attempt() -> None:
+    client = IdmModbusClient("127.0.0.1")
+    transport = FakeModbusTransport(error_reads={("input", 1000, 1)})
+    client._client = transport  # type: ignore[assignment]
+
+    assert asyncio.run(client.probe_register(1000, max_retries=1, timeout=0.05)) is None
+    assert transport.read_calls == [("input", 1000, 1)]
+
+
 def test_permanently_failed_registers_can_be_reset() -> None:
     client = IdmModbusClient("127.0.0.1", max_retries=1)
     client._client = FakeModbusTransport(error_reads={("input", 1000, 1)})  # type: ignore[assignment]
