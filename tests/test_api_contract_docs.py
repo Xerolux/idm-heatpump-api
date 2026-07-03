@@ -83,7 +83,7 @@ def test_ci_enforces_coverage_floor() -> None:
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     workflow = (ROOT / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
 
-    assert "pytest-cov>=5.0.0" in pyproject
+    assert "pytest-cov>=7.1.0" in pyproject
     assert "fail_under = 75" in pyproject
     assert "--cov=idm_heatpump" in workflow
     assert "--cov-fail-under=75" in workflow
