@@ -15,9 +15,15 @@
     },
     {
       "api_version": "0.4.1",
+      "hass_integration_version": "0.8.0-beta.7",
+      "status": "beta-tested",
+      "notes": "Beta integration line consumes the optional web supplement, faster model detection and reduced Navigator 10 web delay."
+    },
+    {
+      "api_version": "0.5.0",
       "hass_integration_version": "pending",
       "status": "api-prepared",
-      "notes": "Prepared API fix for faster Modbus model detection over proxies while preserving normal poll retry defaults."
+      "notes": "Adds stable web supplement metadata/helpers, optional firmware probing and Navigator 10 WebSocket reconnect hardening for the next integration pin."
     }
   ]
 }

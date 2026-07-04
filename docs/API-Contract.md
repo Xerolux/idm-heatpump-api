@@ -18,6 +18,10 @@ Optional local web supplement consumers should also import from the package root
 from idm_heatpump import create_optional_navigator10_web_client
 ```
 
+Consumers that create entities from local web supplement values can use
+`WEB_VALUE_DESCRIPTIONS` for stable key metadata and `IdmWebData.get_value()` /
+`IdmWebData.get_numeric()` for defensive value access.
+
 The package root `__all__` list is the public import contract. It is protected
 by `tests/test_public_api.py`.
 
@@ -120,5 +124,7 @@ an explicit integration compatibility entry in
 
 | API version | HASS integration version | Compatibility |
 |-------------|--------------------------|---------------|
+| 0.5.0 | pending | Adds stable web supplement metadata/helpers, optional firmware probing and Navigator 10 WebSocket reconnect hardening |
 | 0.4.0 | pending | API prepared with optional local web supplement and default-safe Navigator 10 firmware register polling |
+| 0.4.1 | 0.8.0-beta.7 | Beta integration line consumes optional web supplement and faster model detection |
 | 0.3.7 | 0.7.3 | Tested baseline for Navigator 2.0 filtering and Navigator 10 register map |

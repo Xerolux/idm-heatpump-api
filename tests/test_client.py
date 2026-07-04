@@ -128,6 +128,22 @@ def test_detect_model_ignores_incomplete_probe_responses() -> None:
     assert model_info.firmware_version is None
 
 
+def test_detect_model_can_skip_unreliable_firmware_probe() -> None:
+    client = ProbeOnlyClient(
+        {
+            (1350, 2): [0, 16968],
+            (1072, 1): [1],
+            (4120, 2): [26214, 16622],
+        }
+    )
+
+    model_info = asyncio.run(client.detect_model(read_firmware=False))
+
+    assert model_info.model_name == MODEL_NAVIGATOR_10
+    assert model_info.firmware_version is None
+    assert (4120, 2) not in client.probe_calls
+
+
 def test_detect_model_stops_after_consecutive_empty_optional_slots() -> None:
     """Missing contiguous optional blocks should not force every possible probe."""
     client = ProbeOnlyClient({})

@@ -8,10 +8,13 @@ import pytest
 
 from idm_heatpump.web import (
     DEFAULT_NAVIGATOR10_REQUEST_DELAY,
+    WEB_VALUE_DESCRIPTIONS,
     IdmNavigator10WebClient,
     IdmNavigator20WebClient,
     IdmWebAuthenticationError,
+    IdmWebData,
     IdmWebResponseError,
+    IdmWebValue,
     create_optional_navigator10_web_client,
     create_optional_navigator20_web_client,
     parse_idm_html_table_values,
@@ -60,6 +63,19 @@ def test_parse_idm_html_table_values_maps_known_values() -> None:
     assert values["hotwater_tapping_heat_quantity"].numeric_value == 1653.1
     assert values["hotwater_tapping_heat_quantity"].unit == "kWh"
     assert values["hotwater_circulation_heat_quantity"].value == "4384.7kWh"
+
+
+def test_web_data_helpers_return_defaults_and_numeric_values() -> None:
+    data = IdmWebData(
+        model="Navigator 10 Web",
+        values={"flowmeter": IdmWebValue("flowmeter", "12.5l/min", "B2", numeric_value=12.5)},
+    )
+
+    assert data.get_value("flowmeter") == "12.5l/min"
+    assert data.get_value("missing", "fallback") == "fallback"
+    assert data.get_numeric("flowmeter") == 12.5
+    assert data.get_numeric("missing", 0.0) == 0.0
+    assert WEB_VALUE_DESCRIPTIONS["flowmeter"].preferred_unit == "l/min"
 
 
 def test_parse_navigator_setting_response_extracts_setting_detail_value() -> None:
@@ -210,9 +226,7 @@ def test_optional_web_client_factories_create_clients_with_pin() -> None:
 
 class FakeWsMessage:
     def __init__(self, data: str) -> None:
-        from aiohttp import WSMsgType
-
-        self.type = WSMsgType.TEXT
+        self.type = "TEXT"
         self.data = data
 
 
@@ -236,12 +250,14 @@ class FakeWs:
 
 
 class FakeSession:
-    def __init__(self, ws: FakeWs) -> None:
+    def __init__(self, ws: FakeWs | list[FakeWs]) -> None:
         self.ws = ws
         self.urls: list[str] = []
 
     async def ws_connect(self, url: str, timeout: float) -> FakeWs:
         self.urls.append(url)
+        if isinstance(self.ws, list):
+            return self.ws.pop(0)
         return self.ws
 
 
@@ -273,6 +289,32 @@ async def test_navigator10_client_reads_setting_details() -> None:
         }
     ]
     assert session.urls == ["ws://192.0.2.10:61220/?auth_code=1234"]
+
+
+@pytest.mark.asyncio
+async def test_navigator10_client_reconnects_once_after_stale_websocket() -> None:
+    setting_raw = json.dumps(
+        {"settingDetail": {"id": "4768", "name": "N2_SENSORS", "value": NAV10_SENSOR_HTML}}
+    )
+    stale_ws = FakeWs(['{"authorized":true}'])
+    fresh_ws = FakeWs(['{"authorized":true}', setting_raw])
+    session = FakeSession([stale_ws, fresh_ws])
+    client = IdmNavigator10WebClient("192.0.2.10", "1234", timeout=1, session=session)
+
+    await client.connect()
+    stale_ws.closed = True
+
+    data = await client.read_data(("4768",))
+
+    assert data.get_value("flowmeter") == "0.0l/min"
+    assert len(session.urls) == 2
+    assert fresh_ws.sent == [
+        {
+            "controller": "setting",
+            "command": "detail",
+            "data": {"settingId": "4768"},
+        }
+    ]
 
 
 @pytest.mark.asyncio

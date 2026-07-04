@@ -17,6 +17,7 @@ NavigatorWebModel = Literal["Navigator 2.0 Web", "Navigator 10 Web"]
 
 DEFAULT_NAVIGATOR10_PORT = 61220
 DEFAULT_NAVIGATOR10_REQUEST_DELAY = 0.05
+RECOMMENDED_WEB_SCAN_INTERVAL = 30.0
 DEFAULT_NAVIGATOR10_SETTING_IDS = ("4768", "4775", "4782", "4789", "4754", "13259")
 DEFAULT_NAVIGATOR20_PATHS = ("/data/settings.php", "/data/heatpump.php", "/data/info.php")
 
@@ -174,6 +175,46 @@ class IdmWebValue:
 
 
 @dataclass(frozen=True)
+class IdmWebValueDescription:
+    """Stable metadata for a known local web interface value."""
+
+    key: str
+    preferred_unit: str | None = None
+    device_class: str | None = None
+    state_class: str | None = None
+    enabled_by_default: bool = True
+
+
+WEB_VALUE_DESCRIPTIONS: dict[str, IdmWebValueDescription] = {
+    "flowmeter": IdmWebValueDescription("flowmeter", "l/min", state_class="measurement"),
+    "hotgas_temperature": IdmWebValueDescription(
+        "hotgas_temperature", "°C", device_class="temperature", state_class="measurement"
+    ),
+    "verdamper_pressure": IdmWebValueDescription(
+        "verdamper_pressure", "bar", device_class="pressure", state_class="measurement"
+    ),
+    "condenser_pressure": IdmWebValueDescription(
+        "condenser_pressure", "bar", device_class="pressure", state_class="measurement"
+    ),
+    "board_temperature": IdmWebValueDescription(
+        "board_temperature", "°C", device_class="temperature", state_class="measurement"
+    ),
+    "battery_voltage_central_unit": IdmWebValueDescription(
+        "battery_voltage_central_unit", "V", device_class="voltage", state_class="measurement"
+    ),
+    "software_version": IdmWebValueDescription("software_version"),
+    "heatpump_model": IdmWebValueDescription("heatpump_model"),
+    "myidm_id": IdmWebValueDescription("myidm_id", enabled_by_default=False),
+    "hotwater_tapping_heat_quantity": IdmWebValueDescription(
+        "hotwater_tapping_heat_quantity", "kWh", device_class="energy", state_class="total"
+    ),
+    "hotwater_circulation_heat_quantity": IdmWebValueDescription(
+        "hotwater_circulation_heat_quantity", "kWh", device_class="energy", state_class="total"
+    ),
+}
+
+
+@dataclass(frozen=True)
 class IdmWebData:
     """A read-only local web interface snapshot."""
 
@@ -185,6 +226,16 @@ class IdmWebData:
     def simple_values(self) -> dict[str, str]:
         """Return a compact name-to-string-value mapping for consumers."""
         return {name: value.value for name, value in self.values.items()}
+
+    def get_value(self, name: str, default: str | None = None) -> str | None:
+        """Return a parsed string value by stable name."""
+        value = self.values.get(name)
+        return value.value if value is not None else default
+
+    def get_numeric(self, name: str, default: float | None = None) -> float | None:
+        """Return a parsed numeric value by stable name."""
+        value = self.values.get(name)
+        return value.numeric_value if value is not None else default
 
     @property
     def navigator_version(self) -> str:
@@ -542,9 +593,11 @@ class IdmNavigator10WebClient:
 
     async def connect(self) -> None:
         if self._ws is not None:
-            return
-        aiohttp = _require_aiohttp()
+            if not self._websocket_closed(self._ws):
+                return
+            self._ws = None
         if self._session is None:
+            aiohttp = _require_aiohttp()
             self._session = aiohttp.ClientSession()
             self._own_session = True
 
@@ -616,23 +669,57 @@ class IdmNavigator10WebClient:
         return parse_navigator_notifications_response(raw, include_raw=include_raw)
 
     async def _send_json_and_receive_text(self, payload: dict[str, Any]) -> str:
+        try:
+            return await self._send_json_and_receive_text_once(payload)
+        except (IdmWebResponseError, OSError, TimeoutError):
+            await self.close()
+            await self.connect()
+            return await self._send_json_and_receive_text_once(payload)
+
+    async def _send_json_and_receive_text_once(self, payload: dict[str, Any]) -> str:
         if self._ws is None:
             raise IdmWebResponseError("Navigator 10 websocket is not connected")
+        if self._websocket_closed(self._ws):
+            raise IdmWebResponseError("Navigator 10 websocket is closed")
         await self._ws.send_json(payload)
         return await self._receive_text()
 
     async def _receive_text(self) -> str:
         if self._ws is None:
             raise IdmWebResponseError("Navigator 10 websocket is not connected")
-        aiohttp = _require_aiohttp()
         message = await self._ws.receive(timeout=self._timeout)
-        if message.type == aiohttp.WSMsgType.TEXT:
+        message_type = getattr(message, "type", None)
+        if self._is_ws_text_message(message_type):
             return str(message.data)
-        if message.type == aiohttp.WSMsgType.ERROR:
+        if self._is_ws_error_message(message_type):
             raise IdmWebResponseError(f"Navigator 10 websocket error: {self._ws.exception()}")
         raise IdmWebResponseError(
-            f"Navigator 10 websocket returned unexpected frame: {message.type}"
+            f"Navigator 10 websocket returned unexpected frame: {message_type}"
         )
+
+    @staticmethod
+    def _websocket_closed(ws: Any) -> bool:
+        return bool(getattr(ws, "closed", False))
+
+    @staticmethod
+    def _is_ws_text_message(message_type: Any) -> bool:
+        if str(message_type) in {"1", "TEXT", "WSMsgType.TEXT"}:
+            return True
+        try:
+            import aiohttp
+        except ModuleNotFoundError:
+            return False
+        return bool(message_type == aiohttp.WSMsgType.TEXT)
+
+    @staticmethod
+    def _is_ws_error_message(message_type: Any) -> bool:
+        if str(message_type) in {"258", "ERROR", "WSMsgType.ERROR"}:
+            return True
+        try:
+            import aiohttp
+        except ModuleNotFoundError:
+            return False
+        return bool(message_type == aiohttp.WSMsgType.ERROR)
 
 
 class IdmNavigator20WebClient:

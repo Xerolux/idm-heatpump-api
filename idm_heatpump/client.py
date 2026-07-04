@@ -533,7 +533,7 @@ class IdmModbusClient:
             timeout=MODEL_DETECTION_TIMEOUT,
         )
 
-    async def detect_model(self) -> IdmModelInfo:
+    async def detect_model(self, *, read_firmware: bool = True) -> IdmModelInfo:
         """Detect the IDM heat pump model and capabilities by probing registers.
 
         Strategy:
@@ -544,6 +544,11 @@ class IdmModbusClient:
           5. Probe ISC register (1870)
           6. Probe PV register (74)
           7. Probe cascade register (1147)
+
+        Args:
+            read_firmware: Probe Modbus register 4120 for the firmware version.
+                Disable this when a consumer prefers the optional local web
+                software version or wants to avoid this unreliable register.
         """
         await self._ensure_connected()
 
@@ -648,15 +653,16 @@ class IdmModbusClient:
             model_name = MODEL_UNKNOWN
 
         firmware_version: float | None = None
-        fw_regs = await self._probe_model_register(4120, 2)
-        if fw_regs is not None and len(fw_regs) == 2:
-            try:
-                raw = struct.pack("<HH", fw_regs[0], fw_regs[1])
-                val = struct.unpack("<f", raw)[0]
-                if not (math.isnan(val) or math.isinf(val)):
-                    firmware_version = round(val, 2)
-            except (struct.error, ValueError):
-                pass
+        if read_firmware:
+            fw_regs = await self._probe_model_register(4120, 2)
+            if fw_regs is not None and len(fw_regs) == 2:
+                try:
+                    raw = struct.pack("<HH", fw_regs[0], fw_regs[1])
+                    val = struct.unpack("<f", raw)[0]
+                    if not (math.isnan(val) or math.isinf(val)):
+                        firmware_version = round(val, 2)
+                except (struct.error, ValueError):
+                    pass
 
         info = IdmModelInfo(
             model_name=model_name,

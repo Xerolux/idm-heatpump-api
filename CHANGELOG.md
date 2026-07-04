@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-04
+
+### Added
+
+- Add stable metadata for known local web values via `WEB_VALUE_DESCRIPTIONS`
+  and `IdmWebValueDescription`, plus `IdmWebData.get_value()` and
+  `IdmWebData.get_numeric()` helpers for consumers.
+- Add `RECOMMENDED_WEB_SCAN_INTERVAL` for Home Assistant-style web supplement
+  polling defaults.
+- Add `detect_model(read_firmware=False)` for consumers that prefer the local
+  web software version or want to avoid probing unreliable Modbus register 4120.
+
+### Fixed
+
+- Let injected Navigator 10 web test sessions run without importing `aiohttp`,
+  keeping optional dependency behavior easier to verify locally.
+- Reconnect the Navigator 10 WebSocket once when a stale or closed connection is
+  detected during a web supplement request.
+
 ## [0.4.1] - 2026-07-03
 
 ### Fixed

@@ -202,10 +202,13 @@ snapshot test. It currently includes:
 
 - Client and metadata types: `IdmModbusClient`, `IdmModelInfo`,
   `ModbusErrorContext`, `RegisterDef`, `DataType`, `RegisterType`,
-  `WriteClass`
+  `WriteClass`, `IdmWebData`, `IdmWebValue`, `IdmWebValueDescription`
 - Register builders: `build_register_map`, `get_all_registers`, `get_register`,
   `get_detection_registers`, `get_heating_circuit_registers`,
   `get_zone_module_registers`
+- Optional web supplement helpers: `create_optional_navigator10_web_client`,
+  `create_optional_navigator20_web_client`, `web_pin_configured`,
+  `WEB_VALUE_DESCRIPTIONS`
 - Register collections and option maps: `CORE_REGISTERS`,
   `SYSTEM_MODE_OPTIONS`, `CIRCUIT_MODE_OPTIONS`, `ROOM_MODE_OPTIONS`,
   `ZONE_MODULE_MODE_OPTIONS`, `ACTIVE_HC_MODE_OPTIONS`, `SOLAR_MODE_OPTIONS`,
@@ -218,7 +221,8 @@ snapshot test. It currently includes:
   `FEATURE_ISC`, `FEATURE_PV`, `FEATURE_CASCADE`, `HEATING_CIRCUIT_LETTERS`,
   `MAX_HEATING_CIRCUITS`, `MAX_ZONE_MODULES`, `MAX_ROOMS_PER_ZONE`,
   `DEFAULT_PORT`, `DEFAULT_SLAVE_ID`, `DEFAULT_TIMEOUT`, `MAX_RETRIES`,
-  `RETRY_BACKOFF_BASE`, `EEPROM_SENSITIVE_ADDRESSES`
+  `RETRY_BACKOFF_BASE`, `EEPROM_SENSITIVE_ADDRESSES`,
+  `RECOMMENDED_WEB_SCAN_INTERVAL`
 
 The package ships a `py.typed` marker so type checkers can consume its inline
 type annotations.
