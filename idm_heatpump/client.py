@@ -378,11 +378,7 @@ class IdmModbusClient:
         ``Log.error("Cancel send, because not connected!")`` record that
         pymodbus otherwise emits before our retry loop can reconnect.
         """
-        if (
-            self._client is not None
-            and self._client.connected
-            and not self._connection_suspect
-        ):
+        if self._client is not None and self._client.connected and not self._connection_suspect:
             return self._client
         async with self._lock:
             if self._connection_suspect and self._client is not None:
@@ -739,13 +735,16 @@ class IdmModbusClient:
             features.add(FEATURE_CASCADE)
 
         # Determine model name
-        # Prefer Navigator 10 when we see strong indicators (newer registers present)
+        # Prefer Navigator 10 when we see strong indicators (newer registers present).
+        # Address 1072 (heat_sink_flow_rate) is NOT a reliable Navigator 10 signal:
+        # it is also present on some Navigator 2.0 controllers (e.g. IDM Terra SWM
+        # with software 20.23-245) and would misclassify them as Navigator 10.
+        # Address 4108 (power_limit_hp) is a much safer differentiator because it
+        # belongs to the Navigator-10-only power-limitation register block.
         has_navigator_10_indicators = False
         try:
-            # Heat sink flow (1072) or power limit (4108) are good Navigator 10 signals
-            hs = await self._probe_model_register(1072, 1)
             pl = await self._probe_model_register(4108, 2)
-            if (hs is not None and len(hs) == 1) or (pl is not None and len(pl) == 2):
+            if pl is not None and len(pl) == 2:
                 has_navigator_10_indicators = True
         except Exception:
             pass

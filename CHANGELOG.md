@@ -69,6 +69,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Avoid an unnecessary inter-request sleep after the last Navigator 10 setting
   request.
 - Prevent `__aexit__` from masking the original exception if `close()` raises.
+- Stop treating Modbus address 1072 (heat-sink flow rate) as a Navigator 10
+  indicator during model detection. Some Navigator 2.0 controllers (e.g. IDM
+  Terra SWM with software 20.23-245) expose this register and were
+  misclassified as Navigator 10. Detection now relies on address 4108
+  (power-limit register), which is Navigator-10-only.
 
 ## [0.5.1] - 2026-07-05
 

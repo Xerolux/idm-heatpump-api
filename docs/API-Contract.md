@@ -124,6 +124,7 @@ an explicit integration compatibility entry in
 
 | API version | HASS integration version | Compatibility |
 |-------------|--------------------------|---------------|
+| 0.5.1 | 0.8.0-beta.11 | Fixes Navigator 2.0 misdetection caused by address 1072; first-setup stable on Terra SWM / Navigator 2.0 |
 | 0.5.0 | pending | Adds stable web supplement metadata/helpers, optional firmware probing and Navigator 10 WebSocket reconnect hardening |
 | 0.4.0 | pending | API prepared with optional local web supplement and default-safe Navigator 10 firmware register polling |
 | 0.4.1 | 0.8.0-beta.7 | Beta integration line consumes optional web supplement and faster model detection |

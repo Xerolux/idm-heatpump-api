@@ -68,6 +68,7 @@ def test_detect_model_uses_shared_feature_constants() -> None:
             (74, 2): [0, 16968],
             (1147, 1): [1],
             (1072, 1): [1],
+            (4108, 2): [0, 16968],  # Navigator 10 power-limit register
             (4120, 2): [26214, 16622],  # firmware version 7.45
         }
     )
@@ -135,11 +136,33 @@ def test_detect_model_ignores_incomplete_probe_responses() -> None:
     assert model_info.firmware_version is None
 
 
+def test_detect_model_navigator_20_with_heat_sink_flow_rate() -> None:
+    """Address 1072 alone must not classify a Navigator 2.0 as Navigator 10.
+
+    Some Navigator 2.0 controllers (e.g. IDM Terra SWM with software
+    20.23-245) expose address 1072 but reject the Navigator-10-only power
+    limit register at 4108. The detector must rely on 4108, not 1072.
+    """
+    client = ProbeOnlyClient(
+        {
+            (1350, 2): [0, 16968],  # 25.0 C, heating circuit A active
+            (1072, 1): [1],  # heat_sink_flow_rate present on Nav 2.0
+            # 4108 intentionally missing -> Navigator 2.0
+        }
+    )
+
+    model_info = asyncio.run(client.detect_model())
+
+    assert model_info.model_name == MODEL_NAVIGATOR_20
+    assert model_info.active_heating_circuits == ["A"]
+
+
 def test_detect_model_can_skip_unreliable_firmware_probe() -> None:
     client = ProbeOnlyClient(
         {
             (1350, 2): [0, 16968],
             (1072, 1): [1],
+            (4108, 2): [0, 16968],  # Navigator 10 power-limit register
             (4120, 2): [26214, 16622],
         }
     )
@@ -321,6 +344,7 @@ def test_register_map_is_cached_after_model_detection() -> None:
         {
             (1350, 2): [0, 16968],
             (1072, 1): [1],
+            (4108, 2): [0, 16968],  # Navigator 10 power-limit register
         }
     )
     asyncio.run(client.detect_model())
@@ -456,4 +480,3 @@ def test_ensure_connected_reuses_healthy_client(
 
     assert returned is first  # reused
     assert first.closed is False
-

@@ -840,9 +840,7 @@ class IdmNavigator20WebClient:
                         raise IdmWebAuthenticationError("Navigator 2.0 rejected the PIN")
                     match = re.search(r'csrf_token="([^"]+)"', text)
                     if match is None or not match.group(1):
-                        raise IdmWebResponseError(
-                            "Navigator 2.0 login did not return a CSRF token"
-                        )
+                        raise IdmWebResponseError("Navigator 2.0 login did not return a CSRF token")
                     self._csrf_token = match.group(1)
             except Exception:
                 await self.close()
