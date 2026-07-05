@@ -91,15 +91,19 @@ jobs:
           echo "Bumped to ${NEW}"
 
       - name: Validate version and tag
+        id: tagcheck
         run: |
           NEW="${{ steps.version.outputs.version }}"
           grep -q "^version = \"${NEW}\"$" pyproject.toml
           if git rev-parse "v${NEW}" >/dev/null 2>&1; then
-            echo "Tag v${NEW} already exists"
-            exit 1
+            echo "Tag v${NEW} already exists (idempotent re-run)"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Commit and tag
+        if: steps.tagcheck.outputs.exists != 'true'
         working-directory: ${{ github.workspace }}
         run: |
           NEW="${{ steps.version.outputs.version }}"
@@ -259,8 +263,3 @@ jobs:
             **Developed by:** [Xerolux](https://github.com/Xerolux) | **License:** MIT
           files: |
             dist/*
-
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b
-        with:
-          password: ${{ secrets.PYPI }}
