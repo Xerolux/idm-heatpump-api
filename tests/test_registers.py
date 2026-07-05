@@ -10,13 +10,16 @@ from idm_heatpump.const import (
     MODEL_UNKNOWN,
 )
 from idm_heatpump.registers import (
+    CORE_REGISTERS,
     _energy_registers,
     _heat_sink_registers,
     _hp_status_registers,
     _pv_registers,
     _system_registers,
     build_register_map,
+    get_all_registers,
     get_heating_circuit_registers,
+    get_register,
     get_zone_module_registers,
 )
 
@@ -362,18 +365,18 @@ class TestHeatingCircuitAddresses:
         assert regs["hc_a_mode"].address == 1393
         assert regs["hc_a_room_setpoint_heat_normal"].address == 1401
         assert regs["hc_a_heating_curve"].address == 1429
-        assert regs["hc_a_heating_limit"].address == 1442
-        assert regs["hc_a_active_mode"].address == 1498
-        assert regs["hc_a_parallel_shift"].address == 1505
+        assert regs["hc_a_heating_limit"].address == 1443
+        assert regs["hc_a_active_mode"].address == 1499
+        assert regs["hc_a_parallel_shift"].address == 1506
         assert regs["hc_a_ext_room_temp"].address == 1650
 
     def test_circuit_g_addresses(self):
         regs = get_heating_circuit_registers("G")
         assert regs["hc_g_flow_temp"].address == 1362
         assert regs["hc_g_mode"].address == 1399
-        assert regs["hc_g_heating_limit"].address == 1448
-        assert regs["hc_g_setpoint_flow_cooling"].address == 1497
-        assert regs["hc_g_parallel_shift"].address == 1511
+        assert regs["hc_g_heating_limit"].address == 1449
+        assert regs["hc_g_setpoint_flow_cooling"].address == 1498
+        assert regs["hc_g_parallel_shift"].address == 1512
         assert regs["hc_g_ext_room_temp"].address == 1662
 
     def test_heating_curve_range(self):
@@ -381,3 +384,87 @@ class TestHeatingCircuitAddresses:
         curve = regs["hc_a_heating_curve"]
         assert curve.min_val == 0.1
         assert curve.max_val == 3.5
+
+
+def test_full_register_map_has_no_address_overlaps() -> None:
+    """Every Modbus address must be owned by exactly one register."""
+    regs = build_register_map(
+        circuits=list("ABCDEFG"),
+        zone_modules=10,
+        rooms_per_zone=6,
+    )
+    occupied: dict[int, str] = {}
+    overlaps: list[tuple[int, str, str]] = []
+    for name, reg in regs.items():
+        for addr in range(reg.address, reg.address + reg.size):
+            if addr in occupied:
+                overlaps.append((addr, occupied[addr], name))
+            else:
+                occupied[addr] = name
+    assert not overlaps, f"Address overlaps detected: {overlaps[:10]}"
+
+
+def test_humidity_sensor_does_not_overlap_heating_circuit_mode() -> None:
+    """humidity_sensor occupies the single free register between setpoint_flow_temp G and hc_a_mode."""
+    regs = build_register_map(circuits=list("ABCDEFG"))
+    assert regs["humidity_sensor"].address == 1392
+    assert regs["humidity_sensor"].size == 1
+    assert regs["hc_a_mode"].address == 1393
+
+
+def test_build_register_map_rejects_invalid_circuits() -> None:
+    with pytest.raises(ValueError, match="Invalid heating circuit letters"):
+        build_register_map(circuits=["A", "H"])
+
+
+def test_build_register_map_rejects_invalid_zone_modules() -> None:
+    with pytest.raises(ValueError, match="zone_modules"):
+        build_register_map(zone_modules=11)
+
+
+def test_build_register_map_rejects_invalid_rooms_per_zone() -> None:
+    with pytest.raises(ValueError, match="rooms_per_zone"):
+        build_register_map(rooms_per_zone=0)
+
+
+def test_get_register_defaults_to_core_registers() -> None:
+    reg = get_register("outdoor_temp")
+    assert reg.address == 1000
+
+
+def test_get_register_looks_up_full_map_with_model_info() -> None:
+    model_info = IdmModelInfo(
+        model_name=MODEL_NAVIGATOR_10,
+        active_heating_circuits=list("ABCDEFG"),
+        zone_modules=0,
+        has_solar=False,
+        has_isc=False,
+        has_pv=False,
+        has_cascade=False,
+    )
+    reg = get_register("dhw_temp_top", model_info=model_info)
+    assert reg.address == 1014
+
+
+def test_get_register_raises_for_unknown_name() -> None:
+    with pytest.raises(ValueError, match="Register 'unknown' not found"):
+        get_register("unknown")
+
+
+def test_get_all_registers_defaults_to_core() -> None:
+    assert {reg.name for reg in get_all_registers()} == set(CORE_REGISTERS)
+
+
+def test_get_all_registers_returns_full_map_with_model_info() -> None:
+    model_info = IdmModelInfo(
+        model_name=MODEL_NAVIGATOR_10,
+        active_heating_circuits=["A"],
+        zone_modules=0,
+        has_solar=False,
+        has_isc=False,
+        has_pv=False,
+        has_cascade=False,
+    )
+    names = {reg.name for reg in get_all_registers(model_info=model_info)}
+    assert "hc_a_flow_temp" in names
+    assert "hc_b_flow_temp" not in names

@@ -1267,7 +1267,7 @@ def get_heating_circuit_registers(
         eeprom_sensitive=True,
     )
     regs[f"hc_{c}_heating_limit"] = RegisterDef(
-        address=1442 + idx,
+        address=1443 + idx,
         datatype=DataType.UCHAR,
         name=f"hc_{c}_heating_limit",
         unit="°C",
@@ -1277,7 +1277,7 @@ def get_heating_circuit_registers(
         eeprom_sensitive=True,
     )
     regs[f"hc_{c}_setpoint_flow_constant"] = RegisterDef(
-        address=1449 + idx,
+        address=1450 + idx,
         datatype=DataType.UCHAR,
         name=f"hc_{c}_setpoint_flow_constant",
         unit="°C",
@@ -1307,7 +1307,7 @@ def get_heating_circuit_registers(
         eeprom_sensitive=True,
     )
     regs[f"hc_{c}_cooling_limit"] = RegisterDef(
-        address=1484 + idx,
+        address=1485 + idx,
         datatype=DataType.UCHAR,
         name=f"hc_{c}_cooling_limit",
         unit="°C",
@@ -1317,7 +1317,7 @@ def get_heating_circuit_registers(
         eeprom_sensitive=True,
     )
     regs[f"hc_{c}_setpoint_flow_cooling"] = RegisterDef(
-        address=1491 + idx,
+        address=1492 + idx,
         datatype=DataType.UCHAR,
         name=f"hc_{c}_setpoint_flow_cooling",
         unit="°C",
@@ -1327,13 +1327,13 @@ def get_heating_circuit_registers(
         eeprom_sensitive=True,
     )
     regs[f"hc_{c}_active_mode"] = RegisterDef(
-        address=1498 + idx,
+        address=1499 + idx,
         datatype=DataType.UCHAR,
         name=f"hc_{c}_active_mode",
         enum_options=ACTIVE_HC_MODE_OPTIONS,
     )
     regs[f"hc_{c}_parallel_shift"] = RegisterDef(
-        address=1505 + idx,
+        address=1506 + idx,
         datatype=DataType.UCHAR,
         name=f"hc_{c}_parallel_shift",
         unit="°C",
@@ -1507,6 +1507,15 @@ def build_register_map(
     Returns:
         Complete dict of register definitions keyed by name.
     """
+    if circuits is not None:
+        invalid = [c for c in circuits if c.upper() not in "ABCDEFG"]
+        if invalid:
+            raise ValueError(f"Invalid heating circuit letters: {invalid}")
+    if not (0 <= zone_modules <= 10):
+        raise ValueError(f"zone_modules must be 0-10, got {zone_modules}")
+    if not (1 <= rooms_per_zone <= 6):
+        raise ValueError(f"rooms_per_zone must be 1-6, got {rooms_per_zone}")
+
     all_regs: dict[str, RegisterDef] = {}
 
     all_regs.update(_system_registers())
@@ -1576,7 +1585,7 @@ def build_register_map(
     )
     all_regs["humidity_sensor"] = RegisterDef(
         address=1392,
-        datatype=DataType.FLOAT,
+        datatype=DataType.UCHAR,
         name="humidity_sensor",
         unit="%",
         state_class="measurement",
@@ -1585,13 +1594,27 @@ def build_register_map(
     return all_regs
 
 
-def get_register(name: str) -> RegisterDef:
-    """Return a register definition by canonical name."""
-    if name not in CORE_REGISTERS:
-        raise ValueError(f"Register '{name}' not found in core registers.")
-    return CORE_REGISTERS[name]
+def get_register(name: str, *, model_info: IdmModelInfo | None = None) -> RegisterDef:
+    """Return a register definition by canonical name.
+
+    By default only the small legacy ``CORE_REGISTERS`` set is searched.
+    Pass ``model_info`` (or build the full map manually) to look up any
+    register.
+    """
+    if name in CORE_REGISTERS:
+        return CORE_REGISTERS[name]
+    full_map = build_register_map(model_info=model_info)
+    if name not in full_map:
+        raise ValueError(f"Register '{name}' not found.")
+    return full_map[name]
 
 
-def get_all_registers() -> list[RegisterDef]:
-    """Return all core register definitions."""
-    return list(CORE_REGISTERS.values())
+def get_all_registers(*, model_info: IdmModelInfo | None = None) -> list[RegisterDef]:
+    """Return all register definitions.
+
+    By default only the small legacy ``CORE_REGISTERS`` set is returned.
+    Pass ``model_info`` to build the full map.
+    """
+    if model_info is None:
+        return list(CORE_REGISTERS.values())
+    return list(build_register_map(model_info=model_info).values())
