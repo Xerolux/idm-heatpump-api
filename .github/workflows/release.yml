@@ -17,10 +17,6 @@ on:
         required: false
         type: string
         default: ""
-      release_notes:
-        description: "Curated release notes for GitHub and PyPI users"
-        required: true
-        type: string
 
 permissions:
   contents: write
@@ -118,6 +114,35 @@ jobs:
           git tag "v${NEW}"
           git push origin main --tags
 
+      - name: Extract release notes from CHANGELOG
+        id: notes
+        run: |
+          NEW="${{ steps.version.outputs.version }}"
+          python - <<'PY' "$NEW"
+          import re
+          import sys
+          from pathlib import Path
+
+          version = sys.argv[1]
+          text = Path("CHANGELOG.md").read_text(encoding="utf-8")
+
+          # Match the version section, e.g. "## [0.6.0] - 2026-07-05"
+          pattern = rf"## \[{re.escape(version)}\][^\n]*\n(.*?)(?=\n## \[|\Z)"
+          match = re.search(pattern, text, flags=re.DOTALL)
+          if not match:
+              print(f"::error::Could not find CHANGELOG section for {version}")
+              sys.exit(1)
+
+          body = match.group(1).strip()
+          # Write to GITHUB_OUTPUT using a heredoc-friendly delimiter.
+          import os
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write("body<<CHANGELOG_EOF\n")
+              out.write(body)
+              out.write("\nCHANGELOG_EOF\n")
+          print(f"Extracted {len(body)} characters of release notes for {version}")
+          PY
+
       - name: Parse commits since last release
         id: commits
         run: |
@@ -194,8 +219,8 @@ jobs:
             [![PayPal](https://img.shields.io/badge/PayPal-xerolux-blue?logo=paypal&style=for-the-badge)](https://paypal.me/xerolux)
             [![Tesla Referral](https://img.shields.io/badge/Tesla-Referral-red?logo=tesla&style=for-the-badge)](https://ts.la/sebastian564489)
 
-            ### New Features
-            ${{ inputs.release_notes }}
+            ### Release Notes
+            ${{ steps.notes.outputs.body }}
 
             ### Improvements
             ${{ steps.commits.outputs.improvements }}
