@@ -24,6 +24,18 @@
       "hass_integration_version": "pending",
       "status": "api-prepared",
       "notes": "Adds stable web supplement metadata/helpers, optional firmware probing and Navigator 10 WebSocket reconnect hardening for the next integration pin."
+    },
+    {
+      "api_version": "0.5.1",
+      "hass_integration_version": "0.8.0-beta.11",
+      "status": "beta-tested",
+      "notes": "Fixes Navigator 2.0 model detection: address 1072 is no longer treated as a Navigator 10 indicator, preventing Illegal Data Address errors during first setup."
+    },
+    {
+      "api_version": "0.6.0",
+      "hass_integration_version": "pending",
+      "status": "api-prepared",
+      "notes": "Resolves heating-circuit address overlaps, hardens web-clients against session leaks and race conditions, disables double retry, adds quiet_pymodbus_logging() helper."
     }
   ]
 }

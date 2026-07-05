@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.0] - 2026-07-05
 
 ### Added
 
@@ -69,6 +69,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Avoid an unnecessary inter-request sleep after the last Navigator 10 setting
   request.
 - Prevent `__aexit__` from masking the original exception if `close()` raises.
+
+## [0.5.1] - 2026-07-05
+
+### Fixed
+
+- Fix `detect_model()` no longer classifies Navigator 2.0 controllers as
+  Navigator 10 just because address 1072 (`heat_sink_flow_rate`) responds.
+  That address is also present on some Navigator 2.0 devices (e.g. IDM Terra SWM
+  with software 20.23-245). Navigator-10 detection now relies on address 4108
+  (`power_limit_hp`), which is part of the Navigator-10-only power-limitation
+  register block. This closes the root cause behind the first-setup failures
+  reported in the Home Assistant integration issue #44.
 
 
 ## [0.5.0] - 2026-07-04
