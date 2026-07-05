@@ -300,3 +300,127 @@ def test_quiet_pymodbus_logging_rejects_unknown_level() -> None:
     with pytest.raises(ValueError, match="Unknown log level"):
         quiet_pymodbus_logging("not-a-level")
 
+
+def test_connection_suspect_starts_false() -> None:
+    """Freshly constructed clients must not flag themselves as suspect."""
+    client = IdmModbusClient("127.0.0.1")
+    assert client._connection_suspect is False
+
+
+def test_force_reconnect_closes_existing_client_and_reconnects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """force_reconnect must always close + reopen, ignoring .connected."""
+    instances: list[Any] = []
+
+    class StubClient:
+        def __init__(self, **kwargs: Any) -> None:
+            self.closed = False
+            instances.append(self)
+
+        connected = True
+
+        def close(self) -> None:
+            self.closed = True
+
+        async def connect(self) -> bool:
+            return True
+
+    monkeypatch.setattr("idm_heatpump.client.AsyncModbusTcpClient", StubClient)
+
+    client = IdmModbusClient("127.0.0.1")
+    asyncio.run(client._connect_internal())  # establish first client
+    first = instances[0]
+    assert first.closed is False
+
+    asyncio.run(client.force_reconnect())
+
+    assert first.closed is True  # old connection hard-closed
+    assert len(instances) == 2  # new client created
+    assert client._connection_suspect is False
+
+
+def test_force_reconnect_safe_when_no_existing_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Calling force_reconnect before connect() must not raise."""
+
+    class StubClient:
+        def __init__(self, **kwargs: Any) -> None:
+            pass
+
+        async def connect(self) -> bool:
+            return True
+
+    monkeypatch.setattr("idm_heatpump.client.AsyncModbusTcpClient", StubClient)
+
+    client = IdmModbusClient("127.0.0.1")
+    asyncio.run(client.force_reconnect())
+    assert client._client is not None
+
+
+def test_ensure_connected_forces_reconnect_when_suspect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A prior failure flag must trigger close+reconnect even if .connected=True."""
+
+    class StubClient:
+        def __init__(self, **kwargs: Any) -> None:
+            self.closed = False
+
+        connected = True
+
+        def close(self) -> None:
+            self.closed = True
+            self.connected = False
+
+        async def connect(self) -> bool:
+            self.connected = True
+            return True
+
+    monkeypatch.setattr("idm_heatpump.client.AsyncModbusTcpClient", StubClient)
+
+    client = IdmModbusClient("127.0.0.1")
+    asyncio.run(client._connect_internal())
+    original_client = client._client
+    assert original_client is not None
+    original_client.connected = True  # pymodbus still thinks it's connected
+
+    client._connection_suspect = True  # simulate a prior IO failure
+
+    returned = asyncio.run(client._ensure_connected())
+
+    assert original_client.closed is True  # hard-closed despite .connected=True
+    assert client._connection_suspect is False  # flag cleared after reconnect
+    assert returned is not original_client  # brand-new client object
+
+
+def test_ensure_connected_reuses_healthy_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without the suspect flag, a healthy .connected client must be reused."""
+
+    class StubClient:
+        def __init__(self, **kwargs: Any) -> None:
+            self.closed = False
+
+        connected = True
+
+        def close(self) -> None:
+            self.closed = True
+
+        async def connect(self) -> bool:
+            return True
+
+    monkeypatch.setattr("idm_heatpump.client.AsyncModbusTcpClient", StubClient)
+
+    client = IdmModbusClient("127.0.0.1")
+    asyncio.run(client._connect_internal())
+    first = client._client
+    assert first is not None
+
+    returned = asyncio.run(client._ensure_connected())
+
+    assert returned is first  # reused
+    assert first.closed is False
+

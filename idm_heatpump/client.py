@@ -294,6 +294,13 @@ class IdmModbusClient:
         self._last_error_context: ModbusErrorContext | None = None
         self._eeprom_write_interval = DEFAULT_EEPROM_WRITE_INTERVAL
         self._time = time.monotonic
+        # Set to True after any IO failure (ConnectionException/OSError). The
+        # next _ensure_connected() then closes the (possibly half-open) socket
+        # and reconnects hard, instead of trusting pymodbus's .connected flag
+        # which stays True after the remote end silently drops the TCP link.
+        # This avoids the first failed send that would otherwise log
+        # "Cancel send, because not connected!" at ERROR level inside pymodbus.
+        self._connection_suspect: bool = False
 
     def __repr__(self) -> str:
         connected = self._client is not None and self._client.connected
@@ -358,12 +365,48 @@ class IdmModbusClient:
             _LOGGER.debug("Disconnected from %s:%s", self._host, self._port)
 
     async def _ensure_connected(self) -> AsyncModbusTcpClient:
-        """Return a connected client, reconnecting if necessary."""
-        if self._client is not None and self._client.connected:
+        """Return a connected client, reconnecting if necessary.
+
+        If ``_connection_suspect`` is set (a prior IO failed) the current
+        pymodbus client is closed even when ``.connected`` is still True,
+        because pymodbus only detects a remotely-dropped TCP link on the
+        next send. Closing proactively avoids the noisy
+        ``Log.error("Cancel send, because not connected!")`` record that
+        pymodbus otherwise emits before our retry loop can reconnect.
+        """
+        if (
+            self._client is not None
+            and self._client.connected
+            and not self._connection_suspect
+        ):
             return self._client
         async with self._lock:
+            if self._connection_suspect and self._client is not None:
+                _LOGGER.debug(
+                    "Closing suspect pymodbus connection to %s:%s before reconnect",
+                    self._host,
+                    self._port,
+                )
+                self._client.close()
+                self._client = None
+                self._connection_suspect = False
             await self._connect_internal()
             return self._client  # type: ignore[return-value]
+
+    async def force_reconnect(self) -> None:
+        """Hard-close the current TCP connection and open a fresh one.
+
+        Public hook for consumers (e.g. the Home Assistant integration)
+        to trigger an immediate reconnect after repeated failures without
+        waiting for the next poll cycle. Safe to call when no connection
+        exists yet. Always clears ``_connection_suspect``.
+        """
+        async with self._lock:
+            if self._client is not None:
+                self._client.close()
+                self._client = None
+            self._connection_suspect = False
+            await self._connect_internal()
 
     def _require_client(self) -> AsyncModbusTcpClient:
         """Return the client or raise if not connected (call while holding lock)."""
@@ -412,8 +455,10 @@ class IdmModbusClient:
                             f"Incomplete Modbus response at address {address}: "
                             f"got {len(registers)} registers, expected {count}"
                         )
+                    self._connection_suspect = False
                     return registers
                 except ConnectionException as err:
+                    self._connection_suspect = True
                     self._record_error_context(
                         "read",
                         address,
@@ -439,6 +484,7 @@ class IdmModbusClient:
                         raise
                     await asyncio.sleep(RETRY_BACKOFF_BASE * (2**attempt))
                 except OSError as err:
+                    self._connection_suspect = True
                     self._record_error_context(
                         "read",
                         address,
@@ -462,7 +508,14 @@ class IdmModbusClient:
         try:
             await self._connect_internal()
         except ConnectionException:
+            # Leave _connection_suspect set so the next _ensure_connected()
+            # outside the retry loop will try a fresh connect rather than
+            # trusting a stale .connected flag.
             _LOGGER.debug("Reconnect attempt failed")
+            return
+        # Successful TCP handshake. The link may still be unproven for
+        # Modbus traffic, so we keep _connection_suspect=True until a real
+        # IO round-trip succeeds (the read/write loops clear it on success).
 
     async def _write_registers(self, address: int, values: list[int]) -> None:
         """Write holding registers with retries and exponential backoff."""
@@ -480,8 +533,10 @@ class IdmModbusClient:
                         raise ModbusException(  # type: ignore[no-untyped-call]
                             f"Modbus error writing address {address}: {result}"
                         )
+                    self._connection_suspect = False
                     return
                 except ConnectionException as err:
+                    self._connection_suspect = True
                     self._record_error_context(
                         "write",
                         address,
@@ -507,6 +562,7 @@ class IdmModbusClient:
                         raise
                     await asyncio.sleep(RETRY_BACKOFF_BASE * (2**attempt))
                 except OSError as err:
+                    self._connection_suspect = True
                     self._record_error_context(
                         "write",
                         address,
