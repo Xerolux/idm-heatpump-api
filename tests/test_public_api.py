@@ -69,6 +69,7 @@ EXPECTED_PUBLIC_API = [
     "get_heating_circuit_registers",
     "get_register",
     "get_zone_module_registers",
+    "quiet_pymodbus_logging",
     "web_pin_configured",
 ]
 

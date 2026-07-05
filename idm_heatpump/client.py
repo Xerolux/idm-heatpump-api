@@ -45,6 +45,17 @@ _PERMANENT_FAILURE_THRESHOLD = 3
 DEFAULT_EEPROM_WRITE_INTERVAL = 60.0
 DEFAULT_CYCLIC_WRITE_TTL = 300.0
 
+# Pymodbus internal retries are disabled by default. The library already
+# implements its own retry loop with exponential backoff in
+# ``_read_registers`` / ``_write_registers``. Stacking pymodbus's internal
+# retries on top multiplies the effective attempt count (e.g. 3 library
+# retries x 3 pymodbus retries = up to 9 attempts per register) which makes
+# recovery from connection drops slow and produces noisy
+# "No response received after N retries" log lines on every failure.
+_PMODBUS_RETRIES_DEFAULT = 0
+_PMODBUS_RECONNECT_DELAY = 0.5
+_PMODBUS_RECONNECT_DELAY_MAX = 10.0
+
 _DETECT_HC_FLOW_BASE = 1350
 _DETECT_HC_STEP = 2
 _DETECT_ZONE_MODULE_BASE = 2000
@@ -76,6 +87,31 @@ def _get_slave_param() -> str:
 
 
 _PMODBUS_SLAVE_PARAM = _get_slave_param()
+
+
+def quiet_pymodbus_logging(level: str | int = "WARNING") -> None:
+    """Reduce pymodbus frame-logging noise (``>>>>> send/recv`` lines).
+
+    pymodbus logs every raw Modbus frame at DEBUG level via the
+    ``pymodbus.logging`` logger, and logs transport failures such as
+    ``Cancel send, because not connected!`` at ERROR level. On unstable TCP
+    links this floods the Home Assistant log.
+
+    Consumers can opt in to quieter pymodbus logging by calling this helper
+    once during setup, e.g.::
+
+        from idm_heatpump import quiet_pymodbus_logging
+        quiet_pymodbus_logging("WARNING")
+
+    This only adjusts the ``pymodbus`` logger tree and is safe to call even
+    if the consumer later raises the level again.
+    """
+    if isinstance(level, str):
+        numeric = logging.getLevelName(level.upper())
+        if not isinstance(numeric, int):
+            raise ValueError(f"Unknown log level: {level}")
+        level = numeric
+    logging.getLogger("pymodbus").setLevel(level)
 
 
 class DataType(Enum):
@@ -228,6 +264,8 @@ class IdmModbusClient:
         slave_id: int = 1,
         timeout: float = DEFAULT_TIMEOUT,
         max_retries: int = MAX_RETRIES,
+        *,
+        pymodbus_retries: int = _PMODBUS_RETRIES_DEFAULT,
     ) -> None:
         if not host:
             raise ValueError("Host must not be empty")
@@ -237,12 +275,15 @@ class IdmModbusClient:
             raise ValueError(f"Slave ID must be between 1 and 247, got {slave_id}")
         if max_retries < 1:
             raise ValueError(f"max_retries must be >= 1, got {max_retries}")
+        if pymodbus_retries < 0:
+            raise ValueError(f"pymodbus_retries must be >= 0, got {pymodbus_retries}")
 
         self._host = host
         self._port = int(port)
         self._slave_id = int(slave_id)
         self._timeout = float(timeout)
         self._max_retries = int(max_retries)
+        self._pymodbus_retries = int(pymodbus_retries)
         self._client: AsyncModbusTcpClient | None = None
         self._lock = asyncio.Lock()
         self._register_failures: dict[str, int] = {}
@@ -298,6 +339,9 @@ class IdmModbusClient:
             host=self._host,
             port=self._port,
             timeout=self._timeout,
+            retries=self._pymodbus_retries,
+            reconnect_delay=_PMODBUS_RECONNECT_DELAY,
+            reconnect_delay_max=_PMODBUS_RECONNECT_DELAY_MAX,
         )
         if not await self._client.connect():
             self._client = None

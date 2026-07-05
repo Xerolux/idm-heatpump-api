@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add optional `pymodbus_retries` parameter to `IdmModbusClient` (default `0`)
+  so consumers can control pymodbus-internal retries independently of the
+  library's own retry loop.
+- Add public `quiet_pymodbus_logging()` helper to mute pymodbus frame-level
+  logging (`>>>>> send/recv`, `Cancel send, because not connected!`) that floods
+  Home Assistant logs on unstable TCP links.
+- Add a real Troubleshooting section to the docs covering connection drops and
+  pymodbus log noise.
+
+### Changed
+
+- Disable pymodbus-internal retries by default. The library already implements
+  its own retry loop with exponential backoff in `_read_registers` /
+  `_write_registers`. Stacking pymodbus's internal retries (previously `3`)
+  multiplied the effective attempt count (up to 9 attempts per register) and
+  produced noisy "No response received after N retries" log lines on every
+  failure. pymodbus now returns failures immediately and the library handles
+  retries cleanly.
+- Configure `AsyncModbusTcpClient` with explicit `reconnect_delay` (0.5s) and
+  `reconnect_delay_max` (10s) for faster, more predictable reconnect behavior.
+
+
 ## [0.5.0] - 2026-07-04
 
 ### Added

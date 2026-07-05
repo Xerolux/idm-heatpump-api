@@ -1,6 +1,86 @@
-# Beispiel-Automatisierungen
+# Fehlerbehebung (Troubleshooting)
 
-Hier findest du praktische Beispiele für den Einsatz der IDM Heatpump Integration, insbesondere wie man Werte über Automatisierungen schreiben kann.
+In diesem Dokument findest du Lösungen für die häufigsten Probleme mit der
+IDM Heatpump Integration und der zugrundeliegenden Bibliothek.
+
+---
+
+## "Cancel send, because not connected!" / pymodbus-Log-Flut
+
+### Symptom
+
+Im Home Assistant Log erscheinen wiederholt Einträge der Art:
+
+```
+Logger: pymodbus.logging
+Cancel send, because not connected!
+>>>>> recv: 0xb 0x4 0x4 ... extra data:
+>>>>> send: 0xb 0x4 0x0 0xec 0x0 0x2 0xb0 0x94
+No response received after 3 retries, continue with next request
+```
+
+### Ursache
+
+Die TCP-Verbindung zwischen Home Assistant und dem IDM Navigator bricht
+während des Betriebs ab. pymodbus protokolliert jeden einzelnen Modbus-Frame
+(`>>>>> send/recv`) auf DEBUG-Ebene sowie Verbindungsabbrüche auf ERROR-Ebene.
+Bei instabilen Verbindungen füllt das das Log schnell.
+
+Die Bibliothek fängt Verbindungsabbrüche ab und baut die Verbindung automatisch
+wieder auf — die Warnungen sind also erst einmal kosmetisch, können aber auf
+ein echtes Netzwerkproblem hinweisen.
+
+### Abhilfe
+
+**1. pymodbus-Logging ruhiger stellen**
+
+```yaml
+logger:
+  default: info
+  logs:
+    custom_components.idm_heatpump: info
+    pymodbus.logging: warning   # unterdrückt die ">>>>> send/recv" Flut
+```
+
+Alternativ kann die Bibliothek das auch für Konsumenten übernehmen:
+
+```python
+from idm_heatpump import quiet_pymodbus_logging
+quiet_pymodbus_logging("WARNING")
+```
+
+**2. Netzwerk prüfen**
+
+| Mögliche Ursache | Prüfung |
+|-----------------|---------|
+| Andere Modbus-Clients (App, ioBroker, zweite HA-Instanz) greifen gleichzeitig zu | Alle anderen Clients stoppen; IDM Navigator akzeptiert oft nur eine TCP-Verbindung |
+| WLAN-Verbindung des Navigators | Testweise LAN verwenden |
+| Router/Firewall schneidet idle TCP-Verbindungen ab | Timeout-Einstellungen des Routers prüfen |
+| Modbus-Server des Navigators stürzt intern ab | Navigator neu starten, Firmware-Update prüfen |
+
+**3. Konsolenauswahl**: Ab Bibliotheksversion 0.6.0 (siehe CHANGELOG) verwendet
+`IdmModbusClient` pymodbus-interne Retries nicht mehr doppelt zur
+eigenen Retry-Logik. Falls eine ältere Version eingesetzt wird, hilft ein
+Update der Bibliothek.
+
+---
+
+## "Register X has failed N times. Marking as permanently failed."
+
+Ein einzelnes Register hat mehrfach hintereinander fehlschlagen gelesen zu
+werden. Das ist normal für optionale Register, die auf der vorhandenen Hardware
+nicht existieren (z. B. `firmware_version` auf einzelnen Navigator-10-Firmwares).
+
+Falls ein eigentlich verfügbares Register fälschlicherweise als permanent
+fehlschlagend markiert wurde, kann der Zustand mit
+`client.reset_failed_registers()` zurückgesetzt werden. In Home Assistant hilft
+ein Neuladen der Integration.
+
+---
+
+## Beispiel-Automatisierungen
+
+Hier findest du zusätzlich praktische Beispiele für den Einsatz der IDM Heatpump Integration, insbesondere wie man Werte über Automatisierungen schreiben kann.
 
 ---
 

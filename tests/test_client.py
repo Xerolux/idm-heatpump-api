@@ -1,12 +1,19 @@
 """Tests for the IDM Modbus client."""
 
 import asyncio
+import logging
 from typing import Any
 
 import pytest
 from pymodbus.exceptions import ModbusException
 
-from idm_heatpump.client import DataType, IdmModbusClient, RegisterDef, RegisterType
+from idm_heatpump.client import (
+    DataType,
+    IdmModbusClient,
+    RegisterDef,
+    RegisterType,
+    quiet_pymodbus_logging,
+)
 from idm_heatpump.const import (
     FEATURE_CASCADE,
     FEATURE_HEATING_CIRCUITS,
@@ -203,3 +210,93 @@ def test_register_definition_rejects_invalid_bounds(
             max_val=max_val,
             register_type=RegisterType.INPUT,
         )
+
+
+def test_pymodbus_retries_defaults_to_zero() -> None:
+    """Library default should disable pymodbus internal retries to avoid double retry."""
+    client = IdmModbusClient("127.0.0.1")
+    assert client._pymodbus_retries == 0
+
+
+def test_pymodbus_retries_can_be_overridden() -> None:
+    client = IdmModbusClient("127.0.0.1", pymodbus_retries=2)
+    assert client._pymodbus_retries == 2
+
+
+def test_pymodbus_retries_rejects_negative_values() -> None:
+    with pytest.raises(ValueError, match="pymodbus_retries"):
+        IdmModbusClient("127.0.0.1", pymodbus_retries=-1)
+
+
+def test_connect_internal_forwards_retries_and_reconnect_params(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_connect_internal must hand retries/reconnect_delay to AsyncModbusTcpClient."""
+    captured: dict[str, Any] = {}
+
+    class StubClient:
+        connected = False
+
+        def __init__(self, **kwargs: Any) -> None:
+            captured.update(kwargs)
+
+        async def connect(self) -> bool:
+            return True
+
+    monkeypatch.setattr("idm_heatpump.client.AsyncModbusTcpClient", StubClient)
+
+    client = IdmModbusClient("127.0.0.1", pymodbus_retries=0)
+    asyncio.run(client._connect_internal())
+
+    assert captured["retries"] == 0
+    assert captured["reconnect_delay"] == pytest.approx(0.5)
+    assert captured["reconnect_delay_max"] == pytest.approx(10.0)
+    assert captured["timeout"] == pytest.approx(client._timeout)
+
+
+def test_connect_internal_forwards_custom_pymodbus_retries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    class StubClient:
+        connected = False
+
+        def __init__(self, **kwargs: Any) -> None:
+            captured.update(kwargs)
+
+        async def connect(self) -> bool:
+            return True
+
+    monkeypatch.setattr("idm_heatpump.client.AsyncModbusTcpClient", StubClient)
+
+    client = IdmModbusClient("127.0.0.1", pymodbus_retries=3)
+    asyncio.run(client._connect_internal())
+
+    assert captured["retries"] == 3
+
+
+def test_quiet_pymodbus_logging_accepts_string_level() -> None:
+    pymodbus_logger = logging.getLogger("pymodbus")
+    original = pymodbus_logger.level
+    try:
+        quiet_pymodbus_logging("ERROR")
+        assert pymodbus_logger.level == logging.ERROR
+    finally:
+        pymodbus_logger.setLevel(original)
+
+
+def test_quiet_pymodbus_logging_accepts_int_level() -> None:
+    pymodbus_logger = logging.getLogger("pymodbus")
+    original = pymodbus_logger.level
+    try:
+        quiet_pymodbus_logging(logging.CRITICAL)
+        assert pymodbus_logger.level == logging.CRITICAL
+    finally:
+        pymodbus_logger.setLevel(original)
+
+
+def test_quiet_pymodbus_logging_rejects_unknown_level() -> None:
+    with pytest.raises(ValueError, match="Unknown log level"):
+        quiet_pymodbus_logging("not-a-level")
+
