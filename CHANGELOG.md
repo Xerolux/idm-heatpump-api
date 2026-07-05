@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Home Assistant logs on unstable TCP links.
 - Add a real Troubleshooting section to the docs covering connection drops and
   pymodbus log noise.
+- Add validation to `build_register_map()` for `circuits`, `zone_modules`, and
+  `rooms_per_zone`.
+- Add address-overlap and full-map lookup tests for the register definitions.
 
 ### Changed
 
@@ -29,6 +32,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   retries cleanly.
 - Configure `AsyncModbusTcpClient` with explicit `reconnect_delay` (0.5s) and
   `reconnect_delay_max` (10s) for faster, more predictable reconnect behavior.
+- `get_register()` and `get_all_registers()` now accept an optional
+  `model_info` keyword argument and search the full register map when provided,
+  instead of only the small legacy core set.
+- `detect_model()` now treats a successful read of cascade register 1147 as
+  cascade presence, regardless of the value (0 can mean "present but inactive").
+- Cache the register map built from detected model info in `IdmModbusClient`,
+  avoiding repeated rebuilds on every write validation.
+
+### Fixed
+
+- Correct heating-circuit register addresses that overlapped when all 7 circuits
+  (A-G) were enabled:
+  - `hc_X_heating_limit` shifted from 1442+idx to 1443+idx.
+  - `hc_X_setpoint_flow_constant` shifted from 1449+idx to 1450+idx.
+  - `hc_X_cooling_limit` shifted from 1484+idx to 1485+idx.
+  - `hc_X_setpoint_flow_cooling` shifted from 1491+idx to 1492+idx.
+  - `hc_X_active_mode` shifted from 1498+idx to 1499+idx.
+  - `hc_X_parallel_shift` shifted from 1505+idx to 1506+idx.
+  - `humidity_sensor` changed from FLOAT (2 registers) to UCHAR (1 register) at
+    address 1392 to avoid overlapping `hc_a_mode` at 1393.
+- Fix Navigator 10 web client session leaks when `connect()` or
+  `_send_json_and_receive_text()` fails.
+- Add `asyncio.Lock` to Navigator 10/2.0 web clients to prevent race conditions
+  and request/response interleaving on concurrent connect/read calls.
+- Parse Navigator 10 authorization response as JSON instead of fragile string
+  matching, so pretty-printed or formatted responses are accepted.
+- Treat `aiohttp.ClientError` as a retryable transport error in the Navigator 10
+  web client.
+- Do not retry `IdmWebAuthenticationError` in the Navigator 10 web client.
+- Explicitly handle `WSMsgType.CLOSED` frames in the Navigator 10 web client.
+- Treat HTTP 401/403 on Navigator 2.0 login as authentication failures.
+- Validate that Navigator 2.0 login returns a non-empty CSRF token and clear it
+  on `close()` so a reopened client does not reuse stale credentials.
+- URL-encode the Navigator 10 PIN in the WebSocket query string.
+- Avoid an unnecessary inter-request sleep after the last Navigator 10 setting
+  request.
+- Prevent `__aexit__` from masking the original exception if `close()` raises.
 
 
 ## [0.5.0] - 2026-07-04

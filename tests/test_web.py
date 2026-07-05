@@ -222,6 +222,8 @@ def test_optional_web_client_factories_create_clients_with_pin() -> None:
     assert isinstance(nav10, IdmNavigator10WebClient)
     assert isinstance(nav20, IdmNavigator20WebClient)
     assert nav10._request_delay == DEFAULT_NAVIGATOR10_REQUEST_DELAY
+    assert nav10._pin == "1234"
+    assert nav20._pin == "1234"
 
 
 class FakeWsMessage:
@@ -253,12 +255,16 @@ class FakeSession:
     def __init__(self, ws: FakeWs | list[FakeWs]) -> None:
         self.ws = ws
         self.urls: list[str] = []
+        self.closed = False
 
     async def ws_connect(self, url: str, timeout: float) -> FakeWs:
         self.urls.append(url)
         if isinstance(self.ws, list):
             return self.ws.pop(0)
         return self.ws
+
+    async def close(self) -> None:
+        self.closed = True
 
 
 @pytest.mark.asyncio
@@ -342,6 +348,62 @@ async def test_navigator10_client_can_skip_inter_setting_delay(
     await client.read_data(("4768", "4775"))
 
     assert sleeps == []
+
+
+@pytest.mark.asyncio
+async def test_navigator10_client_closes_owned_session_on_connect_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FailingSession:
+        def __init__(self) -> None:
+            self.closed = False
+
+        async def ws_connect(self, url: str, timeout: float) -> FakeWs:
+            raise OSError("connection refused")
+
+        async def close(self) -> None:
+            self.closed = True
+
+    session = FailingSession()
+    monkeypatch.setattr("aiohttp.ClientSession", lambda: session)
+    client = IdmNavigator10WebClient("192.0.2.10", "1234", timeout=1)
+
+    with pytest.raises(OSError, match="connection refused"):
+        await client.connect()
+
+    assert session.closed is True
+    assert client._session is None
+    assert client._own_session is False
+
+
+@pytest.mark.asyncio
+async def test_navigator10_client_parses_pretty_printed_auth_response() -> None:
+    ws = FakeWs(['{\n  "authorized": true\n}'])
+    client = IdmNavigator10WebClient("192.0.2.10", "1234", timeout=1, session=FakeSession(ws))
+
+    await client.connect()
+
+    assert client._ws is ws
+
+
+@pytest.mark.asyncio
+async def test_navigator10_client_does_not_retry_authentication_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ws = FakeWs(['{"authorized":true}'])
+    session = FakeSession(ws)
+    client = IdmNavigator10WebClient("192.0.2.10", "1234", timeout=1, session=session)
+    await client.connect()
+
+    async def raise_auth(payload: dict[str, object]) -> str:
+        raise IdmWebAuthenticationError("auth failed")
+
+    monkeypatch.setattr(client, "_send_json_and_receive_text_once", raise_auth)
+
+    with pytest.raises(IdmWebAuthenticationError):
+        await client._send_json_and_receive_text({"controller": "test"})
+
+    assert session.urls == ["ws://192.0.2.10:61220/?auth_code=1234"]
 
 
 @pytest.mark.asyncio

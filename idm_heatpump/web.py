@@ -10,6 +10,7 @@ from html import unescape
 from html.parser import HTMLParser
 from types import TracebackType
 from typing import Any, Literal
+from urllib.parse import quote
 
 from .const import MODEL_NAVIGATOR_10, MODEL_NAVIGATOR_20
 
@@ -37,6 +38,26 @@ _NAVIGATOR10_NOTIFICATION_REQUEST = {
     "controller": "notification",
     "command": "overview",
 }
+
+
+def _json_extract_authorized(text: str, expect: bool | None = True) -> bool:
+    """Parse a Navigator 10 auth response and return the authorized flag.
+
+    Args:
+        text: Raw JSON text received on the websocket.
+        expect: If ``True`` (default), return whether the response declares
+            ``authorized: true``. If ``False``, return whether it declares
+            ``authorized: false``. If ``None``, return whether the key exists.
+    """
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return False
+    value = data.get("authorized")
+    if expect is None:
+        return "authorized" in data
+    return value is expect
+
 
 SENSOR_NAME_MAP: dict[str, str] = {
     "B2": "flowmeter",
@@ -574,6 +595,7 @@ class IdmNavigator10WebClient:
         self._session = session
         self._own_session = False
         self._ws: Any | None = None
+        self._lock = asyncio.Lock()
 
     @property
     def model_name(self) -> str:
@@ -589,26 +611,36 @@ class IdmNavigator10WebClient:
         exc: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        await self.close()
+        try:
+            await self.close()
+        except Exception:  # noqa: BLE001
+            if exc_type is None:
+                raise
 
     async def connect(self) -> None:
-        if self._ws is not None:
-            if not self._websocket_closed(self._ws):
-                return
-            self._ws = None
-        if self._session is None:
-            aiohttp = _require_aiohttp()
-            self._session = aiohttp.ClientSession()
-            self._own_session = True
+        async with self._lock:
+            if self._ws is not None:
+                if not self._websocket_closed(self._ws):
+                    return
+                self._ws = None
+            if self._session is None:
+                aiohttp = _require_aiohttp()
+                self._session = aiohttp.ClientSession()
+                self._own_session = True
 
-        url = f"ws://{self._host}:{self._port}/?auth_code={self._pin}"
-        self._ws = await self._session.ws_connect(url, timeout=self._timeout)
-        auth = await self._receive_text()
-        if '"authorized":true' not in auth.replace(" ", ""):
-            await self.close()
-            if '"authorized":false' in auth.replace(" ", ""):
-                raise IdmWebAuthenticationError("Navigator 10 rejected the PIN")
-            raise IdmWebResponseError("Navigator 10 authorization response was not recognized")
+            encoded_pin = quote(self._pin, safe="")
+            url = f"ws://{self._host}:{self._port}/?auth_code={encoded_pin}"
+            try:
+                self._ws = await self._session.ws_connect(url, timeout=self._timeout)
+                auth = await self._receive_text()
+            except Exception:
+                await self.close()
+                raise
+            if not _json_extract_authorized(auth):
+                await self.close()
+                if _json_extract_authorized(auth, expect=False):
+                    raise IdmWebAuthenticationError("Navigator 10 rejected the PIN")
+                raise IdmWebResponseError("Navigator 10 authorization response was not recognized")
 
     async def close(self) -> None:
         if self._ws is not None:
@@ -629,14 +661,14 @@ class IdmNavigator10WebClient:
         values: dict[str, IdmWebValue] = {}
         raw_responses: dict[str, str] = {}
 
-        for setting_id in setting_ids:
+        for i, setting_id in enumerate(setting_ids):
             request = dict(_NAVIGATOR10_SETTING_REQUEST)
             request["data"] = {"settingId": setting_id}
             raw = await self._send_json_and_receive_text(request)
             if include_raw:
                 raw_responses[f"setting:{setting_id}"] = raw
             values.update(parse_navigator_setting_response(raw))
-            if self._request_delay:
+            if self._request_delay and i < len(setting_ids) - 1:
                 await asyncio.sleep(self._request_delay)
 
         return IdmWebData(model="Navigator 10 Web", values=values, raw_responses=raw_responses)
@@ -669,12 +701,21 @@ class IdmNavigator10WebClient:
         return parse_navigator_notifications_response(raw, include_raw=include_raw)
 
     async def _send_json_and_receive_text(self, payload: dict[str, Any]) -> str:
-        try:
-            return await self._send_json_and_receive_text_once(payload)
-        except (IdmWebResponseError, OSError, TimeoutError):
-            await self.close()
-            await self.connect()
-            return await self._send_json_and_receive_text_once(payload)
+        aiohttp = _require_aiohttp()
+        async with self._lock:
+            try:
+                return await self._send_json_and_receive_text_once(payload)
+            except IdmWebAuthenticationError:
+                raise
+            except (IdmWebResponseError, aiohttp.ClientError, OSError, TimeoutError):
+                pass
+            try:
+                await self.close()
+                await self.connect()
+                return await self._send_json_and_receive_text_once(payload)
+            except IdmWebAuthenticationError:
+                await self.close()
+                raise
 
     async def _send_json_and_receive_text_once(self, payload: dict[str, Any]) -> str:
         if self._ws is None:
@@ -691,6 +732,8 @@ class IdmNavigator10WebClient:
         message_type = getattr(message, "type", None)
         if self._is_ws_text_message(message_type):
             return str(message.data)
+        if self._is_ws_closed_message(message_type):
+            raise IdmWebResponseError("Navigator 10 websocket was closed by the device")
         if self._is_ws_error_message(message_type):
             raise IdmWebResponseError(f"Navigator 10 websocket error: {self._ws.exception()}")
         raise IdmWebResponseError(
@@ -710,6 +753,16 @@ class IdmNavigator10WebClient:
         except ModuleNotFoundError:
             return False
         return bool(message_type == aiohttp.WSMsgType.TEXT)
+
+    @staticmethod
+    def _is_ws_closed_message(message_type: Any) -> bool:
+        if str(message_type) in {"257", "CLOSED", "WSMsgType.CLOSED"}:
+            return True
+        try:
+            import aiohttp
+        except ModuleNotFoundError:
+            return False
+        return bool(message_type == aiohttp.WSMsgType.CLOSED)
 
     @staticmethod
     def _is_ws_error_message(message_type: Any) -> bool:
@@ -743,6 +796,7 @@ class IdmNavigator20WebClient:
         self._session = session
         self._own_session = False
         self._csrf_token: str | None = None
+        self._lock = asyncio.Lock()
 
     @property
     def model_name(self) -> str:
@@ -758,28 +812,44 @@ class IdmNavigator20WebClient:
         exc: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        await self.close()
+        try:
+            await self.close()
+        except Exception:  # noqa: BLE001
+            if exc_type is None:
+                raise
 
     async def login(self) -> None:
-        aiohttp = _require_aiohttp()
-        if self._session is None:
-            self._session = aiohttp.ClientSession()
-            self._own_session = True
-        url = f"http://{self._host}/index.php"
-        async with self._session.post(
-            url, data={"pin": self._pin}, timeout=self._timeout
-        ) as response:
-            text = await response.text()
-            if response.status != 200:
-                raise IdmWebResponseError(f"Navigator 2.0 login returned HTTP {response.status}")
-            if "Authorization Required" in text:
-                raise IdmWebAuthenticationError("Navigator 2.0 rejected the PIN")
-            match = re.search(r'csrf_token="([^"]+)"', text)
-            if match is None:
-                raise IdmWebResponseError("Navigator 2.0 login did not return a CSRF token")
-            self._csrf_token = match.group(1)
+        async with self._lock:
+            aiohttp = _require_aiohttp()
+            if self._session is None:
+                self._session = aiohttp.ClientSession()
+                self._own_session = True
+            url = f"http://{self._host}/index.php"
+            try:
+                async with self._session.post(
+                    url, data={"pin": self._pin}, timeout=self._timeout
+                ) as response:
+                    text = await response.text()
+                    if response.status in (401, 403):
+                        raise IdmWebAuthenticationError("Navigator 2.0 rejected the PIN")
+                    if response.status != 200:
+                        raise IdmWebResponseError(
+                            f"Navigator 2.0 login returned HTTP {response.status}"
+                        )
+                    if "Authorization Required" in text:
+                        raise IdmWebAuthenticationError("Navigator 2.0 rejected the PIN")
+                    match = re.search(r'csrf_token="([^"]+)"', text)
+                    if match is None or not match.group(1):
+                        raise IdmWebResponseError(
+                            "Navigator 2.0 login did not return a CSRF token"
+                        )
+                    self._csrf_token = match.group(1)
+            except Exception:
+                await self.close()
+                raise
 
     async def close(self) -> None:
+        self._csrf_token = None
         if self._own_session and self._session is not None:
             await self._session.close()
             self._session = None

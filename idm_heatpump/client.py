@@ -301,6 +301,10 @@ class IdmModbusClient:
         # This avoids the first failed send that would otherwise log
         # "Cancel send, because not connected!" at ERROR level inside pymodbus.
         self._connection_suspect: bool = False
+        # Cache the register map built from the detected model info. The map is
+        # deterministic and is consulted on every write for model availability,
+        # so rebuilding it repeatedly is wasteful.
+        self._cached_register_map: dict[str, RegisterDef] | None = None
 
     def __repr__(self) -> str:
         connected = self._client is not None and self._client.connected
@@ -715,7 +719,9 @@ class IdmModbusClient:
 
         has_cascade = False
         cascade_regs = await self._probe_model_register(1147, 1)
-        if cascade_regs is not None and len(cascade_regs) == 1 and cascade_regs[0] != 0:
+        if cascade_regs is not None and len(cascade_regs) == 1:
+            # Register 1147 only exists on cascade-capable controllers. A value
+            # of 0 can simply mean "cascade present but not active right now".
             has_cascade = True
 
         features: set[str] = set()
@@ -776,6 +782,7 @@ class IdmModbusClient:
             firmware_version=firmware_version,
         )
         self._model_info = info
+        self._cached_register_map = None
         _LOGGER.info(
             "Detected IDM model: %s (circuits=%s, zones=%d, solar=%s, isc=%s, pv=%s, cascade=%s, firmware=%s)",
             model_name,
@@ -936,9 +943,12 @@ class IdmModbusClient:
         if self._model_info is None:
             return
 
-        from .registers import build_register_map
+        if self._cached_register_map is None:
+            from .registers import build_register_map
 
-        available = build_register_map(model_info=self._model_info).get(reg.name)
+            self._cached_register_map = build_register_map(model_info=self._model_info)
+
+        available = self._cached_register_map.get(reg.name)
         if available is None or available.address != reg.address:
             raise ValueError(
                 f"Register '{reg.name}' is not available for detected model {self._model_info.model_name}"

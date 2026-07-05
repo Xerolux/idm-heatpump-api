@@ -301,6 +301,39 @@ def test_quiet_pymodbus_logging_rejects_unknown_level() -> None:
         quiet_pymodbus_logging("not-a-level")
 
 
+def test_detect_model_treats_zero_cascade_register_as_present() -> None:
+    """Register 1147 presence means cascade is available even if value is 0."""
+    client = ProbeOnlyClient(
+        {
+            (1350, 2): [0, 16968],
+            (1147, 1): [0],
+        }
+    )
+
+    model_info = asyncio.run(client.detect_model())
+
+    assert model_info.has_cascade is True
+
+
+def test_register_map_is_cached_after_model_detection() -> None:
+    """_validate_model_availability should not rebuild the map on every call."""
+    client = ProbeOnlyClient(
+        {
+            (1350, 2): [0, 16968],
+            (1072, 1): [1],
+        }
+    )
+    asyncio.run(client.detect_model())
+
+    reg = RegisterDef(1005, DataType.UCHAR, "system_mode", writable=True)
+    client._validate_model_availability(reg)
+    assert client._cached_register_map is not None
+    cached = client._cached_register_map
+
+    client._validate_model_availability(reg)
+    assert client._cached_register_map is cached
+
+
 def test_connection_suspect_starts_false() -> None:
     """Freshly constructed clients must not flag themselves as suspect."""
     client = IdmModbusClient("127.0.0.1")
