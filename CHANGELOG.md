@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-07-06
+
+### Fixed
+
+- Support older IDM zone modules with up to 8 rooms by allowing
+  `get_zone_module_registers()` and `build_register_map()` to generate room 7
+  and room 8 registers (issue Xerolux/idm-heatpump-hass#68).
+- Recover corrupt enum/UCHAR values returned by some controllers in large batch
+  reads by re-reading out-of-range values individually. This fixes room-mode
+  registers that appeared as invalid values such as 196 or 255 in Home Assistant
+  even though single reads returned the correct values (issue
+  Xerolux/idm-heatpump-hass#69).
+
 ## [0.6.1] - 2026-07-06
 
 ### Added
