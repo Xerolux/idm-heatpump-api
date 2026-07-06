@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-07-06
+
 ### Added
 
 - Add an LRU cache to `build_register_map()` so repeated map builds for the same
