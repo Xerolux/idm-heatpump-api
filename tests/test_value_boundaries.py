@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
 import pytest
 
@@ -147,7 +148,7 @@ def test_unsupported_datatype_paths_are_guarded() -> None:
         {"supported_models": ()},
     ],
 )
-def test_register_quality_metadata_is_required(kwargs: dict[str, object]) -> None:
+def test_register_quality_metadata_is_required(kwargs: dict[str, Any]) -> None:
     with pytest.raises(ValueError):
         RegisterDef(1, DataType.UCHAR, "invalid", **kwargs)
 
@@ -186,7 +187,7 @@ def test_register_write_class_is_derived_from_write_metadata(
         {"exclude_from_write": {255}},
     ],
 )
-def test_write_metadata_requires_writable_registers(kwargs: dict[str, object]) -> None:
+def test_write_metadata_requires_writable_registers(kwargs: dict[str, Any]) -> None:
     with pytest.raises(ValueError, match="Write metadata requires writable=True"):
         RegisterDef(1, DataType.UCHAR, "invalid", **kwargs)
 

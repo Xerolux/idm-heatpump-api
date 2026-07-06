@@ -19,6 +19,21 @@ from .const import MODEL_NAVIGATOR_10, MODEL_NAVIGATOR_20
 
 NavigatorWebModel = Literal["Navigator 2.0 Web", "Navigator 10 Web"]
 
+try:
+    import aiohttp
+
+    _AIOHTTP_WS_TEXT: Any = aiohttp.WSMsgType.TEXT
+    _AIOHTTP_WS_CLOSED: Any = aiohttp.WSMsgType.CLOSED
+    _AIOHTTP_WS_ERROR: Any = aiohttp.WSMsgType.ERROR
+    _AIOHTTP_CLIENT_ERROR: tuple[type[BaseException], ...] = (aiohttp.ClientError,)
+    _AIOHTTP_CLIENT_ERROR_CLS: type[BaseException] | None = aiohttp.ClientError
+except ModuleNotFoundError:
+    _AIOHTTP_WS_TEXT = None
+    _AIOHTTP_WS_CLOSED = None
+    _AIOHTTP_WS_ERROR = None
+    _AIOHTTP_CLIENT_ERROR = ()
+    _AIOHTTP_CLIENT_ERROR_CLS = None
+
 DEFAULT_NAVIGATOR10_PORT = 61220
 DEFAULT_NAVIGATOR10_REQUEST_DELAY = 0.05
 RECOMMENDED_WEB_SCAN_INTERVAL = 30.0
@@ -175,6 +190,11 @@ NAVIGATOR10_SETTING_NAME_MAP: dict[tuple[str, str], str] = {
 
 _NUMBER_RE = re.compile(r"^\s*-?\d+(?:[.,]\d+)?\s*$")
 _UNIT_SUFFIX_RE = re.compile(r"^\s*(-?\d+(?:[.,]\d+)?)\s*([A-Za-z°/%]+(?:/[A-Za-z]+)?)?\s*$")
+_LOGIN_FORM_RE = re.compile(r"<form\b", re.IGNORECASE)
+_PASSWORD_INPUT_RE = re.compile(
+    r'<input\b[^>]*(?:type=["\']password["\']|name=["\'](?:pin|password|pass)["\'])',
+    re.IGNORECASE,
+)
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -227,6 +247,14 @@ ConnectionError = IdmWebConnectionError
 TimeoutError = IdmWebTimeoutError
 WebSocketError = IdmWebWebSocketError
 ProtocolError = IdmWebProtocolError
+
+_NAV2_REQUEST_ERRORS: tuple[type[BaseException], ...] = (
+    IdmWebError,
+    OSError,
+    builtins.TimeoutError,
+)
+if _AIOHTTP_CLIENT_ERROR_CLS is not None:
+    _NAV2_REQUEST_ERRORS = (*_NAV2_REQUEST_ERRORS, _AIOHTTP_CLIENT_ERROR_CLS)
 
 
 @dataclass(frozen=True)
@@ -474,8 +502,15 @@ def _extract_csrf_token(html: str) -> str | None:
 
 
 def _looks_like_login_page(text: str) -> bool:
+    """Return True if the response looks like an HTML login page."""
     lowered = text.lower()
-    return "<html" in lowered and any(
+    if "<html" not in lowered:
+        return False
+    # Precise signal: an HTML form with a password/PIN input field.
+    if _LOGIN_FORM_RE.search(text) and _PASSWORD_INPUT_RE.search(text):
+        return True
+    # Fallback heuristic for non-standard or JS-generated login pages.
+    return any(
         marker in lowered for marker in ("login", "pin", "password", "passwort", "csrf")
     )
 
@@ -878,26 +913,21 @@ class IdmNavigator10WebClient:
         )
 
     async def _send_json_and_receive_text(self, payload: dict[str, Any]) -> str:
-        try:
-            import aiohttp
-        except ModuleNotFoundError:
-            aiohttp_client_error: tuple[type[BaseException], ...] = ()
-        else:
-            aiohttp_client_error = (aiohttp.ClientError,)
-        recoverable_errors = (
+        recoverable_errors: tuple[type[BaseException], ...] = (
             IdmWebProtocolError,
             OSError,
             builtins.TimeoutError,
-            *aiohttp_client_error,
         )
-        reconnect_errors = (
+        reconnect_errors: tuple[type[BaseException], ...] = (
             IdmWebProtocolError,
             IdmWebConnectionError,
             IdmWebTimeoutError,
             OSError,
             builtins.TimeoutError,
-            *aiohttp_client_error,
         )
+        if _AIOHTTP_CLIENT_ERROR_CLS is not None:
+            recoverable_errors = (*recoverable_errors, _AIOHTTP_CLIENT_ERROR_CLS)
+            reconnect_errors = (*reconnect_errors, _AIOHTTP_CLIENT_ERROR_CLS)
         async with self._lock:
             try:
                 return await self._send_json_and_receive_text_once(payload)
@@ -906,7 +936,7 @@ class IdmNavigator10WebClient:
             except recoverable_errors as exc:
                 self._last_error = f"Navigator 10 websocket request failed: {type(exc).__name__}"
             delay = self._reconnect_base_delay
-            last_exc: Exception | None = None
+            last_exc: BaseException | None = None
             for attempt in range(1, self._max_reconnect_attempts + 1):
                 self._reconnect_attempts = attempt
                 self._last_reconnect_monotonic = time.monotonic()
@@ -963,31 +993,19 @@ class IdmNavigator10WebClient:
     def _is_ws_text_message(message_type: Any) -> bool:
         if str(message_type) in {"1", "TEXT", "WSMsgType.TEXT"}:
             return True
-        try:
-            import aiohttp
-        except ModuleNotFoundError:
-            return False
-        return bool(message_type == aiohttp.WSMsgType.TEXT)
+        return _AIOHTTP_WS_TEXT is not None and bool(message_type == _AIOHTTP_WS_TEXT)
 
     @staticmethod
     def _is_ws_closed_message(message_type: Any) -> bool:
         if str(message_type) in {"257", "CLOSED", "WSMsgType.CLOSED"}:
             return True
-        try:
-            import aiohttp
-        except ModuleNotFoundError:
-            return False
-        return bool(message_type == aiohttp.WSMsgType.CLOSED)
+        return _AIOHTTP_WS_CLOSED is not None and bool(message_type == _AIOHTTP_WS_CLOSED)
 
     @staticmethod
     def _is_ws_error_message(message_type: Any) -> bool:
         if str(message_type) in {"258", "ERROR", "WSMsgType.ERROR"}:
             return True
-        try:
-            import aiohttp
-        except ModuleNotFoundError:
-            return False
-        return bool(message_type == aiohttp.WSMsgType.ERROR)
+        return _AIOHTTP_WS_ERROR is not None and bool(message_type == _AIOHTTP_WS_ERROR)
 
 
 class IdmNavigator20WebClient:
@@ -1071,6 +1089,7 @@ class IdmNavigator20WebClient:
                         f"{len(DEFAULT_NAVIGATOR20_PATHS)} endpoint candidates"
                     )
                 self._data_paths = paths
+                _LOGGER.debug("NAV2 login successful for %s, endpoints: %s", self._host, paths)
             except Exception:
                 await self.close()
                 raise
@@ -1099,8 +1118,20 @@ class IdmNavigator20WebClient:
 
         values: dict[str, IdmWebValue] = {}
         raw_responses: dict[str, str] = {}
+        csrf_retried = False
         for path in tuple(p for p in paths if p in self._data_paths) or self._data_paths:
-            text = await self._request_text("GET", path)
+            try:
+                text = await self._request_text("GET", path)
+            except IdmWebCsrfError:
+                if csrf_retried:
+                    raise
+                _LOGGER.debug(
+                    "NAV2 CSRF token rejected while reading %s, attempting one re-login", path
+                )
+                self._csrf_token = None
+                await self.login()
+                csrf_retried = True
+                text = await self._request_text("GET", path)
             if "invalid csrf token" in text.lower():
                 self._csrf_token = None
                 raise IdmWebCsrfError("Navigator 2.0 CSRF token was rejected")
@@ -1155,8 +1186,14 @@ class IdmNavigator20WebClient:
         errors: list[str] = []
         for path in ("/", "/index.php"):
             try:
-                return await self._request_text("GET", path, require_ok=False)
-            except Exception as exc:  # noqa: BLE001
+                # Do not send a possibly stale CSRF token when fetching the
+                # initial login page; the server returns the form/token fresh.
+                text = await self._request_text(
+                    "GET", path, require_ok=False, include_csrf=False
+                )
+                _LOGGER.debug("NAV2 initial GET %s succeeded", path)
+                return text
+            except _NAV2_REQUEST_ERRORS as exc:
                 errors.append(f"{path}: {type(exc).__name__}")
         self._last_error = "Navigator 2.0 HTTP interface was not reachable: " + ", ".join(errors)
         raise IdmWebConnectionError(self._last_error)
@@ -1164,43 +1201,68 @@ class IdmNavigator20WebClient:
     async def _try_login(self) -> None:
         fields = ("pin", "PIN", "password", "pass")
         self._login_form_returned = False
+        _LOGGER.debug(
+            "NAV2 starting login handshake for %s (csrf_token present: %s)",
+            self._host,
+            bool(self._csrf_token),
+        )
         for path in ("/", "/index.php", "/login.php"):
             for field_name in fields:
+                # The CSRF token is returned by the server *after* a successful
+                # login, so we must not send an (possibly stale) token in the
+                # login POST itself.
                 data = {field_name: self._pin}
-                if self._csrf_token:
-                    data["csrf_token"] = self._csrf_token
                 try:
-                    text = await self._request_text("POST", path, data=data, require_ok=False)
-                except Exception as exc:  # noqa: BLE001
+                    text = await self._request_text(
+                        "POST", path, data=data, require_ok=False, include_csrf=False
+                    )
+                except _NAV2_REQUEST_ERRORS as exc:
                     _LOGGER.debug(
-                        "NAV2 login variant %s with %s failed: %s",
+                        "NAV2 login variant %s with field %s failed: %s",
                         path,
                         field_name,
                         type(exc).__name__,
                     )
                     continue
                 if "authorization required" in text.lower():
+                    _LOGGER.debug("NAV2 login variant %s requires authorization", path)
                     self._login_form_returned = True
                     continue
                 token = _extract_csrf_token(text)
                 if token:
                     self._csrf_token = token
-                if not _looks_like_login_page(text):
-                    self._login_form_returned = False
-                    return
-                self._login_form_returned = True
+                stripped = text.strip()
+                if not stripped:
+                    # Empty/bad response: keep trying field-name variants on this path.
+                    _LOGGER.debug("NAV2 login variant %s returned empty response", path)
+                    continue
+                if _looks_like_login_page(text):
+                    # Login form returned for this path: try the next path instead
+                    # of burning through field-name variants that hit the same form.
+                    _LOGGER.debug("NAV2 login variant %s returned login form", path)
+                    self._login_form_returned = True
+                    break
+                _LOGGER.debug("NAV2 login accepted on %s with field %s", path, field_name)
+                self._login_form_returned = False
+                return
+        _LOGGER.debug("NAV2 login handshake completed without explicit success")
 
     async def _probe_data_endpoints(self, paths: tuple[str, ...]) -> tuple[str, ...]:
         usable: list[str] = []
         for path in paths:
             try:
                 text = await self._request_text("GET", path, require_ok=False)
-            except Exception:  # noqa: BLE001
+            except _NAV2_REQUEST_ERRORS:
+                _LOGGER.debug("NAV2 endpoint %s is not reachable", path)
                 continue
             if _looks_like_data_response(text):
+                _LOGGER.debug("NAV2 endpoint %s is usable", path)
                 usable.append(path)
             elif _looks_like_login_page(text):
                 _LOGGER.debug("NAV2 endpoint %s returned login page instead of data", path)
+            else:
+                _LOGGER.debug("NAV2 endpoint %s returned unexpected response", path)
+        _LOGGER.debug("NAV2 usable data endpoints: %s", usable)
         return tuple(usable)
 
     async def _request_text(
@@ -1210,13 +1272,17 @@ class IdmNavigator20WebClient:
         *,
         data: dict[str, str] | None = None,
         require_ok: bool = True,
+        include_csrf: bool = True,
     ) -> str:
         if self._session is None:
             raise IdmWebResponseError("Navigator 2.0 HTTP session is not connected")
         headers = {"X-Requested-With": "XMLHttpRequest"}
-        if self._csrf_token:
+        if include_csrf and self._csrf_token:
+            # Different NAV2 firmwares accept the CSRF token under different
+            # header names. Send the common variants in one request.
             headers["CSRF-Token"] = self._csrf_token
             headers["X-CSRF-Token"] = self._csrf_token
+            headers["X-CSRFToken"] = self._csrf_token
         url = f"http://{self._host}{path}"
         async with self._session.request(
             method,
@@ -1225,16 +1291,12 @@ class IdmNavigator20WebClient:
             headers=headers,
             timeout=self._timeout,
         ) as response:
-            text = await response.text()
+            text = str(await response.text())
             if response.status in (401, 403):
                 raise IdmWebPinRejectedError("Navigator 2.0 rejected the PIN or session")
             if "invalid csrf token" in text.lower():
                 raise IdmWebCsrfError("Navigator 2.0 CSRF token was rejected")
             if require_ok and response.status != 200:
-                raise IdmWebResponseError(
-                    f"Navigator 2.0 {path} returned HTTP {response.status}"
-                )
-            if response.status != 200:
                 raise IdmWebResponseError(
                     f"Navigator 2.0 {path} returned HTTP {response.status}"
                 )

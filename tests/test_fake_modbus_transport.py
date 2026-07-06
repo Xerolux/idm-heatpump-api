@@ -23,7 +23,7 @@ class ReconnectingClient(IdmModbusClient):
         if self._client is not None and self._client.connected:
             return
         if not self._transports:
-            raise ConnectionException("no fake transports left")
+            raise ConnectionException("no fake transports left")  # type: ignore[no-untyped-call]
         self._client = self._transports.pop(0)  # type: ignore[assignment]
 
 
@@ -146,7 +146,7 @@ def test_permanently_failed_registers_can_be_reset() -> None:
 
 def test_connection_exception_triggers_reconnect() -> None:
     disconnected = FakeModbusTransport(
-        exception_reads={("input", 1000, 1): ConnectionException("fake abort")}
+        exception_reads={("input", 1000, 1): ConnectionException("fake abort")}  # type: ignore[no-untyped-call]
     )
     working = FakeModbusTransport(input_registers={1000: 7})
     client = ReconnectingClient([working])
@@ -190,7 +190,8 @@ def test_batch_groups_split_by_gap_and_size_limits() -> None:
         RegisterDef(1052, DataType.UCHAR, "c"),
     ]
 
-    groups = IdmModbusClient._group_registers(registers)
+    client = IdmModbusClient("127.0.0.1")
+    groups = client._group_registers(registers)
 
     assert [[reg.name for reg in group] for group in groups] == [["a", "b"], ["c"]]
 
@@ -219,3 +220,107 @@ def test_client_lock_serializes_parallel_requests() -> None:
     asyncio.run(read_twice())
 
     assert transport.max_active_requests == 1
+
+
+def test_batch_read_re_reads_suspect_enum_values() -> None:
+    """Issue #69: some IDM controllers return corrupt UCHAR data in large batch
+    reads. The client should detect out-of-range enum values and re-read them
+    individually to recover the real value."""
+    client = IdmModbusClient("127.0.0.1", max_retries=1)
+
+    temp_words = _raw_float_words(22.0)
+    setpoint_words = _raw_float_words(20.0)
+
+    # Correct individual values stored at each address
+    input_registers = {
+        2002: temp_words[0], 2003: temp_words[1],
+        2004: setpoint_words[0], 2005: setpoint_words[1],
+        2006: 45,
+        2007: 3,
+        2008: 1,
+    }
+
+    # Corrupt batch response: mode position has 255 instead of 3
+    corrupt_batch = temp_words + setpoint_words + [45, 255, 1]
+    transport = FakeModbusTransport(
+        input_registers=input_registers,
+        short_reads={("input", 2002, 7): corrupt_batch},
+    )
+    client._client = transport  # type: ignore[assignment]
+
+    registers = [
+        RegisterDef(2002, DataType.FLOAT, "zm1_room1_temp"),
+        RegisterDef(2004, DataType.FLOAT, "zm1_room1_setpoint"),
+        RegisterDef(2006, DataType.UCHAR, "zm1_room1_humidity"),
+        RegisterDef(
+            2007, DataType.UCHAR, "zm1_room1_mode",
+            enum_options={0: "off", 1: "auto", 2: "eco", 3: "normal", 4: "comfort"},
+        ),
+        RegisterDef(2008, DataType.UCHAR, "zm1_room1_relay"),
+    ]
+
+    result = asyncio.run(client.read_batch(registers))
+
+    assert result["zm1_room1_temp"] == 22.0
+    assert result["zm1_room1_setpoint"] == 20.0
+    assert result["zm1_room1_humidity"] == 45
+    assert result["zm1_room1_mode"] == 3
+    assert result["zm1_room1_relay"] == 1
+
+    assert ("input", 2002, 7) in transport.read_calls
+    assert ("input", 2007, 1) in transport.read_calls
+
+
+def test_is_value_suspect_detects_out_of_range_enum() -> None:
+    reg = RegisterDef(
+        1, DataType.UCHAR, "mode",
+        enum_options={0: "off", 1: "auto", 2: "eco", 3: "normal", 4: "comfort"},
+    )
+    assert IdmModbusClient._is_value_suspect(reg, 3) is False
+    assert IdmModbusClient._is_value_suspect(reg, 255) is True
+    assert IdmModbusClient._is_value_suspect(reg, 5) is True
+
+
+def test_is_value_suspect_detects_out_of_range_bounds() -> None:
+    reg = RegisterDef(1, DataType.UCHAR, "humidity", min_val=0, max_val=100)
+    assert IdmModbusClient._is_value_suspect(reg, 50) is False
+    assert IdmModbusClient._is_value_suspect(reg, 101) is True
+
+    no_constraints = RegisterDef(1, DataType.UCHAR, "relay")
+    assert IdmModbusClient._is_value_suspect(no_constraints, 255) is False
+    assert IdmModbusClient._is_value_suspect(no_constraints, 0) is False
+
+
+def test_is_value_suspect_ignores_none_and_bool() -> None:
+    reg = RegisterDef(
+        1, DataType.UCHAR, "mode",
+        enum_options={0: "off", 1: "auto"},
+    )
+    assert IdmModbusClient._is_value_suspect(reg, None) is False
+    bool_reg = RegisterDef(1, DataType.BOOL, "flag")
+    assert IdmModbusClient._is_value_suspect(bool_reg, True) is False
+
+
+def test_max_group_size_is_configurable() -> None:
+    client = IdmModbusClient("127.0.0.1", max_group_size=10)
+    assert client._max_group_size == 10
+
+    registers = [
+        RegisterDef(1000, DataType.UCHAR, "a"),
+        RegisterDef(1011, DataType.UCHAR, "b"),
+        RegisterDef(1013, DataType.UCHAR, "c"),
+    ]
+    groups = client._group_registers(registers)
+    assert len(groups) == 2
+    assert [reg.name for reg in groups[0]] == ["a"]
+    assert [reg.name for reg in groups[1]] == ["b", "c"]
+
+
+def test_default_max_group_size_is_40() -> None:
+    client = IdmModbusClient("127.0.0.1")
+    assert client._max_group_size == 40
+
+
+def test_max_group_size_rejects_zero() -> None:
+    with pytest.raises(ValueError, match="max_group_size"):
+        IdmModbusClient("127.0.0.1", max_group_size=0)

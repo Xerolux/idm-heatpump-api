@@ -15,9 +15,7 @@ MODEL_DETECTION_MAX_RETRIES: int = 1
 HEATING_CIRCUIT_LETTERS: list[str] = list("ABCDEFG")
 MAX_HEATING_CIRCUITS: int = 7
 MAX_ZONE_MODULES: int = 10
-MAX_ROOMS_PER_ZONE: int = (
-    6  # Navigator 10 / current iDM zone modules support 6 rooms each (some older configs may use 8)
-)
+MAX_ROOMS_PER_ZONE: int = 8  # Navigator 10 / current hardware: 6 rooms; older configs may use 8
 
 MODEL_NAVIGATOR_20: str = "Navigator 2.0"
 MODEL_NAVIGATOR_PRO: str = "Navigator Pro"
@@ -258,6 +256,3 @@ EEPROM_SENSITIVE_ADDRESSES: set[int] = {
     1695,
     1856,
 }
-
-
-CYCLIC_REGISTERS: set[int] = {1696, 1698}

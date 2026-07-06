@@ -10,7 +10,7 @@ import struct
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Awaitable, Callable, ClassVar, TypeVar
 
 import pymodbus
 from pymodbus.client import AsyncModbusTcpClient
@@ -38,6 +38,8 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+_T = TypeVar("_T")
 
 _MAX_GROUP_GAP = 10
 _MAX_GROUP_SIZE = 40
@@ -215,7 +217,7 @@ class PollRateLimiter:
         return self._interval
 
     def remaining(self) -> float:
-        return max(0.0, self._next_allowed - self._clock())
+        return max(0.0, self._next_allowed - float(self._clock()))
 
     def allow(self) -> bool:
         return self.remaining() <= 0
@@ -232,7 +234,7 @@ class ModbusCodec:
         if len(registers) < 2:
             raise ValueError("FLOAT32 decoding requires two registers")
         words = (registers[1], registers[0]) if swapped else (registers[0], registers[1])
-        return struct.unpack("<f", struct.pack("<HH", words[0], words[1]))[0]
+        return float(struct.unpack("<f", struct.pack("<HH", words[0], words[1]))[0])
 
     @staticmethod
     def encode_float32(value: float, *, swapped: bool = False) -> list[int]:
@@ -392,6 +394,7 @@ class IdmModbusClient:
         max_retries: int = MAX_RETRIES,
         *,
         pymodbus_retries: int = _PMODBUS_RETRIES_DEFAULT,
+        max_group_size: int = _MAX_GROUP_SIZE,
     ) -> None:
         if not host:
             raise ValueError("Host must not be empty")
@@ -403,6 +406,8 @@ class IdmModbusClient:
             raise ValueError(f"max_retries must be >= 1, got {max_retries}")
         if pymodbus_retries < 0:
             raise ValueError(f"pymodbus_retries must be >= 0, got {pymodbus_retries}")
+        if max_group_size < 1:
+            raise ValueError(f"max_group_size must be >= 1, got {max_group_size}")
 
         self._host = host
         self._port = int(port)
@@ -410,6 +415,7 @@ class IdmModbusClient:
         self._timeout = float(timeout)
         self._max_retries = int(max_retries)
         self._pymodbus_retries = int(pymodbus_retries)
+        self._max_group_size = int(max_group_size)
         self._client: AsyncModbusTcpClient | None = None
         self._lock = asyncio.Lock()
         self._register_failures: dict[str, int] = {}
@@ -489,10 +495,11 @@ class IdmModbusClient:
 
     async def disconnect(self) -> None:
         """Close the connection and release resources."""
-        if self._client is not None:
-            self._client.close()
-            self._client = None
-            _LOGGER.debug("Disconnected from %s:%s", self._host, self._port)
+        async with self._lock:
+            if self._client is not None:
+                self._client.close()
+                self._client = None
+                _LOGGER.debug("Disconnected from %s:%s", self._host, self._port)
 
     async def _ensure_connected(self) -> AsyncModbusTcpClient:
         """Return a connected client, reconnecting if necessary.
@@ -542,6 +549,115 @@ class IdmModbusClient:
             )
         return self._client
 
+    async def _retry_command(
+        self,
+        operation: str,
+        address: int,
+        count: int,
+        reg_type: RegisterType,
+        command: Callable[[], Awaitable[_T]],
+        *,
+        max_retries: int | None = None,
+    ) -> _T:
+        """Execute an async Modbus command with retries and exponential backoff.
+
+        The lock is held for the duration of the retry loop so that connection
+        state cannot change underneath us between attempts.
+        """
+        retries = self._max_retries if max_retries is None else max(1, int(max_retries))
+        async with self._lock:
+            for attempt in range(retries):
+                try:
+                    result = await command()
+                    self._connection_suspect = False
+                    return result
+                except ConnectionException as err:
+                    self._connection_suspect = True
+                    self._record_error_context(
+                        operation,
+                        address,
+                        count,
+                        reg_type,
+                        err,
+                        attempt + 1,
+                    )
+                    if attempt == retries - 1:
+                        _LOGGER.warning(
+                            "Modbus %s at address %d failed after %d attempts: %s",
+                            operation,
+                            address,
+                            retries,
+                            err,
+                        )
+                        raise
+                    _LOGGER.debug(
+                        "Modbus %s at address %d failed (attempt %d/%d): %s; retrying",
+                        operation,
+                        address,
+                        attempt + 1,
+                        retries,
+                        err,
+                    )
+                    await self._try_reconnect()
+                    await asyncio.sleep(RETRY_BACKOFF_BASE * (2**attempt))
+                except ModbusException as err:
+                    self._record_error_context(
+                        operation,
+                        address,
+                        count,
+                        reg_type,
+                        err,
+                        attempt + 1,
+                    )
+                    if attempt == retries - 1:
+                        _LOGGER.warning(
+                            "Modbus %s at address %d failed after %d attempts: %s",
+                            operation,
+                            address,
+                            retries,
+                            err,
+                        )
+                        raise
+                    _LOGGER.debug(
+                        "Modbus %s at address %d failed (attempt %d/%d): %s; retrying",
+                        operation,
+                        address,
+                        attempt + 1,
+                        retries,
+                        err,
+                    )
+                    await asyncio.sleep(RETRY_BACKOFF_BASE * (2**attempt))
+                except OSError as err:
+                    self._connection_suspect = True
+                    self._record_error_context(
+                        operation,
+                        address,
+                        count,
+                        reg_type,
+                        err,
+                        attempt + 1,
+                    )
+                    if attempt == retries - 1:
+                        _LOGGER.warning(
+                            "Modbus %s at address %d failed after %d attempts: %s",
+                            operation,
+                            address,
+                            retries,
+                            err,
+                        )
+                        raise
+                    _LOGGER.debug(
+                        "Modbus %s at address %d failed (attempt %d/%d): %s; retrying",
+                        operation,
+                        address,
+                        attempt + 1,
+                        retries,
+                        err,
+                    )
+                    await self._try_reconnect()
+                    await asyncio.sleep(RETRY_BACKOFF_BASE * (2**attempt))
+        raise RuntimeError("Unreachable: max_retries validated to be >= 1")
+
     async def _read_registers(
         self,
         address: int,
@@ -552,78 +668,43 @@ class IdmModbusClient:
         request_timeout: float | None = None,
     ) -> list[int]:
         """Read registers with retries and exponential backoff."""
-        retries = self._max_retries if max_retries is None else max(1, int(max_retries))
-        async with self._lock:
-            for attempt in range(retries):
-                try:
-                    client = self._require_client()
-                    kwargs: Any = {_PMODBUS_SLAVE_PARAM: self._slave_id}
-                    if reg_type == RegisterType.HOLDING:
-                        read_task = client.read_holding_registers(
-                            address=address, count=count, **kwargs
-                        )
-                    else:
-                        read_task = client.read_input_registers(
-                            address=address, count=count, **kwargs
-                        )
-                    result = (
-                        await asyncio.wait_for(read_task, timeout=request_timeout)
-                        if request_timeout is not None
-                        else await read_task
-                    )
-                    if result.isError():
-                        raise ModbusException(  # type: ignore[no-untyped-call]
-                            f"Modbus error reading address {address}: {result}"
-                        )
-                    registers = list(result.registers)
-                    if len(registers) != count:
-                        raise ModbusException(  # type: ignore[no-untyped-call]
-                            f"Incomplete Modbus response at address {address}: "
-                            f"got {len(registers)} registers, expected {count}"
-                        )
-                    self._connection_suspect = False
-                    return registers
-                except ConnectionException as err:
-                    self._connection_suspect = True
-                    self._record_error_context(
-                        "read",
-                        address,
-                        count,
-                        reg_type,
-                        err,
-                        attempt + 1,
-                    )
-                    if attempt == retries - 1:
-                        raise
-                    await self._try_reconnect()
-                    await asyncio.sleep(RETRY_BACKOFF_BASE * (2**attempt))
-                except ModbusException as err:
-                    self._record_error_context(
-                        "read",
-                        address,
-                        count,
-                        reg_type,
-                        err,
-                        attempt + 1,
-                    )
-                    if attempt == retries - 1:
-                        raise
-                    await asyncio.sleep(RETRY_BACKOFF_BASE * (2**attempt))
-                except OSError as err:
-                    self._connection_suspect = True
-                    self._record_error_context(
-                        "read",
-                        address,
-                        count,
-                        reg_type,
-                        err,
-                        attempt + 1,
-                    )
-                    if attempt == retries - 1:
-                        raise
-                    await self._try_reconnect()
-                    await asyncio.sleep(RETRY_BACKOFF_BASE * (2**attempt))
-            raise RuntimeError("Unreachable: max_retries validated to be >= 1")
+
+        async def _command() -> list[int]:
+            client = self._require_client()
+            kwargs: Any = {_PMODBUS_SLAVE_PARAM: self._slave_id}
+            if reg_type == RegisterType.HOLDING:
+                read_task = client.read_holding_registers(
+                    address=address, count=count, **kwargs
+                )
+            else:
+                read_task = client.read_input_registers(
+                    address=address, count=count, **kwargs
+                )
+            result = (
+                await asyncio.wait_for(read_task, timeout=request_timeout)
+                if request_timeout is not None
+                else await read_task
+            )
+            if result.isError():
+                raise ModbusException(  # type: ignore[no-untyped-call]
+                    f"Modbus error reading address {address}: {result}"
+                )
+            registers = list(result.registers)
+            if len(registers) != count:
+                raise ModbusException(  # type: ignore[no-untyped-call]
+                    f"Incomplete Modbus response at address {address}: "
+                    f"got {len(registers)} registers, expected {count}"
+                )
+            return registers
+
+        return await self._retry_command(
+            "read",
+            address,
+            count,
+            reg_type,
+            _command,
+            max_retries=max_retries,
+        )
 
     async def _try_reconnect(self) -> None:
         """Attempt a single reconnect (must be called while holding self._lock)."""
@@ -645,62 +726,27 @@ class IdmModbusClient:
 
     async def _write_registers(self, address: int, values: list[int]) -> None:
         """Write holding registers with retries and exponential backoff."""
-        async with self._lock:
-            for attempt in range(self._max_retries):
-                try:
-                    client = self._require_client()
-                    kwargs: Any = {_PMODBUS_SLAVE_PARAM: self._slave_id}
-                    result = await client.write_registers(
-                        address=address,
-                        values=[int(v) for v in values],
-                        **kwargs,
-                    )
-                    if result.isError():
-                        raise ModbusException(  # type: ignore[no-untyped-call]
-                            f"Modbus error writing address {address}: {result}"
-                        )
-                    self._connection_suspect = False
-                    return
-                except ConnectionException as err:
-                    self._connection_suspect = True
-                    self._record_error_context(
-                        "write",
-                        address,
-                        len(values),
-                        RegisterType.HOLDING,
-                        err,
-                        attempt + 1,
-                    )
-                    if attempt == self._max_retries - 1:
-                        raise
-                    await self._try_reconnect()
-                    await asyncio.sleep(RETRY_BACKOFF_BASE * (2**attempt))
-                except ModbusException as err:
-                    self._record_error_context(
-                        "write",
-                        address,
-                        len(values),
-                        RegisterType.HOLDING,
-                        err,
-                        attempt + 1,
-                    )
-                    if attempt == self._max_retries - 1:
-                        raise
-                    await asyncio.sleep(RETRY_BACKOFF_BASE * (2**attempt))
-                except OSError as err:
-                    self._connection_suspect = True
-                    self._record_error_context(
-                        "write",
-                        address,
-                        len(values),
-                        RegisterType.HOLDING,
-                        err,
-                        attempt + 1,
-                    )
-                    if attempt == self._max_retries - 1:
-                        raise
-                    await self._try_reconnect()
-                    await asyncio.sleep(RETRY_BACKOFF_BASE * (2**attempt))
+
+        async def _command() -> None:
+            client = self._require_client()
+            kwargs: Any = {_PMODBUS_SLAVE_PARAM: self._slave_id}
+            result = await client.write_registers(
+                address=address,
+                values=[int(v) for v in values],
+                **kwargs,
+            )
+            if result.isError():
+                raise ModbusException(  # type: ignore[no-untyped-call]
+                    f"Modbus error writing address {address}: {result}"
+                )
+
+        await self._retry_command(
+            "write",
+            address,
+            len(values),
+            RegisterType.HOLDING,
+            _command,
+        )
 
     def _record_error_context(
         self,
@@ -759,6 +805,33 @@ class IdmModbusClient:
             timeout=MODEL_DETECTION_TIMEOUT,
         )
 
+    @staticmethod
+    def _probe_float_value(
+        regs: list[int] | None,
+        *,
+        min_val: float | None = None,
+        max_val: float | None = None,
+    ) -> float | None:
+        """Decode and optionally validate a FLOAT32 register pair from probing.
+
+        Returns the decoded float if the response is valid and within bounds.
+        Returns None for missing/short responses, NaN/Inf, out-of-range values,
+        or struct decode errors.
+        """
+        if regs is None or len(regs) != 2:
+            return None
+        try:
+            val = ModbusCodec.decode_float32(regs)
+        except (struct.error, ValueError):
+            return None
+        if math.isnan(val) or math.isinf(val):
+            return None
+        if min_val is not None and val < min_val:
+            return None
+        if max_val is not None and val > max_val:
+            return None
+        return val
+
     async def detect_model(self, *, read_firmware: bool = True) -> IdmModelInfo:
         """Detect the IDM heat pump model and capabilities by probing registers.
 
@@ -783,19 +856,15 @@ class IdmModbusClient:
         for i in range(MAX_HEATING_CIRCUITS):
             addr = _DETECT_HC_FLOW_BASE + i * _DETECT_HC_STEP
             regs = await self._probe_model_register(addr, 2)
-            if regs is not None and len(regs) == 2:
-                try:
-                    raw = struct.pack("<HH", regs[0], regs[1])
-                    val = struct.unpack("<f", raw)[0]
-                    if not (math.isnan(val) or math.isinf(val)) and -50 < val < 80:
-                        active_circuits.append(HEATING_CIRCUIT_LETTERS[i])
-                        missing_circuit_slots = 0
-                    else:
-                        missing_circuit_slots += 1
-                except (struct.error, ValueError):
-                    if regs is not None:
-                        active_circuits.append(HEATING_CIRCUIT_LETTERS[i])
-                        missing_circuit_slots = 0
+            val = self._probe_float_value(regs, min_val=-50.0, max_val=80.0)
+            if val is not None:
+                active_circuits.append(HEATING_CIRCUIT_LETTERS[i])
+                missing_circuit_slots = 0
+            elif regs is not None and len(regs) == 2:
+                # Registers responded but value was out-of-range or not decodable;
+                # treat the heating circuit slot as active anyway.
+                active_circuits.append(HEATING_CIRCUIT_LETTERS[i])
+                missing_circuit_slots = 0
             else:
                 missing_circuit_slots += 1
             if missing_circuit_slots >= _DETECT_EMPTY_SLOT_STOP_THRESHOLD:
@@ -814,27 +883,18 @@ class IdmModbusClient:
             if missing_zone_slots >= _DETECT_EMPTY_SLOT_STOP_THRESHOLD:
                 break
 
-        has_solar = False
+        # A solar/ISC register that responds at all is treated as present, even
+        # if the FLOAT value cannot be decoded (some firmwares return sentinel
+        # patterns).
         solar_regs = await self._probe_model_register(1850, 2)
-        if solar_regs is not None and len(solar_regs) == 2:
-            try:
-                raw = struct.pack("<HH", solar_regs[0], solar_regs[1])
-                val = struct.unpack("<f", raw)[0]
-                if not (math.isnan(val) or math.isinf(val)):
-                    has_solar = True
-            except (struct.error, ValueError):
-                has_solar = True
+        has_solar = self._probe_float_value(solar_regs) is not None or (
+            solar_regs is not None and len(solar_regs) == 2
+        )
 
-        has_isc = False
         isc_regs = await self._probe_model_register(1870, 2)
-        if isc_regs is not None and len(isc_regs) == 2:
-            try:
-                raw = struct.pack("<HH", isc_regs[0], isc_regs[1])
-                val = struct.unpack("<f", raw)[0]
-                if not (math.isnan(val) or math.isinf(val)):
-                    has_isc = True
-            except (struct.error, ValueError):
-                has_isc = True
+        has_isc = self._probe_float_value(isc_regs) is not None or (
+            isc_regs is not None and len(isc_regs) == 2
+        )
 
         pv_regs = await self._probe_model_register(74, 2)
         has_pv = pv_regs is not None and len(pv_regs) == 2
@@ -872,7 +932,7 @@ class IdmModbusClient:
             pl = await self._probe_model_register(4108, 2)
             if pl is not None and len(pl) == 2:
                 has_navigator_10_indicators = True
-        except Exception:
+        except (ModbusException, ConnectionException, OSError):
             pass
 
         if has_navigator_10_indicators or zone_modules > 0:
@@ -886,14 +946,9 @@ class IdmModbusClient:
         firmware_version: float | None = None
         if read_firmware:
             fw_regs = await self._probe_model_register(4120, 2)
-            if fw_regs is not None and len(fw_regs) == 2:
-                try:
-                    raw = struct.pack("<HH", fw_regs[0], fw_regs[1])
-                    val = struct.unpack("<f", raw)[0]
-                    if not (math.isnan(val) or math.isinf(val)):
-                        firmware_version = round(val, 2)
-                except (struct.error, ValueError):
-                    pass
+            val = self._probe_float_value(fw_regs)
+            if val is not None:
+                firmware_version = round(val, 2)
 
         info = IdmModelInfo(
             model_name=model_name,
@@ -921,6 +976,105 @@ class IdmModbusClient:
         )
         return info
 
+    @staticmethod
+    def _decode_float(registers: list[int], reg: RegisterDef) -> Any:
+        value = ModbusCodec.decode_float32(registers)
+        if math.isnan(value) or math.isinf(value):
+            _LOGGER.debug(
+                "Register %s returned NaN/Inf at address %s",
+                reg.name,
+                reg.address,
+            )
+            return None
+        return round(value * reg.multiplier, 2)
+
+    @staticmethod
+    def _decode_uchar(registers: list[int], reg: RegisterDef) -> Any:
+        val = registers[0] & 0xFF
+        return round(val * reg.multiplier, 2) if reg.multiplier != 1.0 else val
+
+    @staticmethod
+    def _decode_int8(registers: list[int], reg: RegisterDef) -> Any:
+        val = ModbusCodec.decode_int8(registers[0])
+        return round(val * reg.multiplier, 2) if reg.multiplier != 1.0 else val
+
+    @staticmethod
+    def _decode_int16(registers: list[int], reg: RegisterDef) -> Any:
+        val = ModbusCodec.decode_int16(registers[0])
+        return round(val * reg.multiplier, 2) if reg.multiplier != 1.0 else val
+
+    @staticmethod
+    def _decode_uint16(registers: list[int], reg: RegisterDef) -> Any:
+        val = registers[0]
+        return round(val * reg.multiplier, 2) if reg.multiplier != 1.0 else val
+
+    @staticmethod
+    def _decode_bool(registers: list[int], reg: RegisterDef) -> Any:
+        return bool(registers[0] & 0x01)
+
+    @staticmethod
+    def _decode_bitflag(registers: list[int], reg: RegisterDef) -> Any:
+        return registers[0] & 0xFF
+
+    @staticmethod
+    def _encode_float(value: Any, reg: RegisterDef) -> list[int]:
+        float_val = float(value) / reg.multiplier
+        if math.isnan(float_val) or math.isinf(float_val):
+            raise ValueError(f"Cannot encode NaN/Inf for register {reg.name}")
+        return ModbusCodec.encode_float32(float_val)
+
+    @staticmethod
+    def _encode_uchar(value: Any, reg: RegisterDef) -> list[int]:
+        val = int(round(float(value) / reg.multiplier))
+        if not (0 <= val <= 255):
+            raise ValueError(f"Value {value} out of UCHAR range for {reg.name}")
+        return [val & 0xFF]
+
+    @staticmethod
+    def _encode_int8(value: Any, reg: RegisterDef) -> list[int]:
+        val = int(round(float(value) / reg.multiplier))
+        return [ModbusCodec.encode_int8(val) & 0xFF]
+
+    @staticmethod
+    def _encode_int16(value: Any, reg: RegisterDef) -> list[int]:
+        val = int(round(float(value) / reg.multiplier))
+        return [ModbusCodec.encode_int16(val) & 0xFFFF]
+
+    @staticmethod
+    def _encode_uint16(value: Any, reg: RegisterDef) -> list[int]:
+        val = int(round(float(value) / reg.multiplier))
+        if not (0 <= val <= 65535):
+            raise ValueError(f"Value {value} out of UINT16 range for {reg.name}")
+        return [val & 0xFFFF]
+
+    @staticmethod
+    def _encode_bool(value: Any, reg: RegisterDef) -> list[int]:
+        return [1 if value else 0]
+
+    @staticmethod
+    def _encode_bitflag(value: Any, reg: RegisterDef) -> list[int]:
+        return [int(value) & 0xFF]
+
+    _DECODERS: ClassVar[dict[DataType, Callable[[list[int], RegisterDef], Any]]] = {
+        DataType.FLOAT: _decode_float,
+        DataType.UCHAR: _decode_uchar,
+        DataType.INT8: _decode_int8,
+        DataType.INT16: _decode_int16,
+        DataType.UINT16: _decode_uint16,
+        DataType.BOOL: _decode_bool,
+        DataType.BITFLAG: _decode_bitflag,
+    }
+
+    _ENCODERS: ClassVar[dict[DataType, Callable[[Any, RegisterDef], list[int]]]] = {
+        DataType.FLOAT: _encode_float,
+        DataType.UCHAR: _encode_uchar,
+        DataType.INT8: _encode_int8,
+        DataType.INT16: _encode_int16,
+        DataType.UINT16: _encode_uint16,
+        DataType.BOOL: _encode_bool,
+        DataType.BITFLAG: _encode_bitflag,
+    }
+
     def decode_value(self, registers: list[int], reg: RegisterDef) -> Any:
         """Decode raw Modbus register values into a Python value."""
         if not registers:
@@ -929,79 +1083,17 @@ class IdmModbusClient:
             raise ValueError(
                 f"Not enough registers for {reg.name}: got {len(registers)}, need {reg.size}"
             )
-
-        if reg.datatype == DataType.FLOAT:
-            value = ModbusCodec.decode_float32(registers)
-            if math.isnan(value) or math.isinf(value):
-                _LOGGER.debug(
-                    "Register %s returned NaN/Inf at address %s",
-                    reg.name,
-                    reg.address,
-                )
-                return None
-            return round(value * reg.multiplier, 2)
-
-        word = registers[0]
-
-        if reg.datatype == DataType.UCHAR:
-            val = word & 0xFF
-            return round(val * reg.multiplier, 2) if reg.multiplier != 1.0 else val
-
-        if reg.datatype == DataType.INT8:
-            val = ModbusCodec.decode_int8(word)
-            return round(val * reg.multiplier, 2) if reg.multiplier != 1.0 else val
-
-        if reg.datatype == DataType.INT16:
-            val = ModbusCodec.decode_int16(word)
-            return round(val * reg.multiplier, 2) if reg.multiplier != 1.0 else val
-
-        if reg.datatype == DataType.UINT16:
-            val = word
-            return round(val * reg.multiplier, 2) if reg.multiplier != 1.0 else val
-
-        if reg.datatype == DataType.BOOL:
-            return bool(word & 0x01)
-
-        if reg.datatype == DataType.BITFLAG:
-            return word & 0xFF
-
-        raise ValueError(f"Unsupported datatype for decoding: {reg.datatype}")
+        decoder = self._DECODERS.get(reg.datatype)
+        if decoder is None:
+            raise ValueError(f"Unsupported datatype for decoding: {reg.datatype}")
+        return decoder(registers, reg)
 
     def encode_value(self, value: Any, reg: RegisterDef) -> list[int]:
         """Encode a Python value into raw Modbus register values."""
-        if reg.datatype == DataType.FLOAT:
-            float_val = float(value) / reg.multiplier
-            if math.isnan(float_val) or math.isinf(float_val):
-                raise ValueError(f"Cannot encode NaN/Inf for register {reg.name}")
-            return ModbusCodec.encode_float32(float_val)
-
-        if reg.datatype == DataType.UCHAR:
-            val = int(round(float(value) / reg.multiplier))
-            if not (0 <= val <= 255):
-                raise ValueError(f"Value {value} out of UCHAR range for {reg.name}")
-            return [val & 0xFF]
-
-        if reg.datatype == DataType.INT8:
-            val = int(round(float(value) / reg.multiplier))
-            return [ModbusCodec.encode_int8(val) & 0xFF]
-
-        if reg.datatype == DataType.INT16:
-            val = int(round(float(value) / reg.multiplier))
-            return [ModbusCodec.encode_int16(val) & 0xFFFF]
-
-        if reg.datatype == DataType.UINT16:
-            val = int(round(float(value) / reg.multiplier))
-            if not (0 <= val <= 65535):
-                raise ValueError(f"Value {value} out of UINT16 range for {reg.name}")
-            return [val & 0xFFFF]
-
-        if reg.datatype == DataType.BOOL:
-            return [1 if value else 0]
-
-        if reg.datatype == DataType.BITFLAG:
-            return [int(value) & 0xFF]
-
-        raise ValueError(f"Unsupported datatype for encoding: {reg.datatype}")
+        encoder = self._ENCODERS.get(reg.datatype)
+        if encoder is None:
+            raise ValueError(f"Unsupported datatype for encoding: {reg.datatype}")
+        return encoder(value, reg)
 
     async def read_register(self, reg: RegisterDef) -> Any:
         """Read a single register, auto-connecting if needed."""
@@ -1175,8 +1267,8 @@ class IdmModbusClient:
 
         return results
 
-    @staticmethod
     def _group_registers(
+        self,
         regs: list[RegisterDef],
     ) -> list[list[RegisterDef]]:
         """Sort and group registers into contiguous chunks for batch reads."""
@@ -1191,7 +1283,7 @@ class IdmModbusClient:
 
             if (
                 reg.address <= expected_next + _MAX_GROUP_GAP
-                and (reg.address + reg.size - first.address) <= _MAX_GROUP_SIZE
+                and (reg.address + reg.size - first.address) <= self._max_group_size
             ):
                 current_group.append(reg)
             else:
@@ -1225,6 +1317,7 @@ class IdmModbusClient:
             return await self._read_individual_fallback(group, reg_type)
 
         data: dict[str, Any] = {}
+        suspect_regs: list[RegisterDef] = []
         for reg in group:
             offset = reg.address - start
             try:
@@ -1236,7 +1329,11 @@ class IdmModbusClient:
                         reg.address,
                     )
                     continue
-                data[reg.name] = self.decode_value(reg_slice, reg)
+                value = self.decode_value(reg_slice, reg)
+                if self._is_value_suspect(reg, value):
+                    suspect_regs.append(reg)
+                else:
+                    data[reg.name] = value
             except (ValueError, IndexError) as err:
                 _LOGGER.debug(
                     "Failed to decode register %s (address %d): %s",
@@ -1244,7 +1341,44 @@ class IdmModbusClient:
                     reg.address,
                     err,
                 )
+
+        # Some IDM controllers return inconsistent data for certain registers
+        # when read as part of a large contiguous batch, even though individual
+        # reads return correct values. Re-read any register whose decoded value
+        # falls outside its declared valid range to recover the real value.
+        if suspect_regs:
+            _LOGGER.debug(
+                "Batch read at address %d returned %d suspect value(s); "
+                "re-reading individually: %s",
+                start,
+                len(suspect_regs),
+                [r.name for r in suspect_regs],
+            )
+            re_read = await self._read_individual_fallback(suspect_regs, reg_type)
+            data.update(re_read)
         return data
+
+    @staticmethod
+    def _is_value_suspect(reg: RegisterDef, value: Any) -> bool:
+        """Return True if a decoded value is outside the register's valid range.
+
+        Used after batch reads to detect registers where the controller
+        returned corrupt data in a large contiguous read. Registers without
+        ``enum_options`` or ``min_val``/``max_val`` are never flagged.
+        """
+        if value is None or isinstance(value, bool):
+            return False
+        if reg.enum_options is not None:
+            if value not in reg.enum_options:
+                return True
+            return False
+        if reg.min_val is not None and isinstance(value, (int, float)):
+            if value < reg.min_val:
+                return True
+        if reg.max_val is not None and isinstance(value, (int, float)):
+            if value > reg.max_val:
+                return True
+        return False
 
     async def _read_individual_fallback(
         self,

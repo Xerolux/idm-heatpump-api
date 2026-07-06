@@ -17,7 +17,8 @@ FLOAT encoding: IEEE 754, 32-bit, 2 registers, Low word first (Reg_L then Reg_H)
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import functools
+from dataclasses import dataclass, field
 from typing import Any
 
 from .client import DataType, IdmModelInfo, RegisterDef
@@ -29,6 +30,7 @@ from .const import (
     EVU_LOCK_OPTIONS,
     HP_OPERATING_MODE_OPTIONS,
     ISC_MODE_OPTIONS,
+    MAX_ROOMS_PER_ZONE,
     MODEL_NAVIGATOR_10,
     ROOM_MODE_OPTIONS,
     SMART_GRID_OPTIONS,
@@ -37,6 +39,22 @@ from .const import (
     VARIABLE_INPUT_OPTIONS,
     ZONE_MODULE_MODE_OPTIONS,
 )
+
+
+def _model_info_key(model_info: IdmModelInfo) -> tuple[Any, ...]:
+    """Build a hashable cache key from detected model info."""
+    return (
+        model_info.model_name,
+        tuple(model_info.active_heating_circuits),
+        model_info.zone_modules,
+        model_info.has_solar,
+        model_info.has_isc,
+        model_info.has_pv,
+        model_info.has_cascade,
+        tuple(sorted(model_info.features)),
+        model_info.firmware_version,
+    )
+
 
 CORE_REGISTERS: dict[str, RegisterDef] = {
     "outdoor_temp": RegisterDef(
@@ -82,6 +100,7 @@ class RegisterRegistry:
     """Immutable lookup layer for IDM register definitions."""
 
     registers: dict[str, RegisterDef]
+    _by_address: dict[tuple[str, int], str] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         by_address: dict[tuple[str, int], str] = {}
@@ -95,6 +114,9 @@ class RegisterRegistry:
                     f"Register address {reg.address} is duplicated by {existing!r} and {key!r}"
                 )
             by_address[address_key] = key
+        # O(1) lookup by address. The index is derived from registers and never
+        # changes after construction.
+        object.__setattr__(self, "_by_address", by_address)
 
     def get(self, key: str) -> RegisterDef | None:
         return self.registers.get(key)
@@ -106,10 +128,8 @@ class RegisterRegistry:
         return reg
 
     def by_address(self, address: int, register_type: str = "input") -> RegisterDef | None:
-        for reg in self.registers.values():
-            if reg.address == address and reg.register_type.value == register_type:
-                return reg
-        return None
+        key = self._by_address.get((register_type, address))
+        return self.registers.get(key) if key is not None else None
 
     def writable(self) -> dict[str, RegisterDef]:
         return {key: reg for key, reg in self.registers.items() if reg.writable}
@@ -1420,9 +1440,11 @@ def get_zone_module_registers(
 ) -> dict[str, RegisterDef]:
     """Return all registers for a specific zone module (1-10).
 
-    Each zone module supports up to 6 rooms (1-6).
+    Each zone module supports up to 8 rooms (1-8). Current Navigator 10
+    hardware ships with 6 rooms per module, but older IDM zone modules
+    expose up to 8 rooms and use the same base + 7-register layout.
     Zone module base addresses: 2000, 2065, 2130, 2195, 2260, 2325, 2390, 2455, 2520, 2585
-    (65 addresses apart; registers used per module: base .. base+43).
+    (65 addresses apart; registers used per module: base .. base+57).
 
     Room register layout (verified against the official Navigator 10 doc):
     each room occupies 7 registers starting at base+2, e.g. zone module 1:
@@ -1430,8 +1452,10 @@ def get_zone_module_registers(
     """
     if not (1 <= zone_index <= 10):
         raise ValueError(f"Zone index must be 1-10, got {zone_index}")
-    if not (1 <= room_count <= 6):
-        raise ValueError(f"Room count must be 1-6, got {room_count}")
+    if not (1 <= room_count <= MAX_ROOMS_PER_ZONE):
+        raise ValueError(
+            f"Room count must be 1-{MAX_ROOMS_PER_ZONE}, got {room_count}"
+        )
 
     base = 2000 + (zone_index - 1) * 65
     z = zone_index
@@ -1549,31 +1573,23 @@ def get_detection_registers() -> list[RegisterDef]:
     return regs
 
 
-def build_register_map(
-    model_info: IdmModelInfo | None = None,
-    circuits: list[str] | None = None,
-    zone_modules: int = 0,
-    rooms_per_zone: int = 6,
+def _build_register_map_impl(
+    model_info: IdmModelInfo | None,
+    circuits: list[str] | None,
+    zone_modules: int,
+    rooms_per_zone: int,
 ) -> dict[str, RegisterDef]:
-    """Build a complete register map based on detected model or manual config.
-
-    Args:
-        model_info: Auto-detected model info (takes priority over manual params).
-        circuits: Manual list of active circuit letters (e.g. ["A", "B"]).
-        zone_modules: Manual number of zone modules (0-10).
-        rooms_per_zone: Number of rooms per zone module (default 6 for Navigator 10 / current hardware).
-
-    Returns:
-        Complete dict of register definitions keyed by name.
-    """
+    """Actual register map builder (uncached)."""
     if circuits is not None:
         invalid = [c for c in circuits if c.upper() not in "ABCDEFG"]
         if invalid:
             raise ValueError(f"Invalid heating circuit letters: {invalid}")
     if not (0 <= zone_modules <= 10):
         raise ValueError(f"zone_modules must be 0-10, got {zone_modules}")
-    if not (1 <= rooms_per_zone <= 6):
-        raise ValueError(f"rooms_per_zone must be 1-6, got {rooms_per_zone}")
+    if not (1 <= rooms_per_zone <= MAX_ROOMS_PER_ZONE):
+        raise ValueError(
+            f"rooms_per_zone must be 1-{MAX_ROOMS_PER_ZONE}, got {rooms_per_zone}"
+        )
 
     all_regs: dict[str, RegisterDef] = {}
 
@@ -1651,6 +1667,85 @@ def build_register_map(
     )
 
     return all_regs
+
+
+@functools.lru_cache(maxsize=64)
+def _build_register_map_cached(
+    model_key: tuple[Any, ...],
+    circuits_key: tuple[str, ...] | None,
+    zone_modules: int,
+    rooms_per_zone: int,
+) -> dict[str, RegisterDef]:
+    """Cached register map builder.
+
+    The cache key is fully hashable; mutable IdmModelInfo fields are turned
+    into tuples before this function is called.
+    """
+    if model_key == ("__build_manual__",):
+        model_info: IdmModelInfo | None = None
+        circuits_list = list(circuits_key) if circuits_key is not None else None
+    else:
+        circuits_list = None
+        model_info = IdmModelInfo(
+            model_name=model_key[0],
+            active_heating_circuits=list(model_key[1]),
+            zone_modules=zone_modules,
+            has_solar=bool(model_key[3]),
+            has_isc=bool(model_key[4]),
+            has_pv=bool(model_key[5]),
+            has_cascade=bool(model_key[6]),
+            features=set(model_key[7]) if len(model_key) > 7 else set(),
+            firmware_version=model_key[8] if len(model_key) > 8 else None,
+        )
+    return _build_register_map_impl(model_info, circuits_list, zone_modules, rooms_per_zone)
+
+
+def build_register_map(
+    model_info: IdmModelInfo | None = None,
+    circuits: list[str] | None = None,
+    zone_modules: int = 0,
+    rooms_per_zone: int = 6,
+) -> dict[str, RegisterDef]:
+    """Build a complete register map based on detected model or manual config.
+
+    Args:
+        model_info: Auto-detected model info (takes priority over manual params).
+        circuits: Manual list of active circuit letters (e.g. ["A", "B"]).
+        zone_modules: Manual number of zone modules (0-10).
+        rooms_per_zone: Number of rooms per zone module (default 6 for Navigator 10 / current hardware; 8 for older modules).
+
+    Returns:
+        Complete dict of register definitions keyed by name.
+    """
+    if circuits is not None:
+        invalid = [c for c in circuits if c.upper() not in "ABCDEFG"]
+        if invalid:
+            raise ValueError(f"Invalid heating circuit letters: {invalid}")
+    if not (0 <= zone_modules <= 10):
+        raise ValueError(f"zone_modules must be 0-10, got {zone_modules}")
+    if not (1 <= rooms_per_zone <= MAX_ROOMS_PER_ZONE):
+        raise ValueError(
+            f"rooms_per_zone must be 1-{MAX_ROOMS_PER_ZONE}, got {rooms_per_zone}"
+        )
+
+    cache_key: tuple[tuple[Any, ...], tuple[str, ...] | None, int, int]
+    if model_info is not None:
+        cache_key = (
+            _model_info_key(model_info),
+            None,
+            model_info.zone_modules,
+            rooms_per_zone,
+        )
+    else:
+        circuits_key = tuple(c.upper() for c in (circuits or [])) or None
+        cache_key = (
+            ("__build_manual__",),
+            circuits_key,
+            zone_modules,
+            rooms_per_zone,
+        )
+    # Return a shallow copy so callers cannot mutate the cached dict.
+    return dict(_build_register_map_cached(*cache_key))
 
 
 def get_register(name: str, *, model_info: IdmModelInfo | None = None) -> RegisterDef:

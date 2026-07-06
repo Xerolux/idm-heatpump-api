@@ -5,6 +5,70 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Add an LRU cache to `build_register_map()` so repeated map builds for the same
+  model or manual configuration are essentially free.
+- Add an O(1) address index to `RegisterRegistry` for faster `by_address()`
+  lookups.
+- Add a unified `_retry_command()` helper in `IdmModbusClient` that handles
+  retries, backoff, reconnect, and error-context recording for both reads and
+  writes.
+
+### Changed
+
+- Replace the long `if/elif` chains in `IdmModbusClient.decode_value()` and
+  `encode_value()` with dispatch tables; decoding/encoding is now faster and
+  easier to extend.
+- Make `IdmModbusClient.disconnect()` acquire the client lock before closing the
+  underlying transport, preventing races with in-flight reads/writes.
+- Cache aiohttp WebSocket message-type constants and `aiohttp.ClientError` at
+  module import time to avoid repeated conditional imports on every web request.
+- Tighten exception handling in Navigator 2.0 login and endpoint probing so only
+  expected transport/protocol errors are swallowed.
+
+### Fixed
+
+- Fix the redundant HTTP status check in `IdmNavigator20WebClient._request_text()`
+  so `require_ok=False` actually allows non-200 responses (used during login
+  fallbacks and endpoint probing).
+- Fix Navigator 2.0 login logic so empty/bad responses no longer abort the
+  login-path loop prematurely, while successful non-login responses still end
+  the loop as expected.
+- Remove unused `CYCLIC_REGISTERS` constant from `idm_heatpump.const`.
+- Improve Navigator 2.0 login robustness:
+  - do not send a possibly stale CSRF token in the login POST itself;
+  - send the CSRF token under three common header names
+    (`CSRF-Token`, `X-CSRF-Token`, `X-CSRFToken`);
+  - automatically re-login once when a data endpoint rejects the CSRF token;
+  - tighten login-page detection by looking for a `<form>` with a
+    password/PIN input field;
+  - add debug logging for every login step and endpoint probe.
+- Deduplicate FLOAT32 decoding in `detect_model()` with a new
+  `_probe_float_value()` helper.
+- Add per-attempt debug/warning logging to the Modbus retry loop.
+- Make `mypy` strict clean for the entire test suite.
+- Add `tests/test_performance.py` with sanity checks for register-map caching
+  and `read_batch()` grouping efficiency.
+- Add configurable `max_group_size` parameter to `IdmModbusClient` (default 40)
+  so consumers can tune the batch-read chunk size for controllers that return
+  inconsistent data in large contiguous reads.
+- Add post-batch validation in `_read_group()`: after a successful batch read,
+  any register whose decoded value falls outside its declared `enum_options` or
+  `min_val`/`max_val` range is automatically re-read individually. This fixes
+  corrupt UCHAR values (e.g. zone-module room-mode registers showing 255/196
+  instead of 0–4) returned by some IDM controllers during large batch reads
+  (issue #69).
+
+### Changed
+
+- Increase `MAX_ROOMS_PER_ZONE` from 6 to 8 so that older IDM zone modules with
+  up to 8 rooms per module are supported. `get_zone_module_registers()` and
+  `build_register_map()` now accept `room_count`/`rooms_per_zone` values of 1–8
+  (issue #68).
+
 ## [0.6.0] - 2026-07-05
 
 ### Added

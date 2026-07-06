@@ -631,3 +631,54 @@ async def test_navigator20_rejects_login_page_as_data_endpoint() -> None:
 
     with pytest.raises(IdmWebResponseError, match="endpoint candidates"):
         await client.connect()
+
+
+@pytest.mark.asyncio
+async def test_navigator20_read_data_relogs_in_once_on_csrf_error() -> None:
+    """A single CSRF rejection during read_data triggers one re-login attempt."""
+    session = FakeHttpSession(
+        {
+            ("GET", "/"): [
+                FakeHttpResponse(200, "OK"),
+                FakeHttpResponse(200, "OK"),
+            ],
+            ("POST", "/"): [
+                FakeHttpResponse(200, "OK"),
+                FakeHttpResponse(200, "OK"),
+            ],
+            ("GET", "/data/settings.php"): [
+                FakeHttpResponse(200, '{"settings":"ok"}'),
+                FakeHttpResponse(200, '{"settings":"ok"}'),
+            ],
+            ("GET", "/data/heatpump.php"): [
+                FakeHttpResponse(200, '<table><tr><td>B33</td><td>21,5 °C</td></tr></table>'),
+                FakeHttpResponse(200, "invalid csrf token"),
+                FakeHttpResponse(200, '<table><tr><td>B33</td><td>21,5 °C</td></tr></table>'),
+                FakeHttpResponse(200, '<table><tr><td>B33</td><td>21,5 °C</td></tr></table>'),
+            ],
+            ("GET", "/data/info.php"): [
+                FakeHttpResponse(200, '{"info":"ok"}'),
+                FakeHttpResponse(200, '{"info":"ok"}'),
+            ],
+            ("GET", "/data/state.php"): [
+                FakeHttpResponse(200, '{"state":"ok"}'),
+                FakeHttpResponse(200, '{"state":"ok"}'),
+            ],
+            ("GET", "/data/status.php"): [
+                FakeHttpResponse(200, '{"status":"ok"}'),
+                FakeHttpResponse(200, '{"status":"ok"}'),
+            ],
+            ("GET", "/data/values.php"): [
+                FakeHttpResponse(200, '{"values":"ok"}'),
+                FakeHttpResponse(200, '{"values":"ok"}'),
+            ],
+        }
+    )
+    client = IdmNavigator20WebClient("192.0.2.10", "1234", timeout=1, session=session)
+    await client.connect()
+
+    data = await client.read_data(paths=("/data/heatpump.php",))
+
+    assert data.get_value("flow_temperature") == "21,5 °C"
+    # Initial login + re-login after CSRF rejection.
+    assert session.requests.count(("POST", "/", {"pin": "1234"})) == 2

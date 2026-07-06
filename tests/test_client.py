@@ -443,13 +443,13 @@ def test_ensure_connected_forces_reconnect_when_suspect(
     asyncio.run(client._connect_internal())
     original_client = client._client
     assert original_client is not None
-    original_client.connected = True  # pymodbus still thinks it's connected
+    original_client.connected = True  # type: ignore[misc] # pymodbus still thinks it's connected
 
     client._connection_suspect = True  # simulate a prior IO failure
 
     returned = asyncio.run(client._ensure_connected())
 
-    assert original_client.closed is True  # hard-closed despite .connected=True
+    assert original_client.closed is True  # type: ignore[attr-defined] # hard-closed despite .connected=True
     assert client._connection_suspect is False  # flag cleared after reconnect
     assert returned is not original_client  # brand-new client object
 
@@ -481,7 +481,7 @@ def test_ensure_connected_reuses_healthy_client(
     returned = asyncio.run(client._ensure_connected())
 
     assert returned is first  # reused
-    assert first.closed is False
+    assert first.closed is False  # type: ignore[attr-defined]
 
 
 def test_modbus_codec_centralizes_float_and_integer_encoding() -> None:
