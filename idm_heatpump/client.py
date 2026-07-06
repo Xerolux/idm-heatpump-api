@@ -137,6 +137,132 @@ class WriteClass(Enum):
     WRITE_ONLY = "write_only"
 
 
+@dataclass(frozen=True)
+class WriteSafetyResult:
+    """Validated write plan before any Modbus packet is sent."""
+
+    register: "RegisterDef"
+    requested_value: Any
+    encoded_registers: tuple[int, ...]
+    dry_run: bool = False
+
+
+@dataclass(frozen=True)
+class IdmClientDiagnostics:
+    """Sanitized diagnostics for the Modbus backend."""
+
+    navigator_type: str
+    modbus_connected: bool
+    firmware: str | None = None
+    last_error: str | None = None
+    permanently_failed_registers: tuple[str, ...] = ()
+    connection_suspect: bool = False
+
+
+@dataclass(frozen=True)
+class FeatureFlags:
+    """Opt-in feature switches for safer rollout of new API surfaces."""
+
+    enable_nav2_web: bool = True
+    enable_nav10_ws: bool = True
+    enable_experimental_features: bool = False
+    enable_write_support: bool = True
+    enable_debug_endpoints: bool = False
+
+
+class AdaptiveBackoff:
+    """Small reusable exponential backoff helper for network retry loops."""
+
+    def __init__(
+        self,
+        *,
+        initial: float = 5.0,
+        multiplier: float = 3.0,
+        maximum: float = 300.0,
+    ) -> None:
+        if initial <= 0:
+            raise ValueError("initial backoff must be positive")
+        if multiplier < 1:
+            raise ValueError("backoff multiplier must be >= 1")
+        if maximum < initial:
+            raise ValueError("maximum backoff must be >= initial")
+        self._initial = float(initial)
+        self._multiplier = float(multiplier)
+        self._maximum = float(maximum)
+        self._current = self._initial
+
+    def next_delay(self) -> float:
+        delay = self._current
+        self._current = min(self._current * self._multiplier, self._maximum)
+        return delay
+
+    def reset(self) -> None:
+        self._current = self._initial
+
+
+class PollRateLimiter:
+    """Simple monotonic rate limiter for Modbus/web/diagnostic polling loops."""
+
+    def __init__(self, interval: float, *, clock: Any = time.monotonic) -> None:
+        if interval < 0:
+            raise ValueError("poll interval must be >= 0")
+        self._interval = float(interval)
+        self._clock = clock
+        self._next_allowed = 0.0
+
+    @property
+    def interval(self) -> float:
+        return self._interval
+
+    def remaining(self) -> float:
+        return max(0.0, self._next_allowed - self._clock())
+
+    def allow(self) -> bool:
+        return self.remaining() <= 0
+
+    def mark(self) -> None:
+        self._next_allowed = self._clock() + self._interval
+
+
+class ModbusCodec:
+    """Centralized Modbus register encoder/decoder."""
+
+    @staticmethod
+    def decode_float32(registers: list[int], *, swapped: bool = False) -> float:
+        if len(registers) < 2:
+            raise ValueError("FLOAT32 decoding requires two registers")
+        words = (registers[1], registers[0]) if swapped else (registers[0], registers[1])
+        return struct.unpack("<f", struct.pack("<HH", words[0], words[1]))[0]
+
+    @staticmethod
+    def encode_float32(value: float, *, swapped: bool = False) -> list[int]:
+        raw = struct.pack("<f", value)
+        low, high = struct.unpack("<HH", raw)
+        return [high, low] if swapped else [low, high]
+
+    @staticmethod
+    def decode_int16(register: int) -> int:
+        value = register & 0xFFFF
+        return value - 65536 if value >= 32768 else value
+
+    @staticmethod
+    def encode_int16(value: int) -> int:
+        if not (-32768 <= value <= 32767):
+            raise ValueError(f"Value {value} out of INT16 range")
+        return value + 65536 if value < 0 else value
+
+    @staticmethod
+    def decode_int8(register: int) -> int:
+        value = register & 0xFF
+        return value - 256 if value >= 128 else value
+
+    @staticmethod
+    def encode_int8(value: int) -> int:
+        if not (-128 <= value <= 127):
+            raise ValueError(f"Value {value} out of INT8 range")
+        return value + 256 if value < 0 else value
+
+
 @dataclass
 class IdmModelInfo:
     model_name: str
@@ -805,9 +931,7 @@ class IdmModbusClient:
             )
 
         if reg.datatype == DataType.FLOAT:
-            low_word, high_word = registers[0], registers[1]
-            raw = struct.pack("<HH", low_word, high_word)
-            value = struct.unpack("<f", raw)[0]
+            value = ModbusCodec.decode_float32(registers)
             if math.isnan(value) or math.isinf(value):
                 _LOGGER.debug(
                     "Register %s returned NaN/Inf at address %s",
@@ -824,15 +948,11 @@ class IdmModbusClient:
             return round(val * reg.multiplier, 2) if reg.multiplier != 1.0 else val
 
         if reg.datatype == DataType.INT8:
-            val = word & 0xFF
-            if val >= 128:
-                val -= 256
+            val = ModbusCodec.decode_int8(word)
             return round(val * reg.multiplier, 2) if reg.multiplier != 1.0 else val
 
         if reg.datatype == DataType.INT16:
-            val = word
-            if val >= 32768:
-                val -= 65536
+            val = ModbusCodec.decode_int16(word)
             return round(val * reg.multiplier, 2) if reg.multiplier != 1.0 else val
 
         if reg.datatype == DataType.UINT16:
@@ -853,9 +973,7 @@ class IdmModbusClient:
             float_val = float(value) / reg.multiplier
             if math.isnan(float_val) or math.isinf(float_val):
                 raise ValueError(f"Cannot encode NaN/Inf for register {reg.name}")
-            raw = struct.pack("<f", float_val)
-            low, high = struct.unpack("<HH", raw)
-            return [low, high]
+            return ModbusCodec.encode_float32(float_val)
 
         if reg.datatype == DataType.UCHAR:
             val = int(round(float(value) / reg.multiplier))
@@ -865,19 +983,11 @@ class IdmModbusClient:
 
         if reg.datatype == DataType.INT8:
             val = int(round(float(value) / reg.multiplier))
-            if not (-128 <= val <= 127):
-                raise ValueError(f"Value {value} out of INT8 range for {reg.name}")
-            if val < 0:
-                val += 256
-            return [val & 0xFF]
+            return [ModbusCodec.encode_int8(val) & 0xFF]
 
         if reg.datatype == DataType.INT16:
             val = int(round(float(value) / reg.multiplier))
-            if not (-32768 <= val <= 32767):
-                raise ValueError(f"Value {value} out of INT16 range for {reg.name}")
-            if val < 0:
-                val += 65536
-            return [val & 0xFFFF]
+            return [ModbusCodec.encode_int16(val) & 0xFFFF]
 
         if reg.datatype == DataType.UINT16:
             val = int(round(float(value) / reg.multiplier))
@@ -903,15 +1013,62 @@ class IdmModbusClient:
 
     async def write_register(self, reg: RegisterDef, value: Any) -> None:
         """Write a single register after validation, auto-connecting if needed."""
-        if not reg.writable:
-            raise ValueError(f"Register '{reg.name}' is read-only")
-
-        self._validate_write_allowed(reg, value)
-
+        plan = self.simulate_write(reg, value)
         await self._ensure_connected()
-        encoded = self.encode_value(value, reg)
-        await self._write_registers(reg.address, encoded)
+        await self._write_registers(reg.address, list(plan.encoded_registers))
         self._record_successful_write(reg)
+
+    async def read_value(self, key: str) -> Any:
+        """Read one register by registry key/name."""
+        reg = self._get_register_by_key(key)
+        return await self.read_register(reg)
+
+    async def set_value(self, key: str, value: Any, *, dry_run: bool = False) -> WriteSafetyResult:
+        """Safely write one register by key/name, optionally as dry run."""
+        reg = self._get_register_by_key(key)
+        plan = self.simulate_write(reg, value, dry_run=dry_run)
+        if not dry_run:
+            await self._ensure_connected()
+            await self._write_registers(reg.address, list(plan.encoded_registers))
+            self._record_successful_write(reg)
+        return plan
+
+    def simulate_write(
+        self,
+        reg: RegisterDef | str,
+        value: Any,
+        *,
+        dry_run: bool = True,
+    ) -> WriteSafetyResult:
+        """Validate and encode a write without necessarily sending it."""
+        register = self._get_register_by_key(reg) if isinstance(reg, str) else reg
+        if not register.writable:
+            raise ValueError(f"Register '{register.name}' is read-only")
+        self._validate_write_allowed(register, value)
+        encoded = tuple(self.encode_value(value, register))
+        return WriteSafetyResult(register, value, encoded, dry_run=dry_run)
+
+    def get_diagnostics(self) -> IdmClientDiagnostics:
+        """Return a sanitized Modbus diagnostics snapshot."""
+        firmware = None
+        if self._model_info and self._model_info.firmware_version is not None:
+            firmware = str(self._model_info.firmware_version)
+        return IdmClientDiagnostics(
+            navigator_type=self.model_name,
+            modbus_connected=self.is_connected,
+            firmware=firmware,
+            last_error=self._last_error_context.message if self._last_error_context else None,
+            permanently_failed_registers=tuple(sorted(self._permanently_failed_registers)),
+            connection_suspect=self._connection_suspect,
+        )
+
+    def _get_register_by_key(self, key: str) -> RegisterDef:
+        from .registers import get_register
+
+        try:
+            return get_register(key, model_info=self._model_info)
+        except ValueError as exc:
+            raise KeyError(f"Unknown IDM register key: {key}") from exc
 
     def _validate_write_allowed(self, reg: RegisterDef, value: Any) -> None:
         self._validate_model_availability(reg)

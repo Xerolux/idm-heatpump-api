@@ -10,6 +10,8 @@ from pymodbus.exceptions import ModbusException
 from idm_heatpump.client import (
     DataType,
     IdmModbusClient,
+    ModbusCodec,
+    PollRateLimiter,
     RegisterDef,
     RegisterType,
     quiet_pymodbus_logging,
@@ -480,3 +482,58 @@ def test_ensure_connected_reuses_healthy_client(
 
     assert returned is first  # reused
     assert first.closed is False
+
+
+def test_modbus_codec_centralizes_float_and_integer_encoding() -> None:
+    encoded = ModbusCodec.encode_float32(21.5)
+
+    assert ModbusCodec.decode_float32(encoded) == 21.5
+    assert ModbusCodec.decode_int16(0xFFFF) == -1
+    assert ModbusCodec.encode_int16(-1) == 0xFFFF
+    assert ModbusCodec.decode_int8(0xFF) == -1
+    assert ModbusCodec.encode_int8(-1) == 0xFF
+
+
+def test_write_safety_simulate_write_validates_and_encodes_without_io() -> None:
+    client = IdmModbusClient("192.0.2.10")
+    plan = client.simulate_write("system_mode", 2)
+
+    assert plan.register.name == "system_mode"
+    assert plan.requested_value == 2
+    assert plan.encoded_registers == (2,)
+    assert plan.dry_run is True
+
+
+def test_write_safety_rejects_unknown_and_read_only_registers() -> None:
+    client = IdmModbusClient("192.0.2.10")
+
+    with pytest.raises(KeyError, match="Unknown IDM register key"):
+        client.simulate_write("does_not_exist", 1)
+    with pytest.raises(ValueError, match="read-only"):
+        client.simulate_write("outdoor_temp", 21.5)
+
+
+def test_modbus_diagnostics_reports_sanitized_state() -> None:
+    client = IdmModbusClient("192.0.2.10")
+
+    diagnostics = client.get_diagnostics()
+
+    assert diagnostics.navigator_type == MODEL_NAVIGATOR_20
+    assert diagnostics.modbus_connected is False
+    assert diagnostics.last_error is None
+
+
+def test_poll_rate_limiter_tracks_remaining_interval() -> None:
+    now = 100.0
+
+    def clock() -> float:
+        return now
+
+    limiter = PollRateLimiter(30.0, clock=clock)
+
+    assert limiter.allow() is True
+    limiter.mark()
+    assert limiter.allow() is False
+    assert limiter.remaining() == 30.0
+    now = 130.0
+    assert limiter.allow() is True

@@ -12,9 +12,11 @@ from idm_heatpump.web import (
     IdmNavigator10WebClient,
     IdmNavigator20WebClient,
     IdmWebAuthenticationError,
+    IdmWebConnectionError,
     IdmWebData,
     IdmWebResponseError,
     IdmWebValue,
+    _extract_csrf_token,
     create_optional_navigator10_web_client,
     create_optional_navigator20_web_client,
     parse_idm_html_table_values,
@@ -251,6 +253,12 @@ class FakeWs:
         return None
 
 
+class FailingSendWs(FakeWs):
+    async def send_json(self, payload: dict[str, object]) -> None:
+        self.closed = True
+        raise OSError("drop")
+
+
 class FakeSession:
     def __init__(self, ws: FakeWs | list[FakeWs]) -> None:
         self.ws = ws
@@ -368,7 +376,7 @@ async def test_navigator10_client_closes_owned_session_on_connect_failure(
     monkeypatch.setattr("aiohttp.ClientSession", lambda: session)
     client = IdmNavigator10WebClient("192.0.2.10", "1234", timeout=1)
 
-    with pytest.raises(OSError, match="connection refused"):
+    with pytest.raises(IdmWebConnectionError, match="connection failed"):
         await client.connect()
 
     assert session.closed is True
@@ -406,6 +414,59 @@ async def test_navigator10_client_does_not_retry_authentication_errors(
     assert session.urls == ["ws://192.0.2.10:61220/?auth_code=1234"]
 
 
+
+
+@pytest.mark.asyncio
+async def test_navigator10_diagnostics_and_cache_track_success() -> None:
+    setting_raw = json.dumps(
+        {"settingDetail": {"id": "4768", "name": "N2_SENSORS", "value": NAV10_SENSOR_HTML}}
+    )
+    ws = FakeWs(['{"authorized":true}', setting_raw])
+    client = IdmNavigator10WebClient("192.0.2.10", "1234", timeout=1, session=FakeSession(ws))
+
+    data = await client.read_data(("4768",))
+    diagnostics = client.diagnostics()
+
+    assert client.get_cached_data() is data
+    assert diagnostics.navigator_type == "nav10"
+    assert diagnostics.websocket_connected is True
+    assert diagnostics.cached is True
+    assert diagnostics.last_success_monotonic is not None
+
+
+@pytest.mark.asyncio
+async def test_navigator10_reconnect_uses_bounded_exponential_backoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stale_ws = FakeWs(['{"authorized":true}'])
+    failing_ws = FailingSendWs(['{"authorized":true}'])
+    fresh_ws = FakeWs(['{"authorized":true}', '{"notification":{"current":[]}}'])
+    session = FakeSession([stale_ws, failing_ws, fresh_ws])
+    sleeps: list[float] = []
+
+    async def fake_sleep(delay: float) -> None:
+        sleeps.append(delay)
+
+    monkeypatch.setattr("idm_heatpump.web.asyncio.sleep", fake_sleep)
+    client = IdmNavigator10WebClient(
+        "192.0.2.10",
+        "1234",
+        timeout=1,
+        reconnect_base_delay=0.5,
+        reconnect_max_delay=1.0,
+        max_reconnect_attempts=2,
+        session=session,
+    )
+    await client.connect()
+    stale_ws.closed = True
+
+    notifications = await client.read_notifications()
+
+    assert notifications.count == 0
+    assert sleeps == [0.5]
+    assert len(session.urls) == 3
+
+
 @pytest.mark.asyncio
 async def test_navigator10_client_reads_notifications() -> None:
     ws = FakeWs(
@@ -432,3 +493,141 @@ async def test_navigator10_client_rejects_invalid_pin() -> None:
         await client.connect()
 
     assert ws.closed
+
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        'csrf_token="abc123"',
+        '<input type="hidden" name="csrf_token" value="abc123">',
+        '<meta name="csrf-token" content="abc123">',
+        '<script>var csrfToken = "abc123";</script>',
+        "<script>var csrf_token = 'abc123';</script>",
+    ],
+)
+def test_extract_csrf_token_supports_common_nav2_variants(html: str) -> None:
+    assert _extract_csrf_token(html) == "abc123"
+
+
+def test_extract_csrf_token_returns_none_without_token() -> None:
+    assert _extract_csrf_token("<html><body>No token</body></html>") is None
+
+
+class FakeHttpResponse:
+    def __init__(self, status: int, text: str, cookies: dict[str, str] | None = None) -> None:
+        self.status = status
+        self._text = text
+        self.cookies = cookies or {}
+
+    async def __aenter__(self) -> "FakeHttpResponse":
+        return self
+
+    async def __aexit__(self, *args: object) -> None:
+        return None
+
+    async def text(self) -> str:
+        return self._text
+
+
+class FakeHttpSession:
+    def __init__(self, responses: dict[tuple[str, str], list[FakeHttpResponse]]) -> None:
+        self.responses = responses
+        self.cookies: dict[str, str] = {}
+        self.requests: list[tuple[str, str, dict[str, str] | None]] = []
+        self.closed = False
+
+    def request(
+        self,
+        method: str,
+        url: str,
+        *,
+        data: dict[str, str] | None = None,
+        headers: dict[str, str] | None = None,
+        timeout: float | None = None,
+    ) -> FakeHttpResponse:
+        del headers, timeout
+        path = "/" + url.split("/", 3)[3] if "/" in url[7:] else "/"
+        key = (method, path)
+        self.requests.append((method, path, data))
+        response = self.responses.get(key, [FakeHttpResponse(404, "")]).pop(0)
+        self.cookies.update(response.cookies)
+        return response
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+@pytest.mark.asyncio
+async def test_navigator20_login_fallback_without_csrf_uses_cookie_only_session() -> None:
+    session = FakeHttpSession(
+        {
+            ("GET", "/"): [FakeHttpResponse(404, "")],
+            ("GET", "/index.php"): [
+                FakeHttpResponse(200, '<html><form><input name="pin"></form></html>')
+            ],
+            ("POST", "/index.php"): [
+                FakeHttpResponse(
+                    200,
+                    '<html><form><input name="pin"></form></html>',
+                    cookies={"sid": "ok"},
+                )
+            ],
+            ("GET", "/data/info.php"): [FakeHttpResponse(200, '{"heatpump":"ok","value":1}')],
+        }
+    )
+    client = IdmNavigator20WebClient("192.0.2.10", "1234", timeout=1, session=session)
+
+    assert await client.detect() is True
+    assert client._data_paths == ("/data/info.php",)
+
+
+@pytest.mark.asyncio
+async def test_navigator20_login_rejected_raises_authentication_error() -> None:
+    login = '<html><form><input name="pin"></form></html>'
+    session = FakeHttpSession(
+        {
+            ("GET", "/"): [FakeHttpResponse(404, "")],
+            ("GET", "/index.php"): [FakeHttpResponse(200, login)],
+            ("POST", "/index.php"): [FakeHttpResponse(200, login)],
+        }
+    )
+    client = IdmNavigator20WebClient("192.0.2.10", "bad", timeout=1, session=session)
+
+    with pytest.raises(IdmWebAuthenticationError, match="PIN rejected"):
+        await client.connect()
+
+
+@pytest.mark.asyncio
+async def test_navigator20_skips_missing_endpoint_and_uses_working_endpoint() -> None:
+    session = FakeHttpSession(
+        {
+            ("GET", "/"): [FakeHttpResponse(404, "")],
+            ("GET", "/index.php"): [FakeHttpResponse(200, "OK")],
+            ("POST", "/"): [FakeHttpResponse(200, "OK")],
+            ("GET", "/data/heatpump.php"): [FakeHttpResponse(200, '{"heatpump":"ok"}')],
+        }
+    )
+    client = IdmNavigator20WebClient("192.0.2.10", "1234", timeout=1, session=session)
+
+    await client.connect()
+
+    assert client._data_paths == ("/data/heatpump.php",)
+
+
+@pytest.mark.asyncio
+async def test_navigator20_rejects_login_page_as_data_endpoint() -> None:
+    session = FakeHttpSession(
+        {
+            ("GET", "/"): [FakeHttpResponse(404, "")],
+            ("GET", "/index.php"): [FakeHttpResponse(200, "OK")],
+            ("POST", "/"): [FakeHttpResponse(200, "OK")],
+            ("GET", "/data/heatpump.php"): [
+                FakeHttpResponse(200, '<html><form><input name="pin"></form></html>')
+            ],
+        }
+    )
+    client = IdmNavigator20WebClient("192.0.2.10", "1234", timeout=1, session=session)
+
+    with pytest.raises(IdmWebResponseError, match="endpoint candidates"):
+        await client.connect()
