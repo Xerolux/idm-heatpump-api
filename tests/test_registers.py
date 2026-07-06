@@ -20,6 +20,7 @@ from idm_heatpump.registers import (
     get_all_registers,
     get_heating_circuit_registers,
     get_register,
+    get_register_registry,
     get_zone_module_registers,
 )
 
@@ -468,3 +469,15 @@ def test_get_all_registers_returns_full_map_with_model_info() -> None:
     names = {reg.name for reg in get_all_registers(model_info=model_info)}
     assert "hc_a_flow_temp" in names
     assert "hc_b_flow_temp" not in names
+
+
+def test_register_registry_provides_key_address_and_schema_lookups() -> None:
+    registry = get_register_registry()
+
+    assert registry.require("system_mode").address == 1005
+    assert registry.by_address(1005).name == "system_mode"
+    assert "system_mode" in registry.writable()
+    schema = registry.to_schema()
+    system_mode_schema = next(item for item in schema if item["key"] == "system_mode")
+    assert system_mode_schema["datatype"] == "UCHAR"
+    assert system_mode_schema["writable"] is True

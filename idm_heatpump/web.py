@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import builtins
 import json
+import logging
 import re
+import time
 from dataclasses import dataclass, field
 from html import unescape
 from html.parser import HTMLParser
@@ -20,7 +23,14 @@ DEFAULT_NAVIGATOR10_PORT = 61220
 DEFAULT_NAVIGATOR10_REQUEST_DELAY = 0.05
 RECOMMENDED_WEB_SCAN_INTERVAL = 30.0
 DEFAULT_NAVIGATOR10_SETTING_IDS = ("4768", "4775", "4782", "4789", "4754", "13259")
-DEFAULT_NAVIGATOR20_PATHS = ("/data/settings.php", "/data/heatpump.php", "/data/info.php")
+DEFAULT_NAVIGATOR20_PATHS = (
+    "/data/settings.php",
+    "/data/heatpump.php",
+    "/data/info.php",
+    "/data/state.php",
+    "/data/status.php",
+    "/data/values.php",
+)
 
 _NAVIGATOR10_SETTING_REQUEST = {
     "controller": "setting",
@@ -165,6 +175,7 @@ NAVIGATOR10_SETTING_NAME_MAP: dict[tuple[str, str], str] = {
 
 _NUMBER_RE = re.compile(r"^\s*-?\d+(?:[.,]\d+)?\s*$")
 _UNIT_SUFFIX_RE = re.compile(r"^\s*(-?\d+(?:[.,]\d+)?)\s*([A-Za-z°/%]+(?:/[A-Za-z]+)?)?\s*$")
+_LOGGER = logging.getLogger(__name__)
 
 
 class IdmWebError(Exception):
@@ -175,12 +186,47 @@ class IdmWebDependencyError(IdmWebError):
     """Raised when optional web client dependencies are missing."""
 
 
+class IdmWebConnectionError(IdmWebError):
+    """Raised when the local web interface cannot be reached."""
+
+
+class IdmWebTimeoutError(IdmWebConnectionError):
+    """Raised when a local web interface operation times out."""
+
+
 class IdmWebAuthenticationError(IdmWebError):
-    """Raised when the local web interface rejects the PIN."""
+    """Raised when the local web interface rejects authentication."""
 
 
-class IdmWebResponseError(IdmWebError):
+class IdmWebPinRejectedError(IdmWebAuthenticationError):
+    """Raised when the local web interface explicitly rejects the configured PIN."""
+
+
+class IdmWebCsrfError(IdmWebAuthenticationError):
+    """Raised when a local web interface rejects or requires a CSRF token."""
+
+
+class IdmWebProtocolError(IdmWebError):
+    """Raised when the local web interface violates the expected protocol."""
+
+
+class IdmWebWebSocketError(IdmWebProtocolError):
+    """Raised for Navigator 10 websocket protocol failures."""
+
+
+class IdmWebResponseError(IdmWebProtocolError):
     """Raised when the local web interface returns an unexpected response."""
+
+
+# Short aliases requested by downstream integrations. They intentionally point
+# to the IDM-prefixed classes to preserve the existing public exception tree.
+AuthenticationError = IdmWebAuthenticationError
+PinRejectedError = IdmWebPinRejectedError
+CsrfError = IdmWebCsrfError
+ConnectionError = IdmWebConnectionError
+TimeoutError = IdmWebTimeoutError
+WebSocketError = IdmWebWebSocketError
+ProtocolError = IdmWebProtocolError
 
 
 @dataclass(frozen=True)
@@ -385,6 +431,67 @@ class _TableParser(HTMLParser):
             self._current_cell = None
 
 
+class _CsrfTokenParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.token: str | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if self.token:
+            return
+        attr_map = {name.lower(): value for name, value in attrs if value is not None}
+        if tag == "input" and attr_map.get("name") == "csrf_token":
+            self.token = attr_map.get("value")
+        elif tag == "meta" and attr_map.get("name") == "csrf-token":
+            self.token = attr_map.get("content")
+
+
+_CSRF_TOKEN_PATTERNS = (
+    r'csrf_token="([^"]+)"',
+    r"csrf_token='([^']+)'",
+    r'name="csrf_token"\s+value="([^"]+)"',
+    r"name='csrf_token'\s+value='([^']+)'",
+    r'content="([^"]+)"\s+name="csrf-token"',
+    r'name="csrf-token"\s+content="([^"]+)"',
+    r'csrfToken\s*=\s*"([^"]+)"',
+    r"csrfToken\s*=\s*'([^']+)'",
+    r'csrf_token\s*=\s*"([^"]+)"',
+    r"csrf_token\s*=\s*'([^']+)'",
+)
+
+
+def _extract_csrf_token(html: str) -> str | None:
+    """Extract a NAV2 CSRF token from common HTML, meta, and script variants."""
+    parser = _CsrfTokenParser()
+    parser.feed(html)
+    if parser.token:
+        return unescape(parser.token)
+    for pattern in _CSRF_TOKEN_PATTERNS:
+        match = re.search(pattern, html, flags=re.IGNORECASE)
+        if match and match.group(1):
+            return unescape(match.group(1))
+    return None
+
+
+def _looks_like_login_page(text: str) -> bool:
+    lowered = text.lower()
+    return "<html" in lowered and any(
+        marker in lowered for marker in ("login", "pin", "password", "passwort", "csrf")
+    )
+
+
+def _looks_like_data_response(text: str) -> bool:
+    stripped = text.strip()
+    if not stripped or _looks_like_login_page(stripped):
+        return False
+    try:
+        json.loads(stripped)
+        return True
+    except json.JSONDecodeError:
+        pass
+    return any(marker in stripped.lower() for marker in ("<table", "setting", "heatpump", "value"))
+
+
 def _require_aiohttp() -> Any:
     try:
         import aiohttp
@@ -568,6 +675,25 @@ def parse_navigator_notifications_response(
     )
 
 
+@dataclass(frozen=True)
+class IdmWebDiagnostics:
+    """Diagnostic snapshot for optional local web clients."""
+
+    navigator_type: str
+    websocket_connected: bool = False
+    web_data_enabled: bool = False
+    firmware: str | None = None
+    api_version: str | None = None
+    model: str | None = None
+    serial_number: str | None = None
+    last_success_monotonic: float | None = None
+    last_error: str | None = None
+    last_reconnect_monotonic: float | None = None
+    reconnect_attempts: int = 0
+    used_endpoints: tuple[str, ...] = ()
+    cached: bool = False
+
+
 class IdmNavigator10WebClient:
     """Read-only async client for the Navigator 10 local WebSocket interface."""
 
@@ -579,6 +705,9 @@ class IdmNavigator10WebClient:
         port: int = DEFAULT_NAVIGATOR10_PORT,
         timeout: float = 8.0,
         request_delay: float = DEFAULT_NAVIGATOR10_REQUEST_DELAY,
+        reconnect_base_delay: float = 0.25,
+        reconnect_max_delay: float = 5.0,
+        max_reconnect_attempts: int = 3,
         session: Any | None = None,
     ) -> None:
         if not host:
@@ -592,9 +721,17 @@ class IdmNavigator10WebClient:
         self._port = int(port)
         self._timeout = float(timeout)
         self._request_delay = max(0.0, float(request_delay))
+        self._reconnect_base_delay = max(0.0, float(reconnect_base_delay))
+        self._reconnect_max_delay = max(self._reconnect_base_delay, float(reconnect_max_delay))
+        self._max_reconnect_attempts = max(1, int(max_reconnect_attempts))
         self._session = session
         self._own_session = False
         self._ws: Any | None = None
+        self._last_success_monotonic: float | None = None
+        self._last_error: str | None = None
+        self._last_reconnect_monotonic: float | None = None
+        self._reconnect_attempts = 0
+        self._cached_data: IdmWebData | None = None
         self._lock = asyncio.Lock()
 
     @property
@@ -619,28 +756,44 @@ class IdmNavigator10WebClient:
 
     async def connect(self) -> None:
         async with self._lock:
-            if self._ws is not None:
-                if not self._websocket_closed(self._ws):
-                    return
-                self._ws = None
-            if self._session is None:
-                aiohttp = _require_aiohttp()
-                self._session = aiohttp.ClientSession()
-                self._own_session = True
+            await self._connect_unlocked()
 
-            encoded_pin = quote(self._pin, safe="")
-            url = f"ws://{self._host}:{self._port}/?auth_code={encoded_pin}"
-            try:
-                self._ws = await self._session.ws_connect(url, timeout=self._timeout)
-                auth = await self._receive_text()
-            except Exception:
-                await self.close()
-                raise
-            if not _json_extract_authorized(auth):
-                await self.close()
-                if _json_extract_authorized(auth, expect=False):
-                    raise IdmWebAuthenticationError("Navigator 10 rejected the PIN")
-                raise IdmWebResponseError("Navigator 10 authorization response was not recognized")
+    async def _connect_unlocked(self) -> None:
+        if self._ws is not None:
+            if not self._websocket_closed(self._ws):
+                return
+            self._ws = None
+        if self._session is None:
+            aiohttp = _require_aiohttp()
+            self._session = aiohttp.ClientSession()
+            self._own_session = True
+
+        encoded_pin = quote(self._pin, safe="")
+        url = f"ws://{self._host}:{self._port}/?auth_code={encoded_pin}"
+        try:
+            self._ws = await self._session.ws_connect(url, timeout=self._timeout)
+            auth = await self._receive_text()
+        except builtins.TimeoutError as exc:
+            self._last_error = "Navigator 10 websocket connection timed out"
+            await self.close()
+            raise IdmWebTimeoutError(self._last_error) from exc
+        except OSError as exc:
+            self._last_error = f"Navigator 10 websocket connection failed: {type(exc).__name__}"
+            await self.close()
+            raise IdmWebConnectionError(self._last_error) from exc
+        except Exception:
+            self._last_error = "Navigator 10 websocket connection failed"
+            await self.close()
+            raise
+        if not _json_extract_authorized(auth):
+            await self.close()
+            if _json_extract_authorized(auth, expect=False):
+                self._last_error = "Navigator 10 rejected the PIN"
+                raise IdmWebPinRejectedError(self._last_error)
+            self._last_error = "Navigator 10 authorization response was not recognized"
+            raise IdmWebProtocolError(self._last_error)
+        self._last_success_monotonic = time.monotonic()
+        self._last_error = None
 
     async def close(self) -> None:
         if self._ws is not None:
@@ -671,7 +824,10 @@ class IdmNavigator10WebClient:
             if self._request_delay and i < len(setting_ids) - 1:
                 await asyncio.sleep(self._request_delay)
 
-        return IdmWebData(model="Navigator 10 Web", values=values, raw_responses=raw_responses)
+        data = IdmWebData(model="Navigator 10 Web", values=values, raw_responses=raw_responses)
+        self._cached_data = data
+        self._last_success_monotonic = time.monotonic()
+        return data
 
     async def read_statistics(
         self,
@@ -689,54 +845,113 @@ class IdmNavigator10WebClient:
             "statisticSubType": None,
         }
         raw = await self._send_json_and_receive_text(request)
-        return IdmWebData(
+        data = IdmWebData(
             model="Navigator 10 Web",
             values=parse_navigator_statistic_response(raw, prefix),
             raw_responses={f"statistic:{statistic_type}:{period_type}": raw} if include_raw else {},
         )
+        self._last_success_monotonic = time.monotonic()
+        return data
 
     async def read_notifications(self, *, include_raw: bool = False) -> IdmWebNotifications:
         await self.connect()
         raw = await self._send_json_and_receive_text(_NAVIGATOR10_NOTIFICATION_REQUEST)
-        return parse_navigator_notifications_response(raw, include_raw=include_raw)
+        notifications = parse_navigator_notifications_response(raw, include_raw=include_raw)
+        self._last_success_monotonic = time.monotonic()
+        return notifications
+
+    def get_cached_data(self) -> IdmWebData | None:
+        """Return the last valid Navigator 10 data snapshot, if one exists."""
+        return self._cached_data
+
+    def diagnostics(self) -> IdmWebDiagnostics:
+        """Return a sanitized Navigator 10 diagnostic snapshot."""
+        return IdmWebDiagnostics(
+            navigator_type="nav10",
+            websocket_connected=self._ws is not None and not self._websocket_closed(self._ws),
+            web_data_enabled=True,
+            last_success_monotonic=self._last_success_monotonic,
+            last_error=self._last_error,
+            last_reconnect_monotonic=self._last_reconnect_monotonic,
+            reconnect_attempts=self._reconnect_attempts,
+            cached=self._cached_data is not None,
+        )
 
     async def _send_json_and_receive_text(self, payload: dict[str, Any]) -> str:
-        aiohttp = _require_aiohttp()
+        try:
+            import aiohttp
+        except ModuleNotFoundError:
+            aiohttp_client_error: tuple[type[BaseException], ...] = ()
+        else:
+            aiohttp_client_error = (aiohttp.ClientError,)
+        recoverable_errors = (
+            IdmWebProtocolError,
+            OSError,
+            builtins.TimeoutError,
+            *aiohttp_client_error,
+        )
+        reconnect_errors = (
+            IdmWebProtocolError,
+            IdmWebConnectionError,
+            IdmWebTimeoutError,
+            OSError,
+            builtins.TimeoutError,
+            *aiohttp_client_error,
+        )
         async with self._lock:
             try:
                 return await self._send_json_and_receive_text_once(payload)
             except IdmWebAuthenticationError:
                 raise
-            except (IdmWebResponseError, aiohttp.ClientError, OSError, TimeoutError):
-                pass
-            try:
-                await self.close()
-                await self.connect()
-                return await self._send_json_and_receive_text_once(payload)
-            except IdmWebAuthenticationError:
-                await self.close()
-                raise
+            except recoverable_errors as exc:
+                self._last_error = f"Navigator 10 websocket request failed: {type(exc).__name__}"
+            delay = self._reconnect_base_delay
+            last_exc: Exception | None = None
+            for attempt in range(1, self._max_reconnect_attempts + 1):
+                self._reconnect_attempts = attempt
+                self._last_reconnect_monotonic = time.monotonic()
+                try:
+                    await self.close()
+                    if delay:
+                        await asyncio.sleep(min(delay, self._reconnect_max_delay))
+                        delay = min(delay * 2, self._reconnect_max_delay)
+                    await self._connect_unlocked()
+                    result = await self._send_json_and_receive_text_once(payload)
+                    self._reconnect_attempts = 0
+                    return result
+                except IdmWebAuthenticationError:
+                    await self.close()
+                    raise
+                except reconnect_errors as exc:
+                    last_exc = exc
+                    self._last_error = (
+                        f"Navigator 10 websocket reconnect attempt {attempt} failed: "
+                        f"{type(exc).__name__}"
+                    )
+            if last_exc is not None:
+                raise IdmWebWebSocketError(self._last_error or "Navigator 10 websocket reconnect failed") from last_exc
+            raise IdmWebWebSocketError("Navigator 10 websocket reconnect failed")
 
     async def _send_json_and_receive_text_once(self, payload: dict[str, Any]) -> str:
         if self._ws is None:
-            raise IdmWebResponseError("Navigator 10 websocket is not connected")
+            raise IdmWebWebSocketError("Navigator 10 websocket is not connected")
         if self._websocket_closed(self._ws):
-            raise IdmWebResponseError("Navigator 10 websocket is closed")
+            raise IdmWebWebSocketError("Navigator 10 websocket is closed")
         await self._ws.send_json(payload)
         return await self._receive_text()
 
     async def _receive_text(self) -> str:
         if self._ws is None:
-            raise IdmWebResponseError("Navigator 10 websocket is not connected")
+            raise IdmWebWebSocketError("Navigator 10 websocket is not connected")
         message = await self._ws.receive(timeout=self._timeout)
         message_type = getattr(message, "type", None)
         if self._is_ws_text_message(message_type):
             return str(message.data)
         if self._is_ws_closed_message(message_type):
-            raise IdmWebResponseError("Navigator 10 websocket was closed by the device")
+            raise IdmWebWebSocketError("Navigator 10 websocket was closed by the device")
         if self._is_ws_error_message(message_type):
-            raise IdmWebResponseError(f"Navigator 10 websocket error: {self._ws.exception()}")
-        raise IdmWebResponseError(
+            raise IdmWebWebSocketError(f"Navigator 10 websocket error: {self._ws.exception()}")
+        raise IdmWebProtocolError(
             f"Navigator 10 websocket returned unexpected frame: {message_type}"
         )
 
@@ -796,6 +1011,11 @@ class IdmNavigator20WebClient:
         self._session = session
         self._own_session = False
         self._csrf_token: str | None = None
+        self._data_paths: tuple[str, ...] = ()
+        self._login_form_returned = False
+        self._last_success_monotonic: float | None = None
+        self._last_error: str | None = None
+        self._cached_data: IdmWebData | None = None
         self._lock = asyncio.Lock()
 
     @property
@@ -803,7 +1023,7 @@ class IdmNavigator20WebClient:
         return MODEL_NAVIGATOR_20
 
     async def __aenter__(self) -> IdmNavigator20WebClient:
-        await self.login()
+        await self.connect()
         return self
 
     async def __aexit__(
@@ -818,36 +1038,49 @@ class IdmNavigator20WebClient:
             if exc_type is None:
                 raise
 
+    async def connect(self) -> None:
+        await self.login()
+
+    async def detect(self) -> bool:
+        try:
+            await self.connect()
+        except IdmWebError:
+            return False
+        return bool(self._data_paths)
+
     async def login(self) -> None:
         async with self._lock:
-            aiohttp = _require_aiohttp()
             if self._session is None:
+                aiohttp = _require_aiohttp()
                 self._session = aiohttp.ClientSession()
                 self._own_session = True
-            url = f"http://{self._host}/index.php"
             try:
-                async with self._session.post(
-                    url, data={"pin": self._pin}, timeout=self._timeout
-                ) as response:
-                    text = await response.text()
-                    if response.status in (401, 403):
-                        raise IdmWebAuthenticationError("Navigator 2.0 rejected the PIN")
-                    if response.status != 200:
-                        raise IdmWebResponseError(
-                            f"Navigator 2.0 login returned HTTP {response.status}"
+                initial = await self._initial_get()
+                self._csrf_token = _extract_csrf_token(initial)
+                if self._csrf_token is None:
+                    _LOGGER.debug("NAV2 CSRF token not found, trying cookie-only login fallback")
+                await self._try_login()
+                paths = await self._probe_data_endpoints(DEFAULT_NAVIGATOR20_PATHS)
+                if not paths:
+                    if self._login_form_returned:
+                        raise IdmWebAuthenticationError(
+                            "NAV2 web login failed: PIN rejected or login form returned again"
                         )
-                    if "Authorization Required" in text:
-                        raise IdmWebAuthenticationError("Navigator 2.0 rejected the PIN")
-                    match = re.search(r'csrf_token="([^"]+)"', text)
-                    if match is None or not match.group(1):
-                        raise IdmWebResponseError("Navigator 2.0 login did not return a CSRF token")
-                    self._csrf_token = match.group(1)
+                    raise IdmWebResponseError(
+                        "NAV2 web detection failed after trying "
+                        f"{len(DEFAULT_NAVIGATOR20_PATHS)} endpoint candidates"
+                    )
+                self._data_paths = paths
             except Exception:
                 await self.close()
                 raise
+            self._last_success_monotonic = time.monotonic()
+            self._last_error = None
 
     async def close(self) -> None:
         self._csrf_token = None
+        self._data_paths = ()
+        self._login_form_returned = False
         if self._own_session and self._session is not None:
             await self._session.close()
             self._session = None
@@ -859,27 +1092,150 @@ class IdmNavigator20WebClient:
         *,
         include_raw: bool = False,
     ) -> IdmWebData:
-        if self._csrf_token is None:
+        if not self._data_paths:
             await self.login()
-        if self._session is None or self._csrf_token is None:
+        if self._session is None:
             raise IdmWebResponseError("Navigator 2.0 HTTP session is not connected")
 
         values: dict[str, IdmWebValue] = {}
         raw_responses: dict[str, str] = {}
-        headers = {"CSRF-Token": self._csrf_token}
-        for path in paths:
-            url = f"http://{self._host}{path}"
-            async with self._session.get(url, headers=headers, timeout=self._timeout) as response:
-                text = await response.text()
-                if response.status != 200:
-                    raise IdmWebResponseError(
-                        f"Navigator 2.0 {path} returned HTTP {response.status}"
-                    )
-                if "invalid csrf token" in text.lower():
-                    self._csrf_token = None
-                    raise IdmWebAuthenticationError("Navigator 2.0 CSRF token was rejected")
-                if include_raw:
-                    raw_responses[path] = text
-                values.update(parse_idm_html_table_values(text))
+        for path in tuple(p for p in paths if p in self._data_paths) or self._data_paths:
+            text = await self._request_text("GET", path)
+            if "invalid csrf token" in text.lower():
+                self._csrf_token = None
+                raise IdmWebCsrfError("Navigator 2.0 CSRF token was rejected")
+            if _looks_like_login_page(text):
+                raise IdmWebAuthenticationError(
+                    f"NAV2 endpoint {path} returned login page instead of data"
+                )
+            if include_raw:
+                raw_responses[path] = text
+            values.update(parse_idm_html_table_values(text))
 
-        return IdmWebData(model="Navigator 2.0 Web", values=values, raw_responses=raw_responses)
+        data = IdmWebData(model="Navigator 2.0 Web", values=values, raw_responses=raw_responses)
+        self._cached_data = data
+        self._last_success_monotonic = time.monotonic()
+        return data
+
+    async def read_extra_data(self) -> dict[str, Any]:
+        data = await self.read_data()
+        return data.simple_values
+
+    def get_cached_data(self) -> IdmWebData | None:
+        """Return the last valid Navigator 2.0 web data snapshot, if one exists."""
+        return self._cached_data
+
+    def capabilities(self) -> dict[str, bool]:
+        """Return capabilities inferred from successfully probed NAV2 endpoints/data."""
+        path_text = " ".join(self._data_paths).lower()
+        value_names = set(self._cached_data.values) if self._cached_data is not None else set()
+        return {
+            "web_data": bool(self._data_paths),
+            "settings": "/data/settings.php" in self._data_paths,
+            "heatpump": "/data/heatpump.php" in self._data_paths,
+            "rooms": "rooms" in path_text or any("room" in name for name in value_names),
+            "zones": "zones" in path_text or any("zone" in name for name in value_names),
+            "pv": any("pv" in name for name in value_names),
+            "smart_grid": any("smart_grid" in name for name in value_names),
+        }
+
+    def diagnostics(self) -> IdmWebDiagnostics:
+        """Return a sanitized Navigator 2.0 diagnostic snapshot."""
+        return IdmWebDiagnostics(
+            navigator_type="nav2",
+            websocket_connected=False,
+            web_data_enabled=bool(self._data_paths),
+            last_success_monotonic=self._last_success_monotonic,
+            last_error=self._last_error,
+            used_endpoints=self._data_paths,
+            cached=self._cached_data is not None,
+        )
+
+    async def _initial_get(self) -> str:
+        errors: list[str] = []
+        for path in ("/", "/index.php"):
+            try:
+                return await self._request_text("GET", path, require_ok=False)
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"{path}: {type(exc).__name__}")
+        self._last_error = "Navigator 2.0 HTTP interface was not reachable: " + ", ".join(errors)
+        raise IdmWebConnectionError(self._last_error)
+
+    async def _try_login(self) -> None:
+        fields = ("pin", "PIN", "password", "pass")
+        self._login_form_returned = False
+        for path in ("/", "/index.php", "/login.php"):
+            for field_name in fields:
+                data = {field_name: self._pin}
+                if self._csrf_token:
+                    data["csrf_token"] = self._csrf_token
+                try:
+                    text = await self._request_text("POST", path, data=data, require_ok=False)
+                except Exception as exc:  # noqa: BLE001
+                    _LOGGER.debug(
+                        "NAV2 login variant %s with %s failed: %s",
+                        path,
+                        field_name,
+                        type(exc).__name__,
+                    )
+                    continue
+                if "authorization required" in text.lower():
+                    self._login_form_returned = True
+                    continue
+                token = _extract_csrf_token(text)
+                if token:
+                    self._csrf_token = token
+                if not _looks_like_login_page(text):
+                    self._login_form_returned = False
+                    return
+                self._login_form_returned = True
+
+    async def _probe_data_endpoints(self, paths: tuple[str, ...]) -> tuple[str, ...]:
+        usable: list[str] = []
+        for path in paths:
+            try:
+                text = await self._request_text("GET", path, require_ok=False)
+            except Exception:  # noqa: BLE001
+                continue
+            if _looks_like_data_response(text):
+                usable.append(path)
+            elif _looks_like_login_page(text):
+                _LOGGER.debug("NAV2 endpoint %s returned login page instead of data", path)
+        return tuple(usable)
+
+    async def _request_text(
+        self,
+        method: str,
+        path: str,
+        *,
+        data: dict[str, str] | None = None,
+        require_ok: bool = True,
+    ) -> str:
+        if self._session is None:
+            raise IdmWebResponseError("Navigator 2.0 HTTP session is not connected")
+        headers = {"X-Requested-With": "XMLHttpRequest"}
+        if self._csrf_token:
+            headers["CSRF-Token"] = self._csrf_token
+            headers["X-CSRF-Token"] = self._csrf_token
+        url = f"http://{self._host}{path}"
+        async with self._session.request(
+            method,
+            url,
+            data=data,
+            headers=headers,
+            timeout=self._timeout,
+        ) as response:
+            text = await response.text()
+            if response.status in (401, 403):
+                raise IdmWebPinRejectedError("Navigator 2.0 rejected the PIN or session")
+            if "invalid csrf token" in text.lower():
+                raise IdmWebCsrfError("Navigator 2.0 CSRF token was rejected")
+            if require_ok and response.status != 200:
+                raise IdmWebResponseError(
+                    f"Navigator 2.0 {path} returned HTTP {response.status}"
+                )
+            if response.status != 200:
+                raise IdmWebResponseError(
+                    f"Navigator 2.0 {path} returned HTTP {response.status}"
+                )
+            return text

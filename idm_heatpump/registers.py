@@ -17,6 +17,9 @@ FLOAT encoding: IEEE 754, 32-bit, 2 registers, Low word first (Reg_L then Reg_H)
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Any
+
 from .client import DataType, IdmModelInfo, RegisterDef
 from .const import (
     ACTIVE_HC_MODE_OPTIONS,
@@ -72,6 +75,62 @@ CORE_REGISTERS: dict[str, RegisterDef] = {
         write_only=True,
     ),
 }
+
+
+@dataclass(frozen=True)
+class RegisterRegistry:
+    """Immutable lookup layer for IDM register definitions."""
+
+    registers: dict[str, RegisterDef]
+
+    def __post_init__(self) -> None:
+        by_address: dict[tuple[str, int], str] = {}
+        for key, reg in self.registers.items():
+            if key != reg.name:
+                raise ValueError(f"Register key '{key}' must match register name '{reg.name}'")
+            address_key = (reg.register_type.value, reg.address)
+            existing = by_address.get(address_key)
+            if existing is not None and existing != key:
+                raise ValueError(
+                    f"Register address {reg.address} is duplicated by {existing!r} and {key!r}"
+                )
+            by_address[address_key] = key
+
+    def get(self, key: str) -> RegisterDef | None:
+        return self.registers.get(key)
+
+    def require(self, key: str) -> RegisterDef:
+        reg = self.get(key)
+        if reg is None:
+            raise KeyError(f"Unknown IDM register key: {key}")
+        return reg
+
+    def by_address(self, address: int, register_type: str = "input") -> RegisterDef | None:
+        for reg in self.registers.values():
+            if reg.address == address and reg.register_type.value == register_type:
+                return reg
+        return None
+
+    def writable(self) -> dict[str, RegisterDef]:
+        return {key: reg for key, reg in self.registers.items() if reg.writable}
+
+    def to_schema(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "key": key,
+                "address": reg.address,
+                "datatype": reg.datatype.value,
+                "unit": reg.unit,
+                "scale": reg.multiplier,
+                "min_value": reg.min_val,
+                "max_value": reg.max_val,
+                "writable": reg.writable,
+                "register_type": reg.register_type.value,
+                "write_class": reg.write_class.value,
+                "supported_models": reg.supported_models,
+            }
+            for key, reg in sorted(self.registers.items())
+        ]
 
 
 def _system_registers() -> dict[str, RegisterDef]:
@@ -1607,6 +1666,12 @@ def get_register(name: str, *, model_info: IdmModelInfo | None = None) -> Regist
     if name not in full_map:
         raise ValueError(f"Register '{name}' not found.")
     return full_map[name]
+
+
+def get_register_registry(*, model_info: IdmModelInfo | None = None) -> RegisterRegistry:
+    """Return the central register registry for the selected model/capabilities."""
+    registers = CORE_REGISTERS if model_info is None else build_register_map(model_info=model_info)
+    return RegisterRegistry(dict(registers))
 
 
 def get_all_registers(*, model_info: IdmModelInfo | None = None) -> list[RegisterDef]:
