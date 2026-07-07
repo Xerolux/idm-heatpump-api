@@ -673,13 +673,9 @@ class IdmModbusClient:
             client = self._require_client()
             kwargs: Any = {_PMODBUS_SLAVE_PARAM: self._slave_id}
             if reg_type == RegisterType.HOLDING:
-                read_task = client.read_holding_registers(
-                    address=address, count=count, **kwargs
-                )
+                read_task = client.read_holding_registers(address=address, count=count, **kwargs)
             else:
-                read_task = client.read_input_registers(
-                    address=address, count=count, **kwargs
-                )
+                read_task = client.read_input_registers(address=address, count=count, **kwargs)
             result = (
                 await asyncio.wait_for(read_task, timeout=request_timeout)
                 if request_timeout is not None

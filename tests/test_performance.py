@@ -83,7 +83,9 @@ def test_read_batch_groups_registers_efficiently() -> None:
 def test_read_batch_never_mixes_input_and_holding_registers() -> None:
     """A single Modbus read request must not mix register types."""
     input_reg = RegisterDef(1000, DataType.FLOAT, "input_temp", register_type=RegisterType.INPUT)
-    holding_reg = RegisterDef(1001, DataType.UCHAR, "holding_mode", register_type=RegisterType.HOLDING)
+    holding_reg = RegisterDef(
+        1001, DataType.UCHAR, "holding_mode", register_type=RegisterType.HOLDING
+    )
 
     transport = FakeModbusTransport(
         input_registers={1000: 0, 1001: 0},

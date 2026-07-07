@@ -1453,9 +1453,7 @@ def get_zone_module_registers(
     if not (1 <= zone_index <= 10):
         raise ValueError(f"Zone index must be 1-10, got {zone_index}")
     if not (1 <= room_count <= MAX_ROOMS_PER_ZONE):
-        raise ValueError(
-            f"Room count must be 1-{MAX_ROOMS_PER_ZONE}, got {room_count}"
-        )
+        raise ValueError(f"Room count must be 1-{MAX_ROOMS_PER_ZONE}, got {room_count}")
 
     base = 2000 + (zone_index - 1) * 65
     z = zone_index
@@ -1587,9 +1585,7 @@ def _build_register_map_impl(
     if not (0 <= zone_modules <= 10):
         raise ValueError(f"zone_modules must be 0-10, got {zone_modules}")
     if not (1 <= rooms_per_zone <= MAX_ROOMS_PER_ZONE):
-        raise ValueError(
-            f"rooms_per_zone must be 1-{MAX_ROOMS_PER_ZONE}, got {rooms_per_zone}"
-        )
+        raise ValueError(f"rooms_per_zone must be 1-{MAX_ROOMS_PER_ZONE}, got {rooms_per_zone}")
 
     all_regs: dict[str, RegisterDef] = {}
 
@@ -1724,9 +1720,7 @@ def build_register_map(
     if not (0 <= zone_modules <= 10):
         raise ValueError(f"zone_modules must be 0-10, got {zone_modules}")
     if not (1 <= rooms_per_zone <= MAX_ROOMS_PER_ZONE):
-        raise ValueError(
-            f"rooms_per_zone must be 1-{MAX_ROOMS_PER_ZONE}, got {rooms_per_zone}"
-        )
+        raise ValueError(f"rooms_per_zone must be 1-{MAX_ROOMS_PER_ZONE}, got {rooms_per_zone}")
 
     cache_key: tuple[tuple[Any, ...], tuple[str, ...] | None, int, int]
     if model_info is not None:

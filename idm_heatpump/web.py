@@ -510,9 +510,7 @@ def _looks_like_login_page(text: str) -> bool:
     if _LOGIN_FORM_RE.search(text) and _PASSWORD_INPUT_RE.search(text):
         return True
     # Fallback heuristic for non-standard or JS-generated login pages.
-    return any(
-        marker in lowered for marker in ("login", "pin", "password", "passwort", "csrf")
-    )
+    return any(marker in lowered for marker in ("login", "pin", "password", "passwort", "csrf"))
 
 
 def _looks_like_data_response(text: str) -> bool:
@@ -967,7 +965,9 @@ class IdmNavigator10WebClient:
                         f"{type(exc).__name__}"
                     )
             if last_exc is not None:
-                raise IdmWebWebSocketError(self._last_error or "Navigator 10 websocket reconnect failed") from last_exc
+                raise IdmWebWebSocketError(
+                    self._last_error or "Navigator 10 websocket reconnect failed"
+                ) from last_exc
             raise IdmWebWebSocketError("Navigator 10 websocket reconnect failed")
 
     async def _send_json_and_receive_text_once(self, payload: dict[str, Any]) -> str:
@@ -1196,9 +1196,7 @@ class IdmNavigator20WebClient:
             try:
                 # Do not send a possibly stale CSRF token when fetching the
                 # initial login page; the server returns the form/token fresh.
-                text = await self._request_text(
-                    "GET", path, require_ok=False, include_csrf=False
-                )
+                text = await self._request_text("GET", path, require_ok=False, include_csrf=False)
                 _LOGGER.debug("NAV2 initial GET %s succeeded", path)
                 return text
             except _NAV2_REQUEST_ERRORS as exc:
@@ -1305,7 +1303,5 @@ class IdmNavigator20WebClient:
             if "invalid csrf token" in text.lower():
                 raise IdmWebCsrfError("Navigator 2.0 CSRF token was rejected")
             if require_ok and response.status != 200:
-                raise IdmWebResponseError(
-                    f"Navigator 2.0 {path} returned HTTP {response.status}"
-                )
+                raise IdmWebResponseError(f"Navigator 2.0 {path} returned HTTP {response.status}")
             return text

@@ -414,8 +414,6 @@ async def test_navigator10_client_does_not_retry_authentication_errors(
     assert session.urls == ["ws://192.0.2.10:61220/?auth_code=1234"]
 
 
-
-
 @pytest.mark.asyncio
 async def test_navigator10_diagnostics_and_cache_track_success() -> None:
     setting_raw = json.dumps(
@@ -517,7 +515,6 @@ async def test_navigator10_close_clears_state_even_when_ws_close_fails(
 
     assert client._ws is None
     assert session.closed is True
-
 
 
 @pytest.mark.parametrize(
@@ -675,10 +672,10 @@ async def test_navigator20_read_data_relogs_in_once_on_csrf_error() -> None:
                 FakeHttpResponse(200, '{"settings":"ok"}'),
             ],
             ("GET", "/data/heatpump.php"): [
-                FakeHttpResponse(200, '<table><tr><td>B33</td><td>21,5 °C</td></tr></table>'),
+                FakeHttpResponse(200, "<table><tr><td>B33</td><td>21,5 °C</td></tr></table>"),
                 FakeHttpResponse(200, "invalid csrf token"),
-                FakeHttpResponse(200, '<table><tr><td>B33</td><td>21,5 °C</td></tr></table>'),
-                FakeHttpResponse(200, '<table><tr><td>B33</td><td>21,5 °C</td></tr></table>'),
+                FakeHttpResponse(200, "<table><tr><td>B33</td><td>21,5 °C</td></tr></table>"),
+                FakeHttpResponse(200, "<table><tr><td>B33</td><td>21,5 °C</td></tr></table>"),
             ],
             ("GET", "/data/info.php"): [
                 FakeHttpResponse(200, '{"info":"ok"}'),

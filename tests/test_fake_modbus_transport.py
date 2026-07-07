@@ -233,8 +233,10 @@ def test_batch_read_re_reads_suspect_enum_values() -> None:
 
     # Correct individual values stored at each address
     input_registers = {
-        2002: temp_words[0], 2003: temp_words[1],
-        2004: setpoint_words[0], 2005: setpoint_words[1],
+        2002: temp_words[0],
+        2003: temp_words[1],
+        2004: setpoint_words[0],
+        2005: setpoint_words[1],
         2006: 45,
         2007: 3,
         2008: 1,
@@ -253,7 +255,9 @@ def test_batch_read_re_reads_suspect_enum_values() -> None:
         RegisterDef(2004, DataType.FLOAT, "zm1_room1_setpoint"),
         RegisterDef(2006, DataType.UCHAR, "zm1_room1_humidity"),
         RegisterDef(
-            2007, DataType.UCHAR, "zm1_room1_mode",
+            2007,
+            DataType.UCHAR,
+            "zm1_room1_mode",
             enum_options={0: "off", 1: "auto", 2: "eco", 3: "normal", 4: "comfort"},
         ),
         RegisterDef(2008, DataType.UCHAR, "zm1_room1_relay"),
@@ -273,7 +277,9 @@ def test_batch_read_re_reads_suspect_enum_values() -> None:
 
 def test_is_value_suspect_detects_out_of_range_enum() -> None:
     reg = RegisterDef(
-        1, DataType.UCHAR, "mode",
+        1,
+        DataType.UCHAR,
+        "mode",
         enum_options={0: "off", 1: "auto", 2: "eco", 3: "normal", 4: "comfort"},
     )
     assert IdmModbusClient._is_value_suspect(reg, 3) is False
@@ -293,7 +299,9 @@ def test_is_value_suspect_detects_out_of_range_bounds() -> None:
 
 def test_is_value_suspect_ignores_none_and_bool() -> None:
     reg = RegisterDef(
-        1, DataType.UCHAR, "mode",
+        1,
+        DataType.UCHAR,
+        "mode",
         enum_options={0: "off", 1: "auto"},
     )
     assert IdmModbusClient._is_value_suspect(reg, None) is False
