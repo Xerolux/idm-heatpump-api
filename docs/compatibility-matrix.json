@@ -48,6 +48,12 @@
       "hass_integration_version": "pending",
       "status": "api-prepared",
       "notes": "Release vehicle for zone-room count fixes and room-mode batch read recovery reported in HASS issues #68 and #69."
+    },
+    {
+      "api_version": "0.6.3",
+      "hass_integration_version": "pending",
+      "status": "api-prepared",
+      "notes": "Stability and performance patch: TimeoutError retry handling, skip permanently failed registers in read_register(), optimized read_batch() grouping, and defensive Navigator 10 websocket close."
     }
   ]
 }
