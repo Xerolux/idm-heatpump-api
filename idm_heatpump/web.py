@@ -832,12 +832,20 @@ class IdmNavigator10WebClient:
 
     async def close(self) -> None:
         if self._ws is not None:
-            await self._ws.close()
-            self._ws = None
+            try:
+                await self._ws.close()
+            except Exception:  # noqa: BLE001
+                _LOGGER.debug("Ignoring exception while closing Navigator 10 websocket")
+            finally:
+                self._ws = None
         if self._own_session and self._session is not None:
-            await self._session.close()
-            self._session = None
-            self._own_session = False
+            try:
+                await self._session.close()
+            except Exception:  # noqa: BLE001
+                _LOGGER.debug("Ignoring exception while closing Navigator 10 session")
+            finally:
+                self._session = None
+                self._own_session = False
 
     async def read_data(
         self,

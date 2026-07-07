@@ -495,6 +495,30 @@ async def test_navigator10_client_rejects_invalid_pin() -> None:
     assert ws.closed
 
 
+class FailingCloseWs(FakeWs):
+    async def close(self) -> None:
+        raise OSError("close failed")
+
+
+@pytest.mark.asyncio
+async def test_navigator10_close_clears_state_even_when_ws_close_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failing websocket.close() must not leak the session or websocket reference."""
+    ws = FailingCloseWs(['{"authorized":true}'])
+    session = FakeSession(ws)
+    monkeypatch.setattr("aiohttp.ClientSession", lambda: session)
+    client = IdmNavigator10WebClient("192.0.2.10", "1234", timeout=1)
+
+    await client.connect()
+    assert client._own_session is True
+
+    await client.close()
+
+    assert client._ws is None
+    assert session.closed is True
+
+
 
 @pytest.mark.parametrize(
     "html",

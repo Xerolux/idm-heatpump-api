@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-07-07
+
+### Fixed
+
+- Treat `TimeoutError` (including `asyncio.TimeoutError`) as a retryable
+  transport error in `IdmModbusClient`. Previously a slow or unresponsive
+  controller that timed out bypassed the retry/reconnect loop.
+- Make `read_register()` respect the permanently-failed register set, matching
+  the behavior of `read_batch()`. This avoids repeated futile network requests
+  for registers already known to be unavailable.
+- Close the Navigator 10 websocket and session defensively so a failing
+  `close()` no longer leaks the websocket reference or session state.
+- Correct the `detect_model()` docstring to match the actual probing strategy.
+
+### Changed
+
+- Optimize `read_batch()` grouping: registers are now sorted once by
+  `(register_type, address)` and grouped in a single pass, removing the
+  previous input/holding split and second sort.
+
 ## [0.6.2] - 2026-07-06
 
 ### Fixed

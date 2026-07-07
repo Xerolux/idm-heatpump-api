@@ -537,3 +537,52 @@ def test_poll_rate_limiter_tracks_remaining_interval() -> None:
     assert limiter.remaining() == 30.0
     now = 130.0
     assert limiter.allow() is True
+
+
+class TimeoutOnFirstReadClient:
+    """pymodbus double that raises TimeoutError on the first read attempt."""
+
+    connected = True
+
+    def __init__(self) -> None:
+        self.attempts = 0
+
+    async def read_input_registers(self, **kwargs: Any) -> Any:
+        self.attempts += 1
+        if self.attempts == 1:
+            raise TimeoutError("simulated timeout")
+        return type("Response", (), {"isError": lambda self: False, "registers": [0, 16968]})()
+
+    def close(self) -> None:
+        self.connected = False
+
+
+def test_retry_command_recovers_from_timeout_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TimeoutError must use the same retry/reconnect path as OSError."""
+    transport = TimeoutOnFirstReadClient()
+    client = IdmModbusClient("127.0.0.1", max_retries=2)
+    client._client = transport  # type: ignore[assignment]
+
+    # Keep the test offline: reconnect just re-attaches the fake transport.
+    async def fake_connect() -> None:
+        client._client = transport  # type: ignore[assignment]
+        transport.connected = True
+
+    monkeypatch.setattr(client, "_connect_internal", fake_connect)
+
+    result = asyncio.run(client._read_registers(1000, 2))
+
+    assert transport.attempts == 2
+    assert result == [0, 16968]
+
+
+def test_read_register_skips_permanently_failed_registers() -> None:
+    """Explicit single reads must not hammer registers already known to fail."""
+    client = IdmModbusClient("127.0.0.1")
+    client._permanently_failed_registers.add("outdoor_temp")
+
+    reg = RegisterDef(1000, DataType.FLOAT, "outdoor_temp", unit="°C")
+    with pytest.raises(ValueError, match="permanently failed"):
+        asyncio.run(client.read_register(reg))

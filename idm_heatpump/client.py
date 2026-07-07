@@ -627,7 +627,7 @@ class IdmModbusClient:
                         err,
                     )
                     await asyncio.sleep(RETRY_BACKOFF_BASE * (2**attempt))
-                except OSError as err:
+                except (OSError, TimeoutError) as err:
                     self._connection_suspect = True
                     self._record_error_context(
                         operation,
@@ -836,13 +836,13 @@ class IdmModbusClient:
         """Detect the IDM heat pump model and capabilities by probing registers.
 
         Strategy:
-          1. Verify basic connectivity by reading outdoor temperature (1000)
-          2. Probe heating circuit flow temperatures (1350-1362)
-          3. Probe zone module presence (2000, 2065, ...)
-          4. Probe solar register (1850)
-          5. Probe ISC register (1870)
-          6. Probe PV register (74)
-          7. Probe cascade register (1147)
+          1. Probe heating circuit flow temperatures (1350-1362)
+          2. Probe zone module presence (2000, 2065, ...)
+          3. Probe solar register (1850)
+          4. Probe ISC register (1870)
+          5. Probe PV register (74)
+          6. Probe cascade register (1147)
+          7. Probe Navigator-10-only power-limit register (4108) when needed
 
         Args:
             read_firmware: Probe Modbus register 4120 for the firmware version.
@@ -1096,9 +1096,19 @@ class IdmModbusClient:
         return encoder(value, reg)
 
     async def read_register(self, reg: RegisterDef) -> Any:
-        """Read a single register, auto-connecting if needed."""
+        """Read a single register, auto-connecting if needed.
+
+        Permanently failed registers are skipped immediately to avoid repeated
+        futile network requests. Consumers can reset the failure state with
+        ``reset_failed_registers()``.
+        """
         if reg.write_only:
             raise ValueError(f"Register '{reg.name}' is write-only")
+        if reg.name in self._permanently_failed_registers:
+            raise ValueError(
+                f"Register '{reg.name}' is permanently failed; "
+                f"call reset_failed_registers() to retry"
+            )
         await self._ensure_connected()
         registers = await self._read_registers(reg.address, reg.size, reg.register_type)
         return self.decode_value(registers, reg)
@@ -1248,22 +1258,11 @@ class IdmModbusClient:
 
         await self._ensure_connected()
 
-        input_regs = [r for r in valid_regs if r.register_type == RegisterType.INPUT]
-        holding_regs = [r for r in valid_regs if r.register_type == RegisterType.HOLDING]
-
+        groups = self._group_registers(valid_regs)
         results: dict[str, Any] = {}
-
-        if input_regs:
-            groups = self._group_registers(input_regs)
-            for group in groups:
-                group_res = await self._read_group(group, RegisterType.INPUT)
-                results.update(group_res)
-
-        if holding_regs:
-            groups = self._group_registers(holding_regs)
-            for group in groups:
-                group_res = await self._read_group(group, RegisterType.HOLDING)
-                results.update(group_res)
+        for group in groups:
+            group_res = await self._read_group(group, group[0].register_type)
+            results.update(group_res)
 
         return results
 
@@ -1271,16 +1270,28 @@ class IdmModbusClient:
         self,
         regs: list[RegisterDef],
     ) -> list[list[RegisterDef]]:
-        """Sort and group registers into contiguous chunks for batch reads."""
-        sorted_regs = sorted(regs, key=lambda r: r.address)
+        """Sort and group registers into contiguous chunks for batch reads.
+
+        Registers are grouped by type (input/holding) and then merged into
+        contiguous chunks when the gap between them is small enough. Sorting
+        once by ``(register_type, address)`` avoids the previous two-pass split
+        and keeps the grouping logic in one place.
+        """
+        sorted_regs = sorted(regs, key=lambda r: (r.register_type.value, r.address))
         groups: list[list[RegisterDef]] = []
         current_group: list[RegisterDef] = [sorted_regs[0]]
 
         for reg in sorted_regs[1:]:
             first = current_group[0]
             last = current_group[-1]
-            expected_next = last.address + last.size
 
+            # Start a new group when the register type changes.
+            if reg.register_type != first.register_type:
+                groups.append(current_group)
+                current_group = [reg]
+                continue
+
+            expected_next = last.address + last.size
             if (
                 reg.address <= expected_next + _MAX_GROUP_GAP
                 and (reg.address + reg.size - first.address) <= self._max_group_size
