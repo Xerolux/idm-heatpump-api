@@ -703,3 +703,169 @@ async def test_navigator20_read_data_relogs_in_once_on_csrf_error() -> None:
     assert data.get_value("flow_temperature") == "21,5 °C"
     # Initial login + re-login after CSRF rejection.
     assert session.requests.count(("POST", "/", {"pin": "1234"})) == 2
+
+
+@pytest.mark.asyncio
+async def test_navigator10_client_reads_statistics() -> None:
+    """read_statistics drives the statistic/detail request and caches the parse result."""
+    statistic_raw = json.dumps(
+        {
+            "statisticDetail": {
+                "data": {
+                    "total": {"heating": 142.98},
+                    "yearly": [{"date": "2026-05-04", "idx": 1, "heating": 12.0}],
+                },
+                "type": 0,
+            }
+        }
+    )
+    ws = FakeWs(['{"authorized":true}', statistic_raw])
+    client = IdmNavigator10WebClient("192.0.2.10", "1234", timeout=1, session=FakeSession(ws))
+
+    data = await client.read_statistics(statistic_type=0, period_type=7, prefix="stat_runtime")
+
+    # The statistic parser stores scalar values as strings without numeric_value.
+    assert data.get_value("stat_runtime_total_heating") == "142.98"
+    assert data.get_value("stat_runtime_current_year_heating") == "12.0"
+    assert ws.sent == [
+        {
+            "controller": "statistic",
+            "command": "detail",
+            "data": {"statisticType": 0, "periodType": 7, "statisticSubType": None},
+        }
+    ]
+    assert client.diagnostics().last_success_monotonic is not None
+
+
+@pytest.mark.asyncio
+async def test_navigator20_capabilities_and_diagnostics_reflect_detected_endpoints() -> None:
+    session = FakeHttpSession(
+        {
+            ("GET", "/"): [FakeHttpResponse(404, "")],
+            ("GET", "/index.php"): [FakeHttpResponse(200, "OK")],
+            ("POST", "/"): [FakeHttpResponse(200, "OK")],
+            ("GET", "/data/heatpump.php"): [
+                FakeHttpResponse(200, "<table><tr><td>B33</td><td>21,5 °C</td></tr></table>")
+            ],
+            ("GET", "/data/rooms.php"): [FakeHttpResponse(200, '{"rooms":"ok"}')],
+        }
+    )
+    client = IdmNavigator20WebClient("192.0.2.10", "1234", timeout=1, session=session)
+    # Override the probed endpoint candidates so the login probe also discovers
+    # the rooms endpoint (rooms.php is not part of the default candidate list).
+    client._data_paths = ("/data/heatpump.php", "/data/rooms.php")
+
+    await client.read_data(paths=("/data/heatpump.php",))
+
+    capabilities = client.capabilities()
+    assert capabilities["web_data"] is True
+    assert capabilities["heatpump"] is True
+    assert capabilities["rooms"] is True
+    assert capabilities["settings"] is False
+
+    diagnostics = client.diagnostics()
+    assert diagnostics.navigator_type == "nav2"
+    assert diagnostics.web_data_enabled is True
+    assert diagnostics.used_endpoints == ("/data/heatpump.php", "/data/rooms.php")
+    assert diagnostics.cached is True
+    assert diagnostics.last_success_monotonic is not None
+
+
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        ({"host": "", "pin": "1234"}, "Host must not be empty"),
+        ({"host": "192.0.2.10", "pin": ""}, "PIN must not be empty"),
+        ({"host": "192.0.2.10", "pin": "1234", "port": 0}, "Port must be between"),
+        ({"host": "192.0.2.10", "pin": "1234", "port": 70000}, "Port must be between"),
+    ],
+)
+def test_navigator10_client_rejects_invalid_constructor_arguments(
+    kwargs: dict[str, object], match: str
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        IdmNavigator10WebClient(**kwargs)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        ({"host": "", "pin": "1234"}, "Host must not be empty"),
+        ({"host": "192.0.2.10", "pin": ""}, "PIN must not be empty"),
+    ],
+)
+def test_navigator20_client_rejects_invalid_constructor_arguments(
+    kwargs: dict[str, object], match: str
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        IdmNavigator20WebClient(**kwargs)  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_navigator10_context_manager_connects_and_closes() -> None:
+    ws = FakeWs(['{"authorized":true}'])
+    session = FakeSession(ws)
+
+    async with IdmNavigator10WebClient("192.0.2.10", "1234", timeout=1, session=session) as client:
+        assert client._ws is ws
+        assert client.diagnostics().websocket_connected is True
+
+    # __aexit__ must close the websocket.
+    assert client._ws is None
+    assert ws.closed is True
+
+
+@pytest.mark.asyncio
+async def test_navigator20_context_manager_connects_and_closes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = FakeHttpSession(
+        {
+            ("GET", "/"): [FakeHttpResponse(404, "")],
+            ("GET", "/index.php"): [FakeHttpResponse(200, "OK")],
+            ("POST", "/"): [FakeHttpResponse(200, "OK")],
+            ("GET", "/data/heatpump.php"): [FakeHttpResponse(200, '{"heatpump":"ok"}')],
+        }
+    )
+    monkeypatch.setattr("aiohttp.ClientSession", lambda: session)
+
+    async with IdmNavigator20WebClient("192.0.2.10", "1234", timeout=1) as client:
+        assert client._data_paths == ("/data/heatpump.php",)
+
+    assert client._session is None
+    assert session.closed is True
+
+
+class FailingCloseHttpSession(FakeHttpSession):
+    """A FakeHttpSession variant whose close() always raises."""
+
+    async def close(self) -> None:
+        raise OSError("close failed")
+
+
+@pytest.mark.asyncio
+async def test_navigator20_close_resets_state_even_when_session_close_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = FailingCloseHttpSession(
+        {
+            ("GET", "/"): [FakeHttpResponse(404, "")],
+            ("GET", "/index.php"): [FakeHttpResponse(200, "OK")],
+            ("POST", "/"): [FakeHttpResponse(200, "OK")],
+            ("GET", "/data/heatpump.php"): [FakeHttpResponse(200, '{"heatpump":"ok"}')],
+        }
+    )
+    monkeypatch.setattr("aiohttp.ClientSession", lambda: session)
+    client = IdmNavigator20WebClient("192.0.2.10", "1234", timeout=1)
+    await client.connect()
+    assert client._own_session is True
+    assert client._data_paths == ("/data/heatpump.php",)
+
+    # A failing session.close() must not leak the session reference or detected
+    # endpoints, and must not propagate the exception.
+    await client.close()
+
+    assert client._session is None
+    assert client._own_session is False
+    assert client._data_paths == ()
+    assert client._csrf_token is None

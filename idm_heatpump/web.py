@@ -84,6 +84,23 @@ def _json_extract_authorized(text: str, expect: bool | None = True) -> bool:
     return value is expect
 
 
+def _parse_auth_response(text: str) -> tuple[bool, bool | None]:
+    """Parse a Navigator 10 auth response once.
+
+    Returns a ``(has_key, authorized)`` tuple where ``has_key`` indicates that
+    an ``authorized`` field was present at all and ``authorized`` is its boolean
+    value (or ``None`` when the key is absent / the payload is not JSON). This
+    avoids re-parsing the same websocket frame multiple times during connect.
+    """
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return False, None
+    if "authorized" not in data:
+        return False, None
+    return True, data.get("authorized")
+
+
 SENSOR_NAME_MAP: dict[str, str] = {
     "B2": "flowmeter",
     "B5": "dewpoint_humidity_alarm",
@@ -255,6 +272,25 @@ _NAV2_REQUEST_ERRORS: tuple[type[BaseException], ...] = (
 )
 if _AIOHTTP_CLIENT_ERROR_CLS is not None:
     _NAV2_REQUEST_ERRORS = (*_NAV2_REQUEST_ERRORS, _AIOHTTP_CLIENT_ERROR_CLS)
+
+# Navigator 10 reconnect loop error categories. Built once at import time
+# (analogue to _NAV2_REQUEST_ERRORS above) so request handling does not
+# reallocate these tuples on every websocket request.
+_NAV10_RECOVERABLE_ERRORS: tuple[type[BaseException], ...] = (
+    IdmWebProtocolError,
+    OSError,
+    builtins.TimeoutError,
+)
+_NAV10_RECONNECT_ERRORS: tuple[type[BaseException], ...] = (
+    IdmWebProtocolError,
+    IdmWebConnectionError,
+    IdmWebTimeoutError,
+    OSError,
+    builtins.TimeoutError,
+)
+if _AIOHTTP_CLIENT_ERROR_CLS is not None:
+    _NAV10_RECOVERABLE_ERRORS = (*_NAV10_RECOVERABLE_ERRORS, _AIOHTTP_CLIENT_ERROR_CLS)
+    _NAV10_RECONNECT_ERRORS = (*_NAV10_RECONNECT_ERRORS, _AIOHTTP_CLIENT_ERROR_CLS)
 
 
 @dataclass(frozen=True)
@@ -574,8 +610,10 @@ def parse_idm_html_table_values(
         raw_unit = _normalize_label(row[3]) if len(row) > 3 else ""
         if raw_unit and _NUMBER_RE.match(raw_value):
             raw_value = f"{raw_value}{raw_unit}"
+        # raw_key and raw_description are already normalized above; ``or`` only
+        # selects one of them (no concatenation), so no second normalization is
+        # needed for the lookup key.
         lookup_key = raw_key or raw_description
-        lookup_key = _normalize_label(lookup_key)
         name = None
         if section_id is not None and section_name_map is not None:
             name = section_name_map.get((section_id, lookup_key))
@@ -818,9 +856,10 @@ class IdmNavigator10WebClient:
             self._last_error = "Navigator 10 websocket connection failed"
             await self.close()
             raise
-        if not _json_extract_authorized(auth):
+        has_key, authorized = _parse_auth_response(auth)
+        if not (has_key and authorized is True):
             await self.close()
-            if _json_extract_authorized(auth, expect=False):
+            if has_key and authorized is False:
                 self._last_error = "Navigator 10 rejected the PIN"
                 raise IdmWebPinRejectedError(self._last_error)
             self._last_error = "Navigator 10 authorization response was not recognized"
@@ -919,27 +958,12 @@ class IdmNavigator10WebClient:
         )
 
     async def _send_json_and_receive_text(self, payload: dict[str, Any]) -> str:
-        recoverable_errors: tuple[type[BaseException], ...] = (
-            IdmWebProtocolError,
-            OSError,
-            builtins.TimeoutError,
-        )
-        reconnect_errors: tuple[type[BaseException], ...] = (
-            IdmWebProtocolError,
-            IdmWebConnectionError,
-            IdmWebTimeoutError,
-            OSError,
-            builtins.TimeoutError,
-        )
-        if _AIOHTTP_CLIENT_ERROR_CLS is not None:
-            recoverable_errors = (*recoverable_errors, _AIOHTTP_CLIENT_ERROR_CLS)
-            reconnect_errors = (*reconnect_errors, _AIOHTTP_CLIENT_ERROR_CLS)
         async with self._lock:
             try:
                 return await self._send_json_and_receive_text_once(payload)
             except IdmWebAuthenticationError:
                 raise
-            except recoverable_errors as exc:
+            except _NAV10_RECOVERABLE_ERRORS as exc:
                 self._last_error = f"Navigator 10 websocket request failed: {type(exc).__name__}"
             delay = self._reconnect_base_delay
             last_exc: BaseException | None = None
@@ -958,7 +982,7 @@ class IdmNavigator10WebClient:
                 except IdmWebAuthenticationError:
                     await self.close()
                     raise
-                except reconnect_errors as exc:
+                except _NAV10_RECONNECT_ERRORS as exc:
                     last_exc = exc
                     self._last_error = (
                         f"Navigator 10 websocket reconnect attempt {attempt} failed: "
@@ -1109,9 +1133,13 @@ class IdmNavigator20WebClient:
         self._data_paths = ()
         self._login_form_returned = False
         if self._own_session and self._session is not None:
-            await self._session.close()
-            self._session = None
-            self._own_session = False
+            try:
+                await self._session.close()
+            except Exception:  # noqa: BLE001
+                _LOGGER.debug("Ignoring exception while closing Navigator 2.0 session")
+            finally:
+                self._session = None
+                self._own_session = False
 
     async def read_data(
         self,
@@ -1127,7 +1155,11 @@ class IdmNavigator20WebClient:
         values: dict[str, IdmWebValue] = {}
         raw_responses: dict[str, str] = {}
         csrf_retried = False
-        for path in tuple(p for p in paths if p in self._data_paths) or self._data_paths:
+        # Caller may pass a subset of paths; intersect with the endpoints that
+        # were confirmed during login. Fall back to all confirmed endpoints when
+        # the caller's subset does not overlap the detected paths.
+        selected_paths = tuple(p for p in paths if p in self._data_paths) or self._data_paths
+        for path in selected_paths:
             try:
                 text = await self._request_text("GET", path)
             except IdmWebCsrfError:
