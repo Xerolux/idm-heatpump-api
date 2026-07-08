@@ -7,3 +7,6 @@ venv/
 .venv/
 .tmp/
 .coverage
+
+# Editor / tooling artifacts
+.zcode/
