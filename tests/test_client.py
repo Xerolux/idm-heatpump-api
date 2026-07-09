@@ -514,6 +514,19 @@ def test_write_safety_rejects_unknown_and_read_only_registers() -> None:
         client.simulate_write("outdoor_temp", 21.5)
 
 
+def test_write_safety_rejects_invalid_enum_boolean_and_fractional_integer_values() -> None:
+    client = IdmModbusClient("192.0.2.10")
+    bool_reg = RegisterDef(1710, DataType.BOOL, "demand_heating", writable=True)
+    int_reg = RegisterDef(1714, DataType.UCHAR, "pump_demand", writable=True)
+
+    with pytest.raises(ValueError, match="not a supported option"):
+        client.simulate_write("system_mode", 3)
+    with pytest.raises(ValueError, match="must be a boolean"):
+        client.simulate_write(bool_reg, "false")
+    with pytest.raises(ValueError, match="must be an integer"):
+        client.simulate_write(int_reg, 1.5)
+
+
 def test_modbus_diagnostics_reports_sanitized_state() -> None:
     client = IdmModbusClient("192.0.2.10")
 
@@ -587,6 +600,29 @@ def test_read_register_skips_permanently_failed_registers() -> None:
     reg = RegisterDef(1000, DataType.FLOAT, "outdoor_temp", unit="°C")
     with pytest.raises(ValueError, match="permanently failed"):
         asyncio.run(client.read_register(reg))
+
+
+def test_successful_individual_read_resets_transient_failure_counter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = IdmModbusClient("127.0.0.1")
+    reg = RegisterDef(1200, DataType.UCHAR, "transient_register")
+    client._register_failures[reg.name] = 2
+
+    async def successful_read(
+        address: int,
+        count: int,
+        reg_type: RegisterType = RegisterType.INPUT,
+    ) -> list[int]:
+        del address, count, reg_type
+        return [7]
+
+    monkeypatch.setattr(client, "_read_registers", successful_read)
+
+    result = asyncio.run(client._read_individual_fallback([reg]))
+
+    assert result == {reg.name: 7}
+    assert reg.name not in client._register_failures
 
 
 # ---------------------------------------------------------------------------

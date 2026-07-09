@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import builtins
+import ipaddress
 import json
 import logging
 import re
@@ -65,25 +66,6 @@ _NAVIGATOR10_NOTIFICATION_REQUEST = {
 }
 
 
-def _json_extract_authorized(text: str, expect: bool | None = True) -> bool:
-    """Parse a Navigator 10 auth response and return the authorized flag.
-
-    Args:
-        text: Raw JSON text received on the websocket.
-        expect: If ``True`` (default), return whether the response declares
-            ``authorized: true``. If ``False``, return whether it declares
-            ``authorized: false``. If ``None``, return whether the key exists.
-    """
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError:
-        return False
-    value = data.get("authorized")
-    if expect is None:
-        return "authorized" in data
-    return value is expect
-
-
 def _parse_auth_response(text: str) -> tuple[bool, bool | None]:
     """Parse a Navigator 10 auth response once.
 
@@ -96,9 +78,12 @@ def _parse_auth_response(text: str) -> tuple[bool, bool | None]:
         data = json.loads(text)
     except json.JSONDecodeError:
         return False, None
+    if not isinstance(data, dict):
+        return False, None
     if "authorized" not in data:
         return False, None
-    return True, data.get("authorized")
+    authorized = data.get("authorized")
+    return True, authorized if isinstance(authorized, bool) else None
 
 
 SENSOR_NAME_MAP: dict[str, str] = {
@@ -213,6 +198,36 @@ _PASSWORD_INPUT_RE = re.compile(
     re.IGNORECASE,
 )
 _LOGGER = logging.getLogger(__name__)
+
+
+def _format_url_host(host: str) -> str:
+    """Validate a configured host and format IPv6 literals for URL authorities."""
+    if not host or host != host.strip():
+        raise ValueError("Host must not be empty or contain surrounding whitespace")
+
+    bracketed = host.startswith("[") and host.endswith("]")
+    candidate = host[1:-1] if bracketed else host
+    if not candidate or "%" in candidate:
+        raise ValueError(f"Invalid host: {host!r}")
+
+    try:
+        address = ipaddress.ip_address(candidate)
+    except ValueError:
+        if bracketed or len(candidate) > 253:
+            raise ValueError(f"Invalid host: {host!r}") from None
+        labels = candidate.rstrip(".").split(".")
+        if any(
+            not label
+            or len(label) > 63
+            or re.fullmatch(r"[A-Za-z0-9_](?:[A-Za-z0-9_-]*[A-Za-z0-9_])?", label) is None
+            for label in labels
+        ):
+            raise ValueError(f"Invalid host: {host!r}")
+        return candidate
+
+    if bracketed and address.version != 6:
+        raise ValueError(f"Only IPv6 literals may use brackets: {host!r}")
+    return f"[{candidate}]" if address.version == 6 else candidate
 
 
 class IdmWebError(Exception):
@@ -549,15 +564,47 @@ def _looks_like_login_page(text: str) -> bool:
     return any(marker in lowered for marker in ("login", "pin", "password", "passwort", "csrf"))
 
 
+def _looks_like_auth_failure(text: str) -> bool:
+    """Return whether a JSON or text response explicitly rejects authentication."""
+    stripped = text.strip()
+    lowered = stripped.casefold()
+    try:
+        payload = json.loads(stripped)
+    except json.JSONDecodeError:
+        payload = None
+
+    if isinstance(payload, dict):
+        if payload.get("authorized") is False or payload.get("authenticated") is False:
+            return True
+        status = str(payload.get("status", "")).casefold()
+        if status in {"unauthorized", "forbidden", "authentication_failed"}:
+            return True
+
+    return any(
+        marker in lowered
+        for marker in (
+            "authorization required",
+            "authentication failed",
+            "invalid pin",
+            "pin rejected",
+            "unauthorized",
+            "forbidden",
+        )
+    )
+
+
 def _looks_like_data_response(text: str) -> bool:
     stripped = text.strip()
-    if not stripped or _looks_like_login_page(stripped):
+    if not stripped or _looks_like_login_page(stripped) or _looks_like_auth_failure(stripped):
         return False
     try:
-        json.loads(stripped)
-        return True
+        payload = json.loads(stripped)
     except json.JSONDecodeError:
-        pass
+        payload = None
+    if isinstance(payload, dict) and any(
+        key.casefold() in {"error", "errors", "exception"} for key in payload
+    ):
+        return False
     return any(marker in stripped.lower() for marker in ("<table", "setting", "heatpump", "value"))
 
 
@@ -788,6 +835,7 @@ class IdmNavigator10WebClient:
         if not (1 <= port <= 65535):
             raise ValueError(f"Port must be between 1 and 65535, got {port}")
         self._host = host
+        self._url_host = _format_url_host(host)
         self._pin = pin
         self._port = int(port)
         self._timeout = float(timeout)
@@ -840,7 +888,7 @@ class IdmNavigator10WebClient:
             self._own_session = True
 
         encoded_pin = quote(self._pin, safe="")
-        url = f"ws://{self._host}:{self._port}/?auth_code={encoded_pin}"
+        url = f"ws://{self._url_host}:{self._port}/?auth_code={encoded_pin}"
         try:
             self._ws = await self._session.ws_connect(url, timeout=self._timeout)
             auth = await self._receive_text()
@@ -1056,12 +1104,14 @@ class IdmNavigator20WebClient:
         if not pin:
             raise ValueError("PIN must not be empty")
         self._host = host
+        self._url_host = _format_url_host(host)
         self._pin = pin
         self._timeout = float(timeout)
         self._session = session
         self._own_session = False
         self._csrf_token: str | None = None
         self._data_paths: tuple[str, ...] = ()
+        self._probe_responses: dict[str, str] = {}
         self._login_form_returned = False
         self._last_success_monotonic: float | None = None
         self._last_error: str | None = None
@@ -1110,6 +1160,7 @@ class IdmNavigator20WebClient:
                 if self._csrf_token is None:
                     _LOGGER.debug("NAV2 CSRF token not found, trying cookie-only login fallback")
                 await self._try_login()
+                self._probe_responses.clear()
                 paths = await self._probe_data_endpoints(DEFAULT_NAVIGATOR20_PATHS)
                 if not paths:
                     if self._login_form_returned:
@@ -1131,6 +1182,7 @@ class IdmNavigator20WebClient:
     async def close(self) -> None:
         self._csrf_token = None
         self._data_paths = ()
+        self._probe_responses.clear()
         self._login_form_returned = False
         if self._own_session and self._session is not None:
             try:
@@ -1147,8 +1199,12 @@ class IdmNavigator20WebClient:
         *,
         include_raw: bool = False,
     ) -> IdmWebData:
+        use_probe_responses = False
         if not self._data_paths:
             await self.login()
+            use_probe_responses = True
+        else:
+            self._probe_responses.clear()
         if self._session is None:
             raise IdmWebResponseError("Navigator 2.0 HTTP session is not connected")
 
@@ -1159,29 +1215,37 @@ class IdmNavigator20WebClient:
         # were confirmed during login. Fall back to all confirmed endpoints when
         # the caller's subset does not overlap the detected paths.
         selected_paths = tuple(p for p in paths if p in self._data_paths) or self._data_paths
-        for path in selected_paths:
-            try:
-                text = await self._request_text("GET", path)
-            except IdmWebCsrfError:
-                if csrf_retried:
-                    raise
-                _LOGGER.debug(
-                    "NAV2 CSRF token rejected while reading %s, attempting one re-login", path
-                )
-                self._csrf_token = None
-                await self.login()
-                csrf_retried = True
-                text = await self._request_text("GET", path)
-            if "invalid csrf token" in text.lower():
-                self._csrf_token = None
-                raise IdmWebCsrfError("Navigator 2.0 CSRF token was rejected")
-            if _looks_like_login_page(text):
-                raise IdmWebAuthenticationError(
-                    f"NAV2 endpoint {path} returned login page instead of data"
-                )
-            if include_raw:
-                raw_responses[path] = text
-            values.update(parse_idm_html_table_values(text))
+        try:
+            for path in selected_paths:
+                try:
+                    text = self._probe_responses.pop(path, None) if use_probe_responses else None
+                    if text is None:
+                        text = await self._request_text("GET", path)
+                except IdmWebCsrfError:
+                    if csrf_retried:
+                        raise
+                    _LOGGER.debug(
+                        "NAV2 CSRF token rejected while reading %s, attempting one re-login", path
+                    )
+                    self._csrf_token = None
+                    await self.login()
+                    csrf_retried = True
+                    use_probe_responses = True
+                    text = self._probe_responses.pop(path, None)
+                    if text is None:
+                        text = await self._request_text("GET", path)
+                if "invalid csrf token" in text.lower():
+                    self._csrf_token = None
+                    raise IdmWebCsrfError("Navigator 2.0 CSRF token was rejected")
+                if _looks_like_auth_failure(text) or _looks_like_login_page(text):
+                    raise IdmWebAuthenticationError(
+                        f"NAV2 endpoint {path} returned an authentication response instead of data"
+                    )
+                if include_raw:
+                    raw_responses[path] = text
+                values.update(parse_idm_html_table_values(text))
+        finally:
+            self._probe_responses.clear()
 
         data = IdmWebData(model="Navigator 2.0 Web", values=values, raw_responses=raw_responses)
         self._cached_data = data
@@ -1228,7 +1292,7 @@ class IdmNavigator20WebClient:
             try:
                 # Do not send a possibly stale CSRF token when fetching the
                 # initial login page; the server returns the form/token fresh.
-                text = await self._request_text("GET", path, require_ok=False, include_csrf=False)
+                text = await self._request_text("GET", path, include_csrf=False)
                 _LOGGER.debug("NAV2 initial GET %s succeeded", path)
                 return text
             except _NAV2_REQUEST_ERRORS as exc:
@@ -1296,8 +1360,10 @@ class IdmNavigator20WebClient:
             if _looks_like_data_response(text):
                 _LOGGER.debug("NAV2 endpoint %s is usable", path)
                 usable.append(path)
-            elif _looks_like_login_page(text):
+                self._probe_responses[path] = text
+            elif _looks_like_auth_failure(text) or _looks_like_login_page(text):
                 _LOGGER.debug("NAV2 endpoint %s returned login page instead of data", path)
+                self._login_form_returned = True
             else:
                 _LOGGER.debug("NAV2 endpoint %s returned unexpected response", path)
         _LOGGER.debug("NAV2 usable data endpoints: %s", usable)
@@ -1321,7 +1387,7 @@ class IdmNavigator20WebClient:
             headers["CSRF-Token"] = self._csrf_token
             headers["X-CSRF-Token"] = self._csrf_token
             headers["X-CSRFToken"] = self._csrf_token
-        url = f"http://{self._host}{path}"
+        url = f"http://{self._url_host}{path}"
         async with self._session.request(
             method,
             url,

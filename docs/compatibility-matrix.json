@@ -72,6 +72,12 @@
       "hass_integration_version": "pending",
       "status": "api-prepared",
       "notes": "Adds a stable query for registers rejected with Modbus Illegal Data Address, enabling consumers to maintain their own polling skip-list."
+    },
+    {
+      "api_version": "0.7.1",
+      "hass_integration_version": "pending",
+      "status": "api-prepared",
+      "notes": "Security and reliability patch for web host validation, safe Modbus writes, authentication handling, transient failure recovery, LF normalization, and reduced Navigator 2.0 startup traffic."
     }
   ]
 }

@@ -222,6 +222,13 @@ class TestBuildRegisterMap:
         assert any("zm1_" in k for k in regs)
         assert any("zm2_" in k for k in regs)
 
+    @pytest.mark.parametrize("circuits", [[""], ["AB"], ["A", "BC"]])
+    def test_build_register_map_rejects_non_single_letter_circuits(
+        self, circuits: list[str]
+    ) -> None:
+        with pytest.raises(ValueError, match="Invalid heating circuit letters"):
+            build_register_map(circuits=circuits)
+
     def test_no_writable_with_state_class(self) -> None:
         """No writable registers should have state_class (HA doesn't use it for controls)."""
         regs = build_register_map()

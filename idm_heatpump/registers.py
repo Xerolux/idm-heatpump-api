@@ -1579,7 +1579,11 @@ def _build_register_map_impl(
 ) -> dict[str, RegisterDef]:
     """Actual register map builder (uncached)."""
     if circuits is not None:
-        invalid = [c for c in circuits if c.upper() not in "ABCDEFG"]
+        invalid = [
+            c
+            for c in circuits
+            if not isinstance(c, str) or len(c) != 1 or c.upper() not in "ABCDEFG"
+        ]
         if invalid:
             raise ValueError(f"Invalid heating circuit letters: {invalid}")
     if not (0 <= zone_modules <= 10):
@@ -1714,7 +1718,11 @@ def build_register_map(
         Complete dict of register definitions keyed by name.
     """
     if circuits is not None:
-        invalid = [c for c in circuits if c.upper() not in "ABCDEFG"]
+        invalid = [
+            c
+            for c in circuits
+            if not isinstance(c, str) or len(c) != 1 or c.upper() not in "ABCDEFG"
+        ]
         if invalid:
             raise ValueError(f"Invalid heating circuit letters: {invalid}")
     if not (0 <= zone_modules <= 10):

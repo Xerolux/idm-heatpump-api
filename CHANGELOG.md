@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-07-09
+
+### Security
+
+- Validate local web client hosts before constructing HTTP or WebSocket URLs,
+  preventing URL-authority injection and unintended PIN disclosure.
+- Run release validation with read-only GitHub permissions, remove unnecessary
+  OIDC access, and expose write credentials only during the final push step.
+
+### Fixed
+
+- Reject unsupported enum values, ambiguous boolean inputs, non-finite values,
+  and fractional values for integer Modbus registers before writes are sent.
+- Reset transient Modbus failure counters after a successful individual read so
+  intermittent errors cannot permanently disable a working register.
+- Reject malformed Navigator 10 authorization payloads without leaking the
+  WebSocket and reject Navigator 2.0 JSON authentication errors as data.
+- Validate manual heating-circuit identifiers as exactly one letter from A-G.
+- Normalize repository text files to LF and enforce LF through `.gitattributes`.
+
+### Changed
+
+- Reuse freshly probed Navigator 2.0 endpoint responses for the initial data
+  snapshot, avoiding duplicate HTTP requests during startup.
+
+### Tests
+
+- Add regression coverage for host validation, IPv6 URL formatting, malformed
+  authentication payloads, safe Modbus writes, failure-counter recovery,
+  heating-circuit validation, and Navigator 2.0 probe reuse.
+
 ## [0.7.0] - 2026-07-09
 
 ### Added
