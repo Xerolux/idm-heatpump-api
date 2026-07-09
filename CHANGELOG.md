@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   consumers that maintain a polling skip-list. It reports only registers
   explicitly rejected by the controller with Modbus exception code 2.
 
+## [0.6.5] - 2026-07-09
+
+### Changed
+
+- Refresh release metadata after 0.6.4.
+
 ## [0.6.4] - 2026-07-09
 
 ### Changed
