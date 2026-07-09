@@ -14,9 +14,11 @@ from idm_heatpump.web import (
     IdmWebAuthenticationError,
     IdmWebConnectionError,
     IdmWebData,
+    IdmWebProtocolError,
     IdmWebResponseError,
     IdmWebValue,
     _extract_csrf_token,
+    _looks_like_data_response,
     create_optional_navigator10_web_client,
     create_optional_navigator20_web_client,
     parse_idm_html_table_values,
@@ -228,6 +230,32 @@ def test_optional_web_client_factories_create_clients_with_pin() -> None:
     assert nav20._pin == "1234"
 
 
+@pytest.mark.parametrize(
+    "host",
+    [
+        "192.0.2.10@attacker.example",
+        "http://192.0.2.10",
+        "192.0.2.10/path",
+        " 192.0.2.10",
+    ],
+)
+@pytest.mark.parametrize("client_type", [IdmNavigator10WebClient, IdmNavigator20WebClient])
+def test_web_clients_reject_hosts_that_can_change_url_authority(
+    host: str,
+    client_type: type[IdmNavigator10WebClient] | type[IdmNavigator20WebClient],
+) -> None:
+    with pytest.raises(ValueError, match="Host|host"):
+        client_type(host, "1234")
+
+
+@pytest.mark.parametrize(
+    "payload",
+    ['{"authorized": false}', '{"error":"unauthorized"}', '{"temperature":21.5}'],
+)
+def test_nav2_data_detection_rejects_auth_errors_and_unparsed_json(payload: str) -> None:
+    assert _looks_like_data_response(payload) is False
+
+
 class FakeWsMessage:
     def __init__(self, data: str) -> None:
         self.type = "TEXT"
@@ -303,6 +331,19 @@ async def test_navigator10_client_reads_setting_details() -> None:
         }
     ]
     assert session.urls == ["ws://192.0.2.10:61220/?auth_code=1234"]
+
+
+@pytest.mark.asyncio
+async def test_navigator10_formats_ipv6_host_and_rejects_scalar_auth_payload() -> None:
+    ws = FakeWs(['"authorized"'])
+    session = FakeSession(ws)
+    client = IdmNavigator10WebClient("2001:db8::10", "1234", timeout=1, session=session)
+
+    with pytest.raises(IdmWebProtocolError, match="not recognized"):
+        await client.connect()
+
+    assert session.urls == ["ws://[2001:db8::10]:61220/?auth_code=1234"]
+    assert ws.closed is True
 
 
 @pytest.mark.asyncio
@@ -620,6 +661,42 @@ async def test_navigator20_login_rejected_raises_authentication_error() -> None:
 
 
 @pytest.mark.asyncio
+async def test_navigator20_rejects_json_auth_failure_as_endpoint_data() -> None:
+    session = FakeHttpSession(
+        {
+            ("GET", "/"): [FakeHttpResponse(200, "OK")],
+            ("POST", "/"): [FakeHttpResponse(200, "OK")],
+            ("GET", "/data/heatpump.php"): [
+                FakeHttpResponse(200, '{"authorized":false,"error":"unauthorized"}')
+            ],
+        }
+    )
+    client = IdmNavigator20WebClient("192.0.2.10", "bad", timeout=1, session=session)
+
+    with pytest.raises(IdmWebAuthenticationError, match="PIN rejected"):
+        await client.connect()
+
+
+@pytest.mark.asyncio
+async def test_navigator20_reuses_fresh_probe_response_for_initial_read() -> None:
+    session = FakeHttpSession(
+        {
+            ("GET", "/"): [FakeHttpResponse(200, "OK")],
+            ("POST", "/"): [FakeHttpResponse(200, "OK")],
+            ("GET", "/data/heatpump.php"): [
+                FakeHttpResponse(200, "<table><tr><td>B33</td><td>21.5 °C</td></tr></table>")
+            ],
+        }
+    )
+    client = IdmNavigator20WebClient("192.0.2.10", "1234", timeout=1, session=session)
+
+    data = await client.read_data(paths=("/data/heatpump.php",))
+
+    assert data.get_value("flow_temperature") == "21.5 °C"
+    assert [request[:2] for request in session.requests].count(("GET", "/data/heatpump.php")) == 1
+
+
+@pytest.mark.asyncio
 async def test_navigator20_skips_missing_endpoint_and_uses_working_endpoint() -> None:
     session = FakeHttpSession(
         {
@@ -637,7 +714,7 @@ async def test_navigator20_skips_missing_endpoint_and_uses_working_endpoint() ->
 
 
 @pytest.mark.asyncio
-async def test_navigator20_rejects_login_page_as_data_endpoint() -> None:
+async def test_navigator20_treats_login_page_data_endpoint_as_authentication_failure() -> None:
     session = FakeHttpSession(
         {
             ("GET", "/"): [FakeHttpResponse(404, "")],
@@ -650,7 +727,7 @@ async def test_navigator20_rejects_login_page_as_data_endpoint() -> None:
     )
     client = IdmNavigator20WebClient("192.0.2.10", "1234", timeout=1, session=session)
 
-    with pytest.raises(IdmWebResponseError, match="endpoint candidates"):
+    with pytest.raises(IdmWebAuthenticationError, match="login form returned"):
         await client.connect()
 
 

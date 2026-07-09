@@ -1234,15 +1234,53 @@ class IdmModbusClient:
     def _validate_write_allowed(self, reg: RegisterDef, value: Any) -> None:
         self._validate_model_availability(reg)
 
-        if reg.exclude_from_write and int(value) in reg.exclude_from_write:
+        numeric_value: float | None = None
+        if reg.datatype is DataType.BOOL:
+            if not isinstance(value, bool) and not (isinstance(value, int) and value in (0, 1)):
+                raise ValueError(
+                    f"Value {value!r} for '{reg.name}' must be a boolean or integer 0/1"
+                )
+        else:
+            if isinstance(value, bool):
+                raise ValueError(f"Boolean value is not valid for numeric register '{reg.name}'")
+            try:
+                numeric_value = float(value)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise ValueError(f"Value {value!r} for '{reg.name}' is not numeric") from exc
+            if not math.isfinite(numeric_value):
+                raise ValueError(f"Value {value!r} for '{reg.name}' must be finite")
+
+            if (
+                reg.datatype
+                in {
+                    DataType.UCHAR,
+                    DataType.INT8,
+                    DataType.INT16,
+                    DataType.UINT16,
+                    DataType.BITFLAG,
+                }
+                and not numeric_value.is_integer()
+            ):
+                raise ValueError(f"Value {value!r} for '{reg.name}' must be an integer")
+
+        comparable_value = numeric_value if numeric_value is not None else int(value)
+        if reg.exclude_from_write and int(comparable_value) in reg.exclude_from_write:
             raise ValueError(
                 f"Value {value} for '{reg.name}' is not writable (excluded values: {reg.exclude_from_write})"
             )
 
-        if reg.min_val is not None and float(value) < reg.min_val:
+        if reg.min_val is not None and comparable_value < reg.min_val:
             raise ValueError(f"Value {value} for '{reg.name}' is below minimum {reg.min_val}")
-        if reg.max_val is not None and float(value) > reg.max_val:
+        if reg.max_val is not None and comparable_value > reg.max_val:
             raise ValueError(f"Value {value} for '{reg.name}' exceeds maximum {reg.max_val}")
+
+        if reg.enum_options is not None:
+            enum_value = int(comparable_value)
+            if enum_value not in reg.enum_options:
+                raise ValueError(
+                    f"Value {value!r} for '{reg.name}' is not a supported option "
+                    f"({sorted(reg.enum_options)})"
+                )
 
         if reg.write_class is WriteClass.EEPROM:
             now = self._time()
@@ -1461,6 +1499,7 @@ class IdmModbusClient:
             try:
                 registers = await self._read_registers(reg.address, reg.size, reg_type)
                 data[reg.name] = self.decode_value(registers, reg)
+                self._register_failures.pop(reg.name, None)
             except ConnectionException:
                 _LOGGER.warning(
                     "Connection lost during individual read of %s (address %d)",
