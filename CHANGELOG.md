@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-07-09
+
+### Changed
+
+- Optimize the Navigator 10 web client request path: the recoverable- and
+  reconnect-error tuples are now built once at module import instead of being
+  reconstructed on every websocket request.
+- Parse the Navigator 10 authorization response only once during connect (new
+  `_parse_auth_response` helper) instead of decoding the same frame twice.
+- Remove a redundant second normalization of the lookup key in
+  `parse_idm_html_table_values`.
+- Make the Navigator 2.0 `read_data` path filter explicit and self-documenting
+  (`selected_paths`).
+
+### Fixed
+
+- Harden `IdmNavigator20WebClient.close()` so a failing `session.close()`
+  cannot leak the session reference or leave detected endpoints and the CSRF
+  token behind. It now matches the defensive close behavior of the Navigator 10
+  client.
+
+### Tests
+
+- Add coverage for `IdmNavigator10WebClient.read_statistics` (previously 0%).
+- Add coverage for Navigator 2.0 `capabilities()` and `diagnostics()`.
+- Add constructor-validation tests for both web clients.
+- Add `__aenter__`/`__aexit__` context-manager tests for both web clients.
+- Add a Navigator 2.0 close test that fails the underlying session close.
+
 ## [0.6.3] - 2026-07-07
 
 ### Fixed
