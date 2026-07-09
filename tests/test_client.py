@@ -10,6 +10,7 @@ from pymodbus.exceptions import ModbusException
 from idm_heatpump.client import (
     DataType,
     IdmModbusClient,
+    IllegalAddressError,
     ModbusCodec,
     PollRateLimiter,
     RegisterDef,
@@ -586,3 +587,105 @@ def test_read_register_skips_permanently_failed_registers() -> None:
     reg = RegisterDef(1000, DataType.FLOAT, "outdoor_temp", unit="°C")
     with pytest.raises(ValueError, match="permanently failed"):
         asyncio.run(client.read_register(reg))
+
+
+# ---------------------------------------------------------------------------
+# Illegal Data Address (Modbus exception code 2) handling
+#
+# Optional register blocks that a device does not implement respond with
+# exception code 2. This is a permanent condition: retrying is pointless and
+# only produces noisy "failed after N attempts" warnings on every poll. The
+# library must surface it as IllegalAddressError, bail out of the retry loop
+# silently, and let read_batch isolate the offending register immediately.
+# ---------------------------------------------------------------------------
+
+
+def _make_client_with_transport(transport: Any, *, max_retries: int = 3) -> IdmModbusClient:
+    client = IdmModbusClient("127.0.0.1", max_retries=max_retries)
+    client._client = transport  # type: ignore[assignment]
+    return client
+
+
+def test_read_registers_raises_illegal_address_error_for_exception_code_2() -> None:
+    """A device exception_code=2 response surfaces as IllegalAddressError."""
+    from .fake_modbus import FakeModbusTransport
+
+    transport = FakeModbusTransport(illegal_reads={("input", 1200, 2)})
+    client = _make_client_with_transport(transport)
+
+    with pytest.raises(IllegalAddressError):
+        asyncio.run(client._read_registers(1200, 2))
+
+
+def test_retry_command_does_not_retry_illegal_address_errors(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """IllegalAddressError must bail out of the retry loop immediately.
+
+    A normal Modbus failure would be retried up to max_retries and emit a
+    'failed after N attempts' WARNING on exhaustion. Illegal Data Address is
+    permanent, so neither retries nor the warning must occur.
+    """
+    from .fake_modbus import FakeModbusTransport
+
+    transport = FakeModbusTransport(illegal_reads={("input", 1200, 1)})
+    client = _make_client_with_transport(transport, max_retries=3)
+
+    caplog.set_level(logging.DEBUG, logger="idm_heatpump.client")
+    with pytest.raises(IllegalAddressError):
+        asyncio.run(client._read_registers(1200, 1))
+
+    # Only one transport read attempt: the retry loop must not have looped.
+    assert transport.read_calls == [("input", 1200, 1)]
+    assert not any("failed after" in rec.getMessage() for rec in caplog.records), (
+        "IllegalAddressError must not emit a 'failed after N attempts' warning"
+    )
+
+
+def test_read_batch_isolates_illegal_address_and_marks_register_unsupported() -> None:
+    """read_batch must mark an illegal-address register as permanently failed.
+
+    Two adjacent registers are read as a single batch range. When one of them
+    responds with exception code 2, the batch read falls back to individual
+    reads; the illegal one must be isolated immediately (not after the
+    transient-failure threshold of 3) and exposed via get_unsupported_registers.
+    """
+    from .fake_modbus import FakeModbusTransport
+
+    good = RegisterDef(1198, DataType.FLOAT, "good_temp", unit="°C")
+    bad = RegisterDef(1200, DataType.FLOAT, "cascade_temp", unit="°C")
+
+    # Batch range covers 1198..1201 (2 floats). Individual reads target the
+    # exact register addresses/sizes.
+    transport = FakeModbusTransport(
+        input_registers={1198: 0, 1199: 16968},
+        illegal_reads={
+            ("input", 1198, 4),  # the batch range read fails as a whole
+            ("input", 1200, 2),  # the individual bad-register read fails
+        },
+    )
+    client = _make_client_with_transport(transport)
+
+    data = asyncio.run(client.read_batch([good, bad]))
+
+    assert "good_temp" in data
+    assert "cascade_temp" not in data
+    assert client.get_unsupported_registers() == ("cascade_temp",)
+
+
+def test_get_unsupported_registers_starts_empty() -> None:
+    """A fresh client has no unsupported registers."""
+    client = IdmModbusClient("127.0.0.1")
+    assert client.get_unsupported_registers() == ()
+
+
+def test_reset_failed_registers_clears_unsupported_set() -> None:
+    """reset_failed_registers must also clear the unsupported (illegal-address) set."""
+    client = IdmModbusClient("127.0.0.1")
+    client._permanently_failed_registers.add("cascade_temp")
+    client._unsupported_registers.add("cascade_temp")
+    assert client.get_unsupported_registers() == ("cascade_temp",)
+
+    client.reset_failed_registers()
+
+    assert client.get_unsupported_registers() == ()

@@ -103,6 +103,10 @@ The library provides fine-grained control for advanced scenarios:
 - `get_zone_module_registers(zone_index=1, room_count=6)`: Registers for a single zone module.
 - `client.probe_register(address=1850, count=2)`: Probe a single register without affecting failure tracking.
 - `client.reset_failed_registers()`: Retry permanently failed registers.
+- `client.get_unsupported_registers()`: Return the register names explicitly rejected by
+  the controller with Modbus exception code 2 ("Illegal Data Address"). This is
+  useful for consumers that maintain their own polling skip-list; it never
+  includes registers that merely failed repeatedly for a transient reason.
 
 Register metadata for HA integration mapping:
 
@@ -201,7 +205,7 @@ The public API is the package root `__all__` contract and is protected by a
 snapshot test. It currently includes:
 
 - Client and metadata types: `IdmModbusClient`, `IdmModelInfo`,
-  `ModbusErrorContext`, `RegisterDef`, `DataType`, `RegisterType`,
+  `IllegalAddressError`, `ModbusErrorContext`, `RegisterDef`, `DataType`, `RegisterType`,
   `WriteClass`, `IdmWebData`, `IdmWebValue`, `IdmWebValueDescription`
 - Register builders: `build_register_map`, `get_all_registers`, `get_register`,
   `get_detection_registers`, `get_heating_circuit_registers`,

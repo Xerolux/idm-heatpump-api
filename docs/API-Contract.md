@@ -25,6 +25,15 @@ Consumers that create entities from local web supplement values can use
 The package root `__all__` list is the public import contract. It is protected
 by `tests/test_public_api.py`.
 
+### Unsupported-register query
+
+`IdmModbusClient.get_unsupported_registers()` is a supported public method for
+polling consumers. It returns a sorted tuple of register names for which the
+controller returned Modbus exception code 2 ("Illegal Data Address") during a
+batch fallback. It excludes registers that became permanently failed only after
+repeated transient errors. The result is retained for the lifetime of the
+client and is cleared by `reset_failed_registers()`.
+
 Imports from implementation modules such as `idm_heatpump.client` and
 `idm_heatpump.registers` are tolerated for internal tests and local debugging,
 but they are not the preferred consumer contract.
@@ -129,3 +138,4 @@ an explicit integration compatibility entry in
 | 0.4.0 | pending | API prepared with optional local web supplement and default-safe Navigator 10 firmware register polling |
 | 0.4.1 | 0.8.0-beta.7 | Beta integration line consumes optional web supplement and faster model detection |
 | 0.3.7 | 0.7.3 | Tested baseline for Navigator 2.0 filtering and Navigator 10 register map |
+| 0.7.0 | pending | Adds the stable unsupported-register query for consumers that maintain their own polling skip-list. |

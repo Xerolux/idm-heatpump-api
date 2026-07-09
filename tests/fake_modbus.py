@@ -11,9 +11,10 @@ from typing import Any
 class FakeModbusResponse:
     registers: list[int] | None = None
     error: bool = False
+    exception_code: int | None = None
 
     def isError(self) -> bool:  # noqa: N802 - pymodbus compatibility
-        return self.error
+        return self.error or self.exception_code is not None
 
 
 class FakeModbusTransport:
@@ -30,6 +31,7 @@ class FakeModbusTransport:
         error_writes: set[int] | None = None,
         exception_reads: dict[tuple[str, int, int], Exception] | None = None,
         short_reads: dict[tuple[str, int, int], list[int]] | None = None,
+        illegal_reads: set[tuple[str, int, int]] | None = None,
         delay: float = 0,
     ) -> None:
         self.input_registers = input_registers or {}
@@ -38,6 +40,7 @@ class FakeModbusTransport:
         self.error_writes = error_writes or set()
         self.exception_reads = exception_reads or {}
         self.short_reads = short_reads or {}
+        self.illegal_reads = illegal_reads or set()
         self.delay = delay
         self.read_calls: list[tuple[str, int, int]] = []
         self.write_calls: list[tuple[int, list[int]]] = []
@@ -78,6 +81,11 @@ class FakeModbusTransport:
             self.read_calls.append(key)
             if key in self.exception_reads:
                 raise self.exception_reads[key]
+            if key in self.illegal_reads:
+                # Simulate a real Modbus "Illegal Data Address" (exception
+                # code 2) device response: isError() is True and the response
+                # carries the exception_code the library inspects.
+                return FakeModbusResponse(exception_code=2)
             if key in self.error_reads:
                 return FakeModbusResponse(error=True)
             if key in self.short_reads:

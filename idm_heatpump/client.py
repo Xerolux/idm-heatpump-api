@@ -116,6 +116,36 @@ def quiet_pymodbus_logging(level: str | int = "WARNING") -> None:
     logging.getLogger("pymodbus").setLevel(level)
 
 
+class IllegalAddressError(ModbusException):
+    """Modbus ``Illegal Data Address`` (exception code 2).
+
+    Raised when the device reports that a register address does not exist.
+    Unlike a generic :class:`ModbusException`, this is a permanent condition
+    for the address in question: retrying is pointless and only produces noisy
+    log lines. Callers that detect this marker (via ``isinstance`` or the
+    ``is_illegal_address`` attribute) can short-circuit retries and suppress
+    the repeated "failed after N attempts" warnings that otherwise flood the
+    log when optional registers are probed on devices that do not implement
+    them (e.g. Navigator-10-only blocks read against a Navigator 2.0).
+    """
+
+    #: Sentinel attribute checked by the retry loop to bail out silently.
+    is_illegal_address: bool = True
+
+
+def _is_illegal_address_exception(err: BaseException) -> bool:
+    """Return whether ``err`` represents a Modbus ``Illegal Data Address``.
+
+    Detects both our own :class:`IllegalAddressError` marker and raw pymodbus
+    exception-code-2 responses (``ExceptionResponse(exception_code=2)``),
+    which is how the device signals an unsupported address before we wrap it.
+    """
+    if isinstance(err, IllegalAddressError):
+        return True
+    message = str(err).casefold()
+    return "exception_code=2" in message or "illegal data address" in message
+
+
 class DataType(Enum):
     FLOAT = "FLOAT"
     UCHAR = "UCHAR"
@@ -420,6 +450,7 @@ class IdmModbusClient:
         self._lock = asyncio.Lock()
         self._register_failures: dict[str, int] = {}
         self._permanently_failed_registers: set[str] = set()
+        self._unsupported_registers: set[str] = set()
         self._model_info: IdmModelInfo | None = None
         self._last_eeprom_writes: dict[str, float] = {}
         self._cyclic_write_deadlines: dict[str, float] = {}
@@ -600,6 +631,28 @@ class IdmModbusClient:
                     )
                     await self._try_reconnect()
                     await asyncio.sleep(RETRY_BACKOFF_BASE * (2**attempt))
+                except IllegalAddressError as err:
+                    # Illegal Data Address is permanent for the given address
+                    # (the register is not implemented on this device). Retrying
+                    # would only produce repeated warnings that flood the log
+                    # when optional register blocks are read against a device
+                    # that does not support them. Re-raise immediately at debug
+                    # level so callers can react and isolate the address.
+                    self._record_error_context(
+                        operation,
+                        address,
+                        count,
+                        reg_type,
+                        err,
+                        attempt + 1,
+                    )
+                    _LOGGER.debug(
+                        "Modbus %s at address %d reports Illegal Data Address; "
+                        "not retrying (register not implemented on this device)",
+                        operation,
+                        address,
+                    )
+                    raise
                 except ModbusException as err:
                     self._record_error_context(
                         operation,
@@ -682,6 +735,16 @@ class IdmModbusClient:
                 else await read_task
             )
             if result.isError():
+                # Pymodbus returns an ExceptionResponse for device-side errors.
+                # Exception code 2 (Illegal Data Address) is permanent for the
+                # given address: the register is simply not implemented on this
+                # device. Surface it as IllegalAddressError so the retry loop
+                # can bail out silently instead of retrying and logging a
+                # warning on every poll.
+                if getattr(result, "exception_code", None) == 2:
+                    raise IllegalAddressError(  # type: ignore[no-untyped-call]
+                        f"Illegal Data Address reading address {address}: {result}"
+                    )
                 raise ModbusException(  # type: ignore[no-untyped-call]
                     f"Modbus error reading address {address}: {result}"
                 )
@@ -1405,6 +1468,20 @@ class IdmModbusClient:
                     reg.address,
                 )
                 raise
+            except IllegalAddressError:
+                # The register is not implemented on this device. Mark it as
+                # permanently failed immediately (no need to wait for the
+                # threshold of 3 transient failures) so it is skipped on the
+                # next read_batch call. Log at debug only: this is an expected
+                # condition when optional register blocks are probed.
+                self._permanently_failed_registers.add(reg.name)
+                self._unsupported_registers.add(reg.name)
+                _LOGGER.debug(
+                    "Register %s (address %d) is not implemented on this device "
+                    "(Illegal Data Address); skipping it on future reads",
+                    reg.name,
+                    reg.address,
+                )
             except ModbusException as err:
                 failures = self._register_failures.get(reg.name, 0) + 1
                 self._register_failures[reg.name] = failures
@@ -1446,7 +1523,23 @@ class IdmModbusClient:
         return data
 
     def reset_failed_registers(self) -> None:
-        """Clear the permanently failed register set so they will be retried."""
+        """Clear failure tracking and unsupported-register state so reads are retried."""
         self._permanently_failed_registers.clear()
+        self._unsupported_registers.clear()
         self._register_failures.clear()
         _LOGGER.info("Permanently failed registers have been reset")
+
+    def get_unsupported_registers(self) -> tuple[str, ...]:
+        """Return register names the device rejected as not implemented.
+
+        These are registers that responded with Modbus ``Illegal Data Address``
+        (exception code 2) during a :meth:`read_batch` or individual read.
+        The set grows monotonically within a client's lifetime and is cleared
+        by :meth:`reset_failed_registers`.
+
+        Consumers (e.g. the Home Assistant integration coordinator) can merge
+        this into their own skip-list so unsupported addresses are not
+        re-attempted on every poll, which keeps the log quiet and avoids
+        needless Modbus traffic.
+        """
+        return tuple(sorted(self._unsupported_registers))

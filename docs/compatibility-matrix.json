@@ -60,6 +60,12 @@
       "hass_integration_version": "pending",
       "status": "api-prepared",
       "notes": "Optional web client optimization and hardening: Nav10 request error tuples built once at import, single auth-frame parse, Nav2 close() no longer leaks session state on failure, plus expanded web client test coverage."
+    },
+    {
+      "api_version": "0.7.0",
+      "hass_integration_version": "pending",
+      "status": "api-prepared",
+      "notes": "Adds a stable query for registers rejected with Modbus Illegal Data Address, enabling consumers to maintain their own polling skip-list."
     }
   ]
 }
