@@ -160,3 +160,4 @@ an explicit integration compatibility entry in
 | 0.7.0 | pending | Adds the stable unsupported-register query for consumers that maintain their own polling skip-list. |
 | 0.7.2 | 0.8.1-beta.23 | Hardens batch reads and validates suspect register values. |
 | 0.7.3 | 0.8.1-beta.23 | Ignores unavailable heating-circuit slot sentinels during model detection. |
+| 0.7.4 | Pending | Restores documented Navigator register addresses and reconnects after pymodbus no-response errors. |
