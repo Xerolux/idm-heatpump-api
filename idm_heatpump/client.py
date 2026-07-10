@@ -41,7 +41,10 @@ _LOGGER = logging.getLogger(__name__)
 
 _T = TypeVar("_T")
 
-_MAX_GROUP_GAP = 10
+# IDM firmware variants have returned shifted or otherwise inconsistent values
+# when a single Modbus request spans addresses that are not part of the
+# requested register map.  Only merge registers whose address ranges touch.
+_MAX_GROUP_GAP = 0
 _MAX_GROUP_SIZE = 40
 _PERMANENT_FAILURE_THRESHOLD = 3
 DEFAULT_EEPROM_WRITE_INTERVAL = 60.0
@@ -189,6 +192,7 @@ class IdmClientDiagnostics:
     last_error: str | None = None
     permanently_failed_registers: tuple[str, ...] = ()
     connection_suspect: bool = False
+    batch_unsafe_registers: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -451,6 +455,7 @@ class IdmModbusClient:
         self._register_failures: dict[str, int] = {}
         self._permanently_failed_registers: set[str] = set()
         self._unsupported_registers: set[str] = set()
+        self._batch_unsafe_registers: set[str] = set()
         self._model_info: IdmModelInfo | None = None
         self._last_eeprom_writes: dict[str, float] = {}
         self._cyclic_write_deadlines: dict[str, float] = {}
@@ -1220,6 +1225,7 @@ class IdmModbusClient:
             firmware=firmware,
             last_error=self._last_error_context.message if self._last_error_context else None,
             permanently_failed_registers=tuple(sorted(self._permanently_failed_registers)),
+            batch_unsafe_registers=tuple(sorted(self._batch_unsafe_registers)),
             connection_suspect=self._connection_suspect,
         )
 
@@ -1355,11 +1361,21 @@ class IdmModbusClient:
 
         await self._ensure_connected()
 
-        groups = self._group_registers(valid_regs)
+        batch_regs = [r for r in valid_regs if r.name not in self._batch_unsafe_registers]
+        individual_regs = [r for r in valid_regs if r.name in self._batch_unsafe_registers]
+
+        groups = self._group_registers(batch_regs) if batch_regs else []
         results: dict[str, Any] = {}
         for group in groups:
             group_res = await self._read_group(group, group[0].register_type)
             results.update(group_res)
+
+        # Once a batch response has violated a register's declared metadata,
+        # keep that register out of batches for this client session. This
+        # turns a detected controller/firmware quirk into a one-time recovery
+        # cost instead of accepting the same risk on every poll.
+        for reg in individual_regs:
+            results.update(await self._read_individual_fallback([reg], reg.register_type))
 
         return results
 
@@ -1370,9 +1386,9 @@ class IdmModbusClient:
         """Sort and group registers into contiguous chunks for batch reads.
 
         Registers are grouped by type (input/holding) and then merged into
-        contiguous chunks when the gap between them is small enough. Sorting
-        once by ``(register_type, address)`` avoids the previous two-pass split
-        and keeps the grouping logic in one place.
+        contiguous chunks only when their address ranges touch. Sorting once
+        by ``(register_type, address)`` avoids the previous two-pass split and
+        keeps the grouping logic in one place.
         """
         sorted_regs = sorted(regs, key=lambda r: (r.register_type.value, r.address))
         groups: list[list[RegisterDef]] = []
@@ -1455,9 +1471,10 @@ class IdmModbusClient:
         # reads return correct values. Re-read any register whose decoded value
         # falls outside its declared valid range to recover the real value.
         if suspect_regs:
+            self._batch_unsafe_registers.update(reg.name for reg in suspect_regs)
             _LOGGER.debug(
                 "Batch read at address %d returned %d suspect value(s); "
-                "re-reading individually: %s",
+                "quarantining and re-reading individually: %s",
                 start,
                 len(suspect_regs),
                 [r.name for r in suspect_regs],
@@ -1475,6 +1492,8 @@ class IdmModbusClient:
         ``enum_options`` or ``min_val``/``max_val`` are never flagged.
         """
         if value is None or isinstance(value, bool):
+            return False
+        if value in reg.sentinel_values:
             return False
         if reg.enum_options is not None:
             if value not in reg.enum_options:
@@ -1498,7 +1517,16 @@ class IdmModbusClient:
         for reg in group:
             try:
                 registers = await self._read_registers(reg.address, reg.size, reg_type)
-                data[reg.name] = self.decode_value(registers, reg)
+                value = self.decode_value(registers, reg)
+                if self._is_value_suspect(reg, value):
+                    _LOGGER.warning(
+                        "Register %s (address %d) returned an invalid value during "
+                        "individual validation; omitting it from this update",
+                        reg.name,
+                        reg.address,
+                    )
+                    continue
+                data[reg.name] = value
                 self._register_failures.pop(reg.name, None)
             except ConnectionException:
                 _LOGGER.warning(
@@ -1582,3 +1610,12 @@ class IdmModbusClient:
         needless Modbus traffic.
         """
         return tuple(sorted(self._unsupported_registers))
+
+    def get_batch_unsafe_registers(self) -> tuple[str, ...]:
+        """Return registers quarantined from grouped reads for this session.
+
+        A register enters this set when a grouped response violates its enum
+        or numeric range metadata. It remains readable, but subsequent
+        :meth:`read_batch` calls fetch it individually.
+        """
+        return tuple(sorted(self._batch_unsafe_registers))

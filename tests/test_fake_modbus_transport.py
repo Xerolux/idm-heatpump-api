@@ -193,7 +193,19 @@ def test_batch_groups_split_by_gap_and_size_limits() -> None:
     client = IdmModbusClient("127.0.0.1")
     groups = client._group_registers(registers)
 
-    assert [[reg.name for reg in group] for group in groups] == [["a", "b"], ["c"]]
+    assert [[reg.name for reg in group] for group in groups] == [["a"], ["b"], ["c"]]
+
+
+def test_batch_groups_do_not_span_unrequested_addresses() -> None:
+    client = IdmModbusClient("127.0.0.1")
+    registers = [
+        RegisterDef(1000, DataType.FLOAT, "temperature"),
+        RegisterDef(1003, DataType.UCHAR, "mode"),
+    ]
+
+    groups = client._group_registers(registers)
+
+    assert [[reg.name for reg in group] for group in groups] == [["temperature"], ["mode"]]
 
 
 def test_sentinel_and_non_finite_values_are_decoded_safely() -> None:
@@ -275,6 +287,37 @@ def test_batch_read_re_reads_suspect_enum_values() -> None:
     assert ("input", 2007, 1) in transport.read_calls
 
 
+def test_suspect_register_is_quarantined_from_later_batch_reads() -> None:
+    client = IdmModbusClient("127.0.0.1", max_retries=1)
+    mode = RegisterDef(
+        1001,
+        DataType.UCHAR,
+        "mode",
+        enum_options={0: "off", 1: "on"},
+    )
+    relay = RegisterDef(1002, DataType.UCHAR, "relay")
+    transport = FakeModbusTransport(
+        input_registers={1001: 1, 1002: 0},
+        short_reads={("input", 1001, 2): [255, 0]},
+    )
+    client._client = transport  # type: ignore[assignment]
+
+    assert asyncio.run(client.read_batch([mode, relay])) == {"mode": 1, "relay": 0}
+    assert client.get_batch_unsafe_registers() == ("mode",)
+
+    transport.read_calls.clear()
+    assert asyncio.run(client.read_batch([mode, relay])) == {"relay": 0, "mode": 1}
+    assert transport.read_calls == [("input", 1002, 1), ("input", 1001, 1)]
+
+
+def test_invalid_individual_value_is_not_exposed() -> None:
+    client = IdmModbusClient("127.0.0.1", max_retries=1)
+    humidity = RegisterDef(1392, DataType.UCHAR, "humidity_sensor", min_val=0, max_val=100)
+    client._client = FakeModbusTransport(input_registers={1392: 188})  # type: ignore[assignment]
+
+    assert asyncio.run(client._read_individual_fallback([humidity])) == {}
+
+
 def test_is_value_suspect_detects_out_of_range_enum() -> None:
     reg = RegisterDef(
         1,
@@ -296,6 +339,9 @@ def test_is_value_suspect_detects_out_of_range_bounds() -> None:
     assert IdmModbusClient._is_value_suspect(no_constraints, 255) is False
     assert IdmModbusClient._is_value_suspect(no_constraints, 0) is False
 
+    sentinel = RegisterDef(1, DataType.UCHAR, "optional", max_val=100, sentinel_values=(255,))
+    assert IdmModbusClient._is_value_suspect(sentinel, 255) is False
+
 
 def test_is_value_suspect_ignores_none_and_bool() -> None:
     reg = RegisterDef(
@@ -310,18 +356,18 @@ def test_is_value_suspect_ignores_none_and_bool() -> None:
 
 
 def test_max_group_size_is_configurable() -> None:
-    client = IdmModbusClient("127.0.0.1", max_group_size=10)
-    assert client._max_group_size == 10
+    client = IdmModbusClient("127.0.0.1", max_group_size=2)
+    assert client._max_group_size == 2
 
     registers = [
         RegisterDef(1000, DataType.UCHAR, "a"),
-        RegisterDef(1011, DataType.UCHAR, "b"),
-        RegisterDef(1013, DataType.UCHAR, "c"),
+        RegisterDef(1001, DataType.UCHAR, "b"),
+        RegisterDef(1002, DataType.UCHAR, "c"),
     ]
     groups = client._group_registers(registers)
     assert len(groups) == 2
-    assert [reg.name for reg in groups[0]] == ["a"]
-    assert [reg.name for reg in groups[1]] == ["b", "c"]
+    assert [reg.name for reg in groups[0]] == ["a", "b"]
+    assert [reg.name for reg in groups[1]] == ["c"]
 
 
 def test_default_max_group_size_is_40() -> None:

@@ -62,12 +62,20 @@ def test_read_batch_groups_registers_efficiently() -> None:
     assert len(registers) > 10
     readable_registers = [r for r in registers if not r.write_only]
 
-    # Provide deterministic values for all input registers so batch reads succeed.
+    # Provide deterministic valid values for all input registers so range
+    # validation does not intentionally quarantine the fixture data.
     input_values: dict[int, int] = {}
+    codec = IdmModbusClient("127.0.0.1")
     for reg in registers:
         if reg.register_type.value == "input":
-            for offset in range(reg.size):
-                input_values[reg.address + offset] = 0
+            if reg.enum_options:
+                value: float | int = next(iter(reg.enum_options))
+            elif reg.min_val is not None:
+                value = reg.min_val
+            else:
+                value = 0
+            for offset, raw in enumerate(codec.encode_value(value, reg)):
+                input_values[reg.address + offset] = raw
 
     transport = FakeModbusTransport(input_registers=input_values)
     client = IdmModbusClient("127.0.0.1")

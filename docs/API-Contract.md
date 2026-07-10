@@ -34,6 +34,20 @@ batch fallback. It excludes registers that became permanently failed only after
 repeated transient errors. The result is retained for the lifetime of the
 client and is cleared by `reset_failed_registers()`.
 
+### Batch-read safety query
+
+`IdmModbusClient.get_batch_unsafe_registers()` returns a sorted tuple of
+register names whose grouped response violated declared enum or numeric-range
+metadata. Those registers remain readable, but the client fetches them
+individually for the rest of its lifetime. `IdmClientDiagnostics` exposes the
+same names as `batch_unsafe_registers`.
+
+Grouped reads only combine register definitions whose address ranges touch;
+they never span unrequested address gaps. A suspect grouped value is recovered
+with an individual read, and that recovery value is validated again before it
+is returned to the consumer. Documented `sentinel_values` remain valid during
+both checks.
+
 Imports from implementation modules such as `idm_heatpump.client` and
 `idm_heatpump.registers` are tolerated for internal tests and local debugging,
 but they are not the preferred consumer contract.

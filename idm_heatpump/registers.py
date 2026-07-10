@@ -1663,6 +1663,8 @@ def _build_register_map_impl(
         datatype=DataType.UCHAR,
         name="humidity_sensor",
         unit="%",
+        min_val=0,
+        max_val=100,
         state_class="measurement",
     )
 

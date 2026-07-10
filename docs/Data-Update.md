@@ -9,7 +9,8 @@ Die Integration verwendet Modbus TCP, um Registerdaten direkt von der IDM Wärme
 Die Integration nutzt den **DataUpdateCoordinator** von Home Assistant:
 
 - Alle Entitäten teilen sich **eine gemeinsame Abfrage** pro Polling-Zyklus
-- Modbus-Register werden in **Batches von bis zu 30 aufeinanderfolgenden Adressen** gelesen, um die Anzahl der Netzwerkanfragen zu minimieren
+- Modbus-Register werden in **Batches von bis zu 40 lückenlos aufeinanderfolgenden Adressen** gelesen, um die Anzahl der Netzwerkanfragen zu minimieren
+- Unplausible Batch-Werte werden einzeln nachgelesen und validiert; betroffene Register verbleiben danach für die laufende Verbindung im sicheren Einzelabruf
 - Der Coordinator aktualisiert alle Entitäten gleichzeitig nach jeder erfolgreichen Abfrage
 
 ## Konfiguriertes Intervall
