@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Do not report unconfigured Navigator heating-circuit slots as active when
+  their responding flow-temperature register contains the documented `-1.0`
+  unavailable sentinel.
+
+## [0.7.2] - 2026-07-10
+
+### Fixed
+
 - Stop grouped Modbus reads from spanning unrequested address gaps, quarantine
   registers whose batch values violate their declared range or enum metadata,
   and validate the individual recovery value before exposing it.

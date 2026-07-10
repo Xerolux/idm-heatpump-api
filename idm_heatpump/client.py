@@ -63,6 +63,7 @@ _PMODBUS_RECONNECT_DELAY_MAX = 10.0
 
 _DETECT_HC_FLOW_BASE = 1350
 _DETECT_HC_STEP = 2
+_DETECT_HC_FLOW_UNAVAILABLE = -1.0
 _DETECT_ZONE_MODULE_BASE = 2000
 _DETECT_ZONE_MODULE_STEP = 65
 _DETECT_EMPTY_SLOT_STOP_THRESHOLD = 2
@@ -921,10 +922,15 @@ class IdmModbusClient:
             addr = _DETECT_HC_FLOW_BASE + i * _DETECT_HC_STEP
             regs = await self._probe_model_register(addr, 2)
             val = self._probe_float_value(regs, min_val=-50.0, max_val=80.0)
-            if val is not None:
+            # Navigator controllers return -1.0 for the flow-temperature
+            # register of an unconfigured heating-circuit slot. The register
+            # still responds, so treating every two-word response as active
+            # incorrectly reports all seven possible circuits on such units.
+            unavailable = val == _DETECT_HC_FLOW_UNAVAILABLE
+            if val is not None and not unavailable:
                 active_circuits.append(HEATING_CIRCUIT_LETTERS[i])
                 missing_circuit_slots = 0
-            elif regs is not None and len(regs) == 2:
+            elif regs is not None and len(regs) == 2 and not unavailable:
                 # Registers responded but value was out-of-range or not decodable;
                 # treat the heating circuit slot as active anyway.
                 active_circuits.append(HEATING_CIRCUIT_LETTERS[i])

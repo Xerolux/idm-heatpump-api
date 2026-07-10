@@ -139,6 +139,28 @@ def test_detect_model_ignores_incomplete_probe_responses() -> None:
     assert model_info.firmware_version is None
 
 
+def test_detect_model_ignores_unavailable_heating_circuit_sentinel() -> None:
+    """A responding -1.0 flow register means an unconfigured circuit slot."""
+    unavailable_flow = ModbusCodec.encode_float32(-1.0)
+    client = ProbeOnlyClient(
+        {
+            (1350, 2): ModbusCodec.encode_float32(27.12),
+            (1352, 2): unavailable_flow,
+            (1354, 2): unavailable_flow,
+            (1356, 2): unavailable_flow,
+            (1358, 2): unavailable_flow,
+            (1360, 2): unavailable_flow,
+            (1362, 2): unavailable_flow,
+        }
+    )
+
+    model_info = asyncio.run(client.detect_model())
+
+    assert model_info.active_heating_circuits == ["A"]
+    assert (1352, 2) in client.probe_calls
+    assert (1356, 2) not in client.probe_calls
+
+
 def test_detect_model_navigator_20_with_heat_sink_flow_rate() -> None:
     """Address 1072 alone must not classify a Navigator 2.0 as Navigator 10.
 
