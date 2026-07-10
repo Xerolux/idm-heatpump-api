@@ -60,6 +60,7 @@ DEFAULT_CYCLIC_WRITE_TTL = 300.0
 _PMODBUS_RETRIES_DEFAULT = 0
 _PMODBUS_RECONNECT_DELAY = 0.5
 _PMODBUS_RECONNECT_DELAY_MAX = 10.0
+_TRANSPORT_ERRORS = (ConnectionException, ModbusIOException, OSError, TimeoutError)
 
 _DETECT_HC_FLOW_BASE = 1350
 _DETECT_HC_STEP = 2
@@ -609,7 +610,7 @@ class IdmModbusClient:
                     result = await command()
                     self._connection_suspect = False
                     return result
-                except (ConnectionException, ModbusIOException, OSError, TimeoutError) as err:
+                except _TRANSPORT_ERRORS as err:
                     # ``ModbusIOException`` is pymodbus's timeout/no-response
                     # exception. Although it derives from ModbusException, it
                     # means the TCP session may be stale just like a socket
@@ -951,7 +952,9 @@ class IdmModbusClient:
         if cascade_regs is not None and len(cascade_regs) == 1:
             # Register 1147 only exists on cascade-capable controllers. A value
             # of 0 can simply mean "cascade present but not active right now".
-            has_cascade = True
+            # Controllers without cascade support can still answer the probe
+            # with the UCHAR unavailable sentinel 255 (raw word 0xFFFF).
+            has_cascade = (cascade_regs[0] & 0xFF) != 255
 
         features: set[str] = set()
         if active_circuits:
@@ -1160,9 +1163,25 @@ class IdmModbusClient:
         registers = await self._read_registers(reg.address, reg.size, reg.register_type)
         return self.decode_value(registers, reg)
 
-    async def write_register(self, reg: RegisterDef, value: Any) -> None:
-        """Write a single register after validation, auto-connecting if needed."""
-        plan = self.simulate_write(reg, value)
+    async def write_register(
+        self,
+        reg: RegisterDef,
+        value: Any,
+        *,
+        allow_custom_register: bool = False,
+    ) -> None:
+        """Write a single register after validation, auto-connecting if needed.
+
+        ``allow_custom_register`` skips only detected-model map membership for
+        an explicitly constructed register. Datatype, numeric and write
+        metadata validation still apply. Consumers must expose this only behind
+        an explicit advanced-user risk acknowledgement.
+        """
+        plan = self.simulate_write(
+            reg,
+            value,
+            allow_custom_register=allow_custom_register,
+        )
         await self._ensure_connected()
         await self._write_registers(reg.address, list(plan.encoded_registers))
         self._record_successful_write(reg)
@@ -1188,12 +1207,17 @@ class IdmModbusClient:
         value: Any,
         *,
         dry_run: bool = True,
+        allow_custom_register: bool = False,
     ) -> WriteSafetyResult:
         """Validate and encode a write without necessarily sending it."""
         register = self._get_register_by_key(reg) if isinstance(reg, str) else reg
         if not register.writable:
             raise ValueError(f"Register '{register.name}' is read-only")
-        self._validate_write_allowed(register, value)
+        self._validate_write_allowed(
+            register,
+            value,
+            validate_model=not allow_custom_register,
+        )
         encoded = tuple(self.encode_value(value, register))
         return WriteSafetyResult(register, value, encoded, dry_run=dry_run)
 
@@ -1220,8 +1244,15 @@ class IdmModbusClient:
         except ValueError as exc:
             raise KeyError(f"Unknown IDM register key: {key}") from exc
 
-    def _validate_write_allowed(self, reg: RegisterDef, value: Any) -> None:
-        self._validate_model_availability(reg)
+    def _validate_write_allowed(
+        self,
+        reg: RegisterDef,
+        value: Any,
+        *,
+        validate_model: bool = True,
+    ) -> None:
+        if validate_model:
+            self._validate_model_availability(reg)
 
         numeric_value: float | None = None
         if reg.datatype is DataType.BOOL:
@@ -1413,8 +1444,8 @@ class IdmModbusClient:
 
         try:
             registers = await self._read_registers(start, count, reg_type)
-        except ConnectionException:
-            _LOGGER.warning("Connection lost while reading group at address %d", start)
+        except _TRANSPORT_ERRORS:
+            _LOGGER.debug("Transport failed while reading group at address %d", start)
             raise
         except ModbusException as err:
             _LOGGER.debug(
@@ -1512,9 +1543,9 @@ class IdmModbusClient:
                     continue
                 data[reg.name] = value
                 self._register_failures.pop(reg.name, None)
-            except ConnectionException:
-                _LOGGER.warning(
-                    "Connection lost during individual read of %s (address %d)",
+            except _TRANSPORT_ERRORS:
+                _LOGGER.debug(
+                    "Transport failed during individual read of %s (address %d)",
                     reg.name,
                     reg.address,
                 )
@@ -1603,3 +1634,15 @@ class IdmModbusClient:
         :meth:`read_batch` calls fetch it individually.
         """
         return tuple(sorted(self._batch_unsafe_registers))
+
+    def mark_batch_unsafe(self, *registers: RegisterDef | str) -> None:
+        """Quarantine registers from grouped reads for this client session.
+
+        Consumers can use this when device-specific validation proves that a
+        plausible grouped value is wrong even though it remains inside the
+        register's declared enum or numeric range.
+        """
+        self._batch_unsafe_registers.update(
+            register.name if isinstance(register, RegisterDef) else register
+            for register in registers
+        )

@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Propagate exhausted transport and no-response failures from grouped and
+  individual fallback reads instead of treating them as register-specific
+  errors and potentially disabling otherwise valid registers.
+- Treat the hardware-verified value `255` at cascade capability register 1147
+  as unavailable during model detection instead of enabling an unsupported
+  cascade register block.
+
+### Added
+
+- Allow consumers to quarantine device-specific registers from grouped reads
+  after an external plausibility check detects a valid-looking but wrong batch
+  value.
+- Add an explicit `allow_custom_register` escape hatch for advanced raw writes.
+  It bypasses only detected-model map membership while retaining datatype,
+  numeric and write-metadata validation.
+
 ## [0.7.5] - 2026-07-10
 
 ### Fixed

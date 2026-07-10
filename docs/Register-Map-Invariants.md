@@ -181,9 +181,15 @@ normal adjacent, non-overlapping batches.
 | Battery state of charge | 86/1 | `FFFF` | `-1` |
 | Booster fault | 4001/1 | `FFFF` | `255` |
 | Humidity sensor B31 | 1392/2 | `0000 BF80` | `-1.0` |
+| Cascade available for heating | 1147/1 | `FFFF` | `255` |
 
 Twenty repeated comparisons of the initially reported five registers produced
 100 identical batch/individual pairs. A broader pass covered 170 register
 definitions in 45 API groups plus 144 repeated comparisons of constrained
 single-word values; no raw batch/individual mismatch was observed. These
 sentinels therefore represent unavailable data, not corrupt batch responses.
+The cascade capability probe additionally uses the verified `255` sentinel to
+avoid enabling and polling the optional cascade block on controllers that
+answer address 1147 but do not implement cascade operation. A decoded value of
+`0` remains a valid indication that cascade support exists but is currently
+inactive.

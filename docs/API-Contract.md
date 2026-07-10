@@ -42,11 +42,26 @@ metadata. Those registers remain readable, but the client fetches them
 individually for the rest of its lifetime. `IdmClientDiagnostics` exposes the
 same names as `batch_unsafe_registers`.
 
+`IdmModbusClient.mark_batch_unsafe(*registers)` provides the corresponding
+consumer-driven quarantine path. It accepts `RegisterDef` objects or canonical
+register names. This is intended for device-specific validation where a
+grouped value is syntactically valid but differs from a verified individual
+read; it does not persist across client instances.
+
 Grouped reads only combine register definitions whose address ranges touch;
 they never span unrequested address gaps. A suspect grouped value is recovered
 with an individual read, and that recovery value is validated again before it
 is returned to the consumer. Documented `sentinel_values` remain valid during
 both checks.
+
+### Explicit custom-register writes
+
+`simulate_write()` and `write_register()` reject ad-hoc `RegisterDef` objects
+that are absent from the detected model map by default. Advanced consumers may
+pass `allow_custom_register=True` only after an explicit user risk
+acknowledgement. This bypasses model-map membership alone; writable state,
+datatype, finite/integer rules, ranges, enums and excluded values remain
+validated. Normal entity writes must never enable this flag.
 
 Imports from implementation modules such as `idm_heatpump.client` and
 `idm_heatpump.registers` are tolerated for internal tests and local debugging,

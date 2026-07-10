@@ -50,7 +50,7 @@ Fur jeden aktivierten Heizkreis (A-G):
 
 ### Zonen-Sensoren
 
-For each activated zone module and room (Navigator 10 / current hardware: **6 rooms per zone module**):
+For each activated zone module and room (up to **8 configurable rooms**; 6 is the current Navigator 10 default):
 
 | Entity | Beschreibung |
 |--------|-------------|

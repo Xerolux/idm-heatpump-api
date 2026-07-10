@@ -9,7 +9,8 @@ import struct
 import pytest
 from pymodbus.exceptions import ConnectionException, ModbusException, ModbusIOException
 
-from idm_heatpump.client import DataType, IdmModbusClient, RegisterDef, RegisterType
+from idm_heatpump.client import DataType, IdmModbusClient, IdmModelInfo, RegisterDef, RegisterType
+from idm_heatpump.const import MODEL_NAVIGATOR_10
 
 from .fake_modbus import FakeModbusTransport
 
@@ -60,6 +61,28 @@ def test_fake_transport_reads_writes_and_float_byteorder() -> None:
     assert transport.write_calls == [(1200, [3])]
 
 
+def test_explicit_custom_register_write_keeps_encoding_validation() -> None:
+    client = IdmModbusClient("127.0.0.1")
+    client._model_info = IdmModelInfo(
+        model_name=MODEL_NAVIGATOR_10,
+        active_heating_circuits=["A"],
+        zone_modules=0,
+        has_solar=False,
+        has_isc=False,
+        has_pv=False,
+        has_cascade=False,
+    )
+    transport = FakeModbusTransport(holding_registers={1999: 0})
+    client._client = transport  # type: ignore[assignment]
+    custom = RegisterDef(1999, DataType.UINT16, "manual_1999", writable=True)
+
+    with pytest.raises(ValueError, match="not available for detected model"):
+        asyncio.run(client.write_register(custom, 42))
+    asyncio.run(client.write_register(custom, 42, allow_custom_register=True))
+
+    assert transport.write_calls == [(1999, [42])]
+
+
 def test_batch_read_falls_back_to_individual_reads_on_illegal_address() -> None:
     client = IdmModbusClient("127.0.0.1", max_retries=1)
     first_words = _float_words(client, 10.0)
@@ -86,6 +109,40 @@ def test_batch_read_falls_back_to_individual_reads_on_illegal_address() -> None:
         ("input", 1000, 2),
         ("input", 1002, 2),
     ]
+
+
+def test_group_transport_failure_is_not_misclassified_as_register_failure() -> None:
+    client = IdmModbusClient("127.0.0.1", max_retries=1)
+    transport = FakeModbusTransport(
+        input_registers={1000: 7, 1001: 8},
+        exception_reads={("input", 1000, 2): ModbusIOException("No response received")},
+    )
+    client._client = transport  # type: ignore[assignment]
+    registers = [
+        RegisterDef(1000, DataType.UCHAR, "first"),
+        RegisterDef(1001, DataType.UCHAR, "second"),
+    ]
+
+    with pytest.raises(ModbusIOException, match="No response received"):
+        asyncio.run(client._read_group(registers))
+
+    assert transport.read_calls == [("input", 1000, 2)]
+    assert client._register_failures == {}
+    assert client._permanently_failed_registers == set()
+
+
+def test_individual_transport_failure_does_not_disable_register() -> None:
+    client = IdmModbusClient("127.0.0.1", max_retries=1)
+    client._client = FakeModbusTransport(  # type: ignore[assignment]
+        exception_reads={("input", 1000, 1): ModbusIOException("No response received")}
+    )
+    register = RegisterDef(1000, DataType.UCHAR, "valid_register")
+
+    with pytest.raises(ModbusIOException, match="No response received"):
+        asyncio.run(client._read_individual_fallback([register]))
+
+    assert client._register_failures == {}
+    assert client._permanently_failed_registers == set()
 
 
 def test_incomplete_fake_response_raises_modbus_exception() -> None:
@@ -357,6 +414,20 @@ def test_suspect_register_is_quarantined_from_later_batch_reads() -> None:
     assert client.get_batch_unsafe_registers() == ("mode",)
 
     transport.read_calls.clear()
+    assert asyncio.run(client.read_batch([mode, relay])) == {"relay": 0, "mode": 1}
+    assert transport.read_calls == [("input", 1002, 1), ("input", 1001, 1)]
+
+
+def test_consumer_can_quarantine_valid_looking_batch_value() -> None:
+    client = IdmModbusClient("127.0.0.1", max_retries=1)
+    mode = RegisterDef(1001, DataType.UCHAR, "mode", enum_options={0: "off", 1: "on"})
+    relay = RegisterDef(1002, DataType.UCHAR, "relay")
+    transport = FakeModbusTransport(input_registers={1001: 1, 1002: 0})
+    client._client = transport  # type: ignore[assignment]
+
+    client.mark_batch_unsafe(mode)
+
+    assert client.get_batch_unsafe_registers() == ("mode",)
     assert asyncio.run(client.read_batch([mode, relay])) == {"relay": 0, "mode": 1}
     assert transport.read_calls == [("input", 1002, 1), ("input", 1001, 1)]
 

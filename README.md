@@ -38,9 +38,9 @@ This library is primarily designed to power the unofficial [IDM Heatpump Home As
 
 | Device | Firmware | Heating Circuits | Zone Modules | Status |
 |-------|----------|------------|-------------|--------|
-| IDM Navigator 10 | NAV10_20.23+ (2025) | up to 7 (A-G) | up to 10 (6 rooms each) | Confirmed |
-| IDM Navigator 2.0 | all versions | up to 7 (A-G) | no | Confirmed |
-| IDM Navigator Pro | all versions | up to 7 (A-G) | up to 10 (6 rooms each) | Confirmed |
+| IDM Navigator 10 | NAV10_20.23+ (2025) | up to 7 (A-G) | up to 10 (6 default, 8 configurable) | Maintainer-confirmed |
+| IDM Navigator 2.0 | firmware-dependent | up to 7 (A-G) | firmware-dependent | Expected; needs broader raw detection captures |
+| IDM Navigator Pro | firmware-dependent | up to 7 (A-G) | up to 10 (8 configurable) | Expected; needs complete diagnostics |
 
 ## Requirements
 
@@ -110,6 +110,12 @@ The library provides fine-grained control for advanced scenarios:
   includes registers that merely failed repeatedly for a transient reason.
 - `client.get_batch_unsafe_registers()`: Return registers that produced an invalid
   grouped value and are therefore read individually for the rest of the client session.
+- `client.mark_batch_unsafe(register)`: Force a register into that session-local
+  individual-read path when an external plausibility check detects a valid-looking
+  but incorrect grouped value.
+- `client.write_register(custom_reg, value, allow_custom_register=True)`: Explicit
+  advanced escape hatch for user-authorized raw writes. Model-map membership is
+  skipped, but datatype and value safety validation remains active.
 
 Register metadata for HA integration mapping:
 
@@ -251,7 +257,7 @@ The library fully covers the official 2025 Navigator 10 Modbus TCP specification
 - Complete Booster A + B (second heat generator) monitoring
 - Additional source pump faults and external pump demand control
 - Groundwater temperatures and more cascade bivalence points
-- All zone module rooms (6 rooms per module on current hardware)
+- Up to 8 configurable rooms per zone module (6 is the current Navigator 10 default)
 - PV / energy management, solar thermal, and ISC (Intelligent Surface Cooling)
 - Cascade temperatures and bivalence points
 
