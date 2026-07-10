@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.4] - 2026-07-10
+
 ### Fixed
 
 - Restore the official Navigator 2.0/10 heating-circuit addresses and decode
