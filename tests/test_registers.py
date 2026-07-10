@@ -437,6 +437,8 @@ def test_humidity_sensor_does_not_overlap_heating_circuit_mode() -> None:
     regs = build_register_map(circuits=list("ABCDEFG"))
     assert regs["humidity_sensor"].address == 1392
     assert regs["humidity_sensor"].size == 1
+    assert regs["humidity_sensor"].min_val == 0
+    assert regs["humidity_sensor"].max_val == 100
     assert regs["hc_a_mode"].address == 1393
 
 

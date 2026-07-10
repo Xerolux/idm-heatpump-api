@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Stop grouped Modbus reads from spanning unrequested address gaps, quarantine
+  registers whose batch values violate their declared range or enum metadata,
+  and validate the individual recovery value before exposing it.
+- Define the physical 0-100 % range for `humidity_sensor`, preventing corrupt
+  batch values from reaching consumers.
+
+### Added
+
+- Expose batch-quarantined register names through client diagnostics and
+  `get_batch_unsafe_registers()`.
+
 ## [0.7.1] - 2026-07-09
 
 ### Security

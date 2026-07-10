@@ -107,6 +107,8 @@ The library provides fine-grained control for advanced scenarios:
   the controller with Modbus exception code 2 ("Illegal Data Address"). This is
   useful for consumers that maintain their own polling skip-list; it never
   includes registers that merely failed repeatedly for a transient reason.
+- `client.get_batch_unsafe_registers()`: Return registers that produced an invalid
+  grouped value and are therefore read individually for the rest of the client session.
 
 Register metadata for HA integration mapping:
 
