@@ -142,6 +142,10 @@ pressure values, board temperature, central-unit battery voltage, and the
 controller software version. The optional `idm_heatpump.web` module is read-only
 and is intended to run alongside the Modbus client.
 
+See [`docs/Navigator-Protocol-Analysis.md`](docs/Navigator-Protocol-Analysis.md)
+for the validated local transport boundary, reverse-engineering evidence and
+explicitly unsupported protocol areas.
+
 Install the optional dependency when using the web client:
 
 ```bash
