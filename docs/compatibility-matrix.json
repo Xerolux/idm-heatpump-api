@@ -90,6 +90,12 @@
       "hass_integration_version": "0.8.1-beta.23",
       "status": "api-prepared",
       "notes": "Ignores documented -1.0 flow-temperature sentinels for unconfigured Navigator heating-circuit slots during model detection."
+    },
+    {
+      "api_version": "0.7.4",
+      "hass_integration_version": "pending",
+      "status": "api-prepared",
+      "notes": "Restores the documented Navigator register map and humidity float decoding, and reconnects after pymodbus no-response errors."
     }
   ]
 }

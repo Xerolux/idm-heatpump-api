@@ -1346,7 +1346,7 @@ def get_heating_circuit_registers(
         eeprom_sensitive=True,
     )
     regs[f"hc_{c}_heating_limit"] = RegisterDef(
-        address=1443 + idx,
+        address=1442 + idx,
         datatype=DataType.UCHAR,
         name=f"hc_{c}_heating_limit",
         unit="°C",
@@ -1356,7 +1356,7 @@ def get_heating_circuit_registers(
         eeprom_sensitive=True,
     )
     regs[f"hc_{c}_setpoint_flow_constant"] = RegisterDef(
-        address=1450 + idx,
+        address=1449 + idx,
         datatype=DataType.UCHAR,
         name=f"hc_{c}_setpoint_flow_constant",
         unit="°C",
@@ -1386,7 +1386,7 @@ def get_heating_circuit_registers(
         eeprom_sensitive=True,
     )
     regs[f"hc_{c}_cooling_limit"] = RegisterDef(
-        address=1485 + idx,
+        address=1484 + idx,
         datatype=DataType.UCHAR,
         name=f"hc_{c}_cooling_limit",
         unit="°C",
@@ -1396,7 +1396,7 @@ def get_heating_circuit_registers(
         eeprom_sensitive=True,
     )
     regs[f"hc_{c}_setpoint_flow_cooling"] = RegisterDef(
-        address=1492 + idx,
+        address=1491 + idx,
         datatype=DataType.UCHAR,
         name=f"hc_{c}_setpoint_flow_cooling",
         unit="°C",
@@ -1406,13 +1406,13 @@ def get_heating_circuit_registers(
         eeprom_sensitive=True,
     )
     regs[f"hc_{c}_active_mode"] = RegisterDef(
-        address=1499 + idx,
+        address=1498 + idx,
         datatype=DataType.UCHAR,
         name=f"hc_{c}_active_mode",
         enum_options=ACTIVE_HC_MODE_OPTIONS,
     )
     regs[f"hc_{c}_parallel_shift"] = RegisterDef(
-        address=1506 + idx,
+        address=1505 + idx,
         datatype=DataType.UCHAR,
         name=f"hc_{c}_parallel_shift",
         unit="°C",
@@ -1660,7 +1660,7 @@ def _build_register_map_impl(
     )
     all_regs["humidity_sensor"] = RegisterDef(
         address=1392,
-        datatype=DataType.UCHAR,
+        datatype=DataType.FLOAT,
         name="humidity_sensor",
         unit="%",
         min_val=0,

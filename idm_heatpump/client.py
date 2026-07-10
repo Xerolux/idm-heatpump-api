@@ -14,7 +14,7 @@ from typing import Any, Awaitable, Callable, ClassVar, TypeVar
 
 import pymodbus
 from pymodbus.client import AsyncModbusTcpClient
-from pymodbus.exceptions import ConnectionException, ModbusException
+from pymodbus.exceptions import ConnectionException, ModbusException, ModbusIOException
 
 from .const import (
     DEFAULT_TIMEOUT,
@@ -43,8 +43,8 @@ _T = TypeVar("_T")
 
 # IDM firmware variants have returned shifted or otherwise inconsistent values
 # when a single Modbus request spans addresses that are not part of the
-# requested register map.  Only merge registers whose address ranges touch.
-_MAX_GROUP_GAP = 0
+# requested register map. Some officially documented data points also overlap
+# at range boundaries, so batches must be contiguous *and* non-overlapping.
 _MAX_GROUP_SIZE = 40
 _PERMANENT_FAILURE_THRESHOLD = 3
 DEFAULT_EEPROM_WRITE_INTERVAL = 60.0
@@ -463,7 +463,8 @@ class IdmModbusClient:
         self._last_error_context: ModbusErrorContext | None = None
         self._eeprom_write_interval = DEFAULT_EEPROM_WRITE_INTERVAL
         self._time = time.monotonic
-        # Set to True after any IO failure (ConnectionException/OSError). The
+        # Set to True after any IO failure (ConnectionException,
+        # ModbusIOException, or OSError). The
         # next _ensure_connected() then closes the (possibly half-open) socket
         # and reconnects hard, instead of trusting pymodbus's .connected flag
         # which stays True after the remote end silently drops the TCP link.
@@ -608,7 +609,12 @@ class IdmModbusClient:
                     result = await command()
                     self._connection_suspect = False
                     return result
-                except ConnectionException as err:
+                except (ConnectionException, ModbusIOException, OSError, TimeoutError) as err:
+                    # ``ModbusIOException`` is pymodbus's timeout/no-response
+                    # exception. Although it derives from ModbusException, it
+                    # means the TCP session may be stale just like a socket
+                    # reset, so it must use the hard-reconnect path rather
+                    # than retrying on the same connection.
                     self._connection_suspect = True
                     self._record_error_context(
                         operation,
@@ -685,35 +691,6 @@ class IdmModbusClient:
                         retries,
                         err,
                     )
-                    await asyncio.sleep(RETRY_BACKOFF_BASE * (2**attempt))
-                except (OSError, TimeoutError) as err:
-                    self._connection_suspect = True
-                    self._record_error_context(
-                        operation,
-                        address,
-                        count,
-                        reg_type,
-                        err,
-                        attempt + 1,
-                    )
-                    if attempt == retries - 1:
-                        _LOGGER.warning(
-                            "Modbus %s at address %d failed after %d attempts: %s",
-                            operation,
-                            address,
-                            retries,
-                            err,
-                        )
-                        raise
-                    _LOGGER.debug(
-                        "Modbus %s at address %d failed (attempt %d/%d): %s; retrying",
-                        operation,
-                        address,
-                        attempt + 1,
-                        retries,
-                        err,
-                    )
-                    await self._try_reconnect()
                     await asyncio.sleep(RETRY_BACKOFF_BASE * (2**attempt))
         raise RuntimeError("Unreachable: max_retries validated to be >= 1")
 
@@ -1392,9 +1369,10 @@ class IdmModbusClient:
         """Sort and group registers into contiguous chunks for batch reads.
 
         Registers are grouped by type (input/holding) and then merged into
-        contiguous chunks only when their address ranges touch. Sorting once
-        by ``(register_type, address)`` avoids the previous two-pass split and
-        keeps the grouping logic in one place.
+        contiguous chunks only when their address ranges touch without
+        overlapping. The official IDM map contains logical data points whose
+        ranges overlap at block boundaries; those must be separate requests
+        so each data point is read with its documented start address and size.
         """
         sorted_regs = sorted(regs, key=lambda r: (r.register_type.value, r.address))
         groups: list[list[RegisterDef]] = []
@@ -1412,7 +1390,7 @@ class IdmModbusClient:
 
             expected_next = last.address + last.size
             if (
-                reg.address <= expected_next + _MAX_GROUP_GAP
+                reg.address == expected_next
                 and (reg.address + reg.size - first.address) <= self._max_group_size
             ):
                 current_group.append(reg)

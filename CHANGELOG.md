@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.4] - 2026-07-10
+
+### Fixed
+
+- Restore the official Navigator 2.0/10 heating-circuit addresses and decode
+  `humidity_sensor` at address 1392 as a two-register IEEE-754 float. The
+  previous overlap-normalization changed documented addresses and exposed the
+  humidity float's low byte as a 0-255 percentage value.
+- Split overlapping logical register ranges into separate Modbus requests so
+  each IDM data point is read with its documented start address and size.
+- Treat pymodbus `ModbusIOException` no-response failures as connection
+  failures: close the potentially stale TCP socket, reconnect, and retry the
+  interrupted request instead of repeatedly using the same dead session.
+
+### Documentation
+
+- Add mandatory agent guidance and a source-backed register-map invariants
+  reference covering Navigator 1.x isolation, Navigator 2.0/10 overlaps,
+  encoding, batching, function-code evidence, and write safety.
+
 ## [0.7.3] - 2026-07-10
 
 ### Fixed
