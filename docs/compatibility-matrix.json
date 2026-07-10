@@ -84,6 +84,12 @@
       "hass_integration_version": "0.8.1-beta.23",
       "status": "api-prepared",
       "notes": "Hardens Navigator 10/2.0/Pro batch reads: never spans unrequested address gaps, validates recovery reads, quarantines suspect registers, preserves documented sentinel values, and bounds humidity to 0-100%."
+    },
+    {
+      "api_version": "0.7.3",
+      "hass_integration_version": "0.8.1-beta.23",
+      "status": "api-prepared",
+      "notes": "Ignores documented -1.0 flow-temperature sentinels for unconfigured Navigator heating-circuit slots during model detection."
     }
   ]
 }

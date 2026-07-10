@@ -153,3 +153,5 @@ an explicit integration compatibility entry in
 | 0.4.1 | 0.8.0-beta.7 | Beta integration line consumes optional web supplement and faster model detection |
 | 0.3.7 | 0.7.3 | Tested baseline for Navigator 2.0 filtering and Navigator 10 register map |
 | 0.7.0 | pending | Adds the stable unsupported-register query for consumers that maintain their own polling skip-list. |
+| 0.7.2 | 0.8.1-beta.23 | Hardens batch reads and validates suspect register values. |
+| 0.7.3 | 0.8.1-beta.23 | Ignores unavailable heating-circuit slot sentinels during model detection. |
