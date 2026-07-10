@@ -14,7 +14,7 @@ from typing import Any, Awaitable, Callable, ClassVar, TypeVar
 
 import pymodbus
 from pymodbus.client import AsyncModbusTcpClient
-from pymodbus.exceptions import ConnectionException, ModbusException
+from pymodbus.exceptions import ConnectionException, ModbusException, ModbusIOException
 
 from .const import (
     DEFAULT_TIMEOUT,
@@ -463,7 +463,8 @@ class IdmModbusClient:
         self._last_error_context: ModbusErrorContext | None = None
         self._eeprom_write_interval = DEFAULT_EEPROM_WRITE_INTERVAL
         self._time = time.monotonic
-        # Set to True after any IO failure (ConnectionException/OSError). The
+        # Set to True after any IO failure (ConnectionException,
+        # ModbusIOException, or OSError). The
         # next _ensure_connected() then closes the (possibly half-open) socket
         # and reconnects hard, instead of trusting pymodbus's .connected flag
         # which stays True after the remote end silently drops the TCP link.
@@ -608,7 +609,12 @@ class IdmModbusClient:
                     result = await command()
                     self._connection_suspect = False
                     return result
-                except ConnectionException as err:
+                except (ConnectionException, ModbusIOException, OSError, TimeoutError) as err:
+                    # ``ModbusIOException`` is pymodbus's timeout/no-response
+                    # exception. Although it derives from ModbusException, it
+                    # means the TCP session may be stale just like a socket
+                    # reset, so it must use the hard-reconnect path rather
+                    # than retrying on the same connection.
                     self._connection_suspect = True
                     self._record_error_context(
                         operation,
@@ -685,35 +691,6 @@ class IdmModbusClient:
                         retries,
                         err,
                     )
-                    await asyncio.sleep(RETRY_BACKOFF_BASE * (2**attempt))
-                except (OSError, TimeoutError) as err:
-                    self._connection_suspect = True
-                    self._record_error_context(
-                        operation,
-                        address,
-                        count,
-                        reg_type,
-                        err,
-                        attempt + 1,
-                    )
-                    if attempt == retries - 1:
-                        _LOGGER.warning(
-                            "Modbus %s at address %d failed after %d attempts: %s",
-                            operation,
-                            address,
-                            retries,
-                            err,
-                        )
-                        raise
-                    _LOGGER.debug(
-                        "Modbus %s at address %d failed (attempt %d/%d): %s; retrying",
-                        operation,
-                        address,
-                        attempt + 1,
-                        retries,
-                        err,
-                    )
-                    await self._try_reconnect()
                     await asyncio.sleep(RETRY_BACKOFF_BASE * (2**attempt))
         raise RuntimeError("Unreachable: max_retries validated to be >= 1")
 

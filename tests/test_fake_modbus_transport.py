@@ -7,7 +7,7 @@ import math
 import struct
 
 import pytest
-from pymodbus.exceptions import ConnectionException, ModbusException
+from pymodbus.exceptions import ConnectionException, ModbusException, ModbusIOException
 
 from idm_heatpump.client import DataType, IdmModbusClient, RegisterDef, RegisterType
 
@@ -162,6 +162,22 @@ def test_os_error_triggers_reconnect() -> None:
     client._client = failing  # type: ignore[assignment]
 
     assert asyncio.run(client._read_registers(1000, 1)) == [7]
+
+
+def test_modbus_io_exception_triggers_hard_reconnect() -> None:
+    """A pymodbus no-response error must not retry on the stale socket."""
+    failing = FakeModbusTransport(
+        exception_reads={
+            ("input", 1000, 1): ModbusIOException("No response received after 0 retries")
+        }
+    )
+    working = FakeModbusTransport(input_registers={1000: 7})
+    client = ReconnectingClient([working])
+    client._client = failing  # type: ignore[assignment]
+
+    assert asyncio.run(client._read_registers(1000, 1)) == [7]
+    assert failing.connected is False
+    assert working.read_calls == [("input", 1000, 1)]
 
 
 def test_write_error_context_is_redacted_and_omits_written_values() -> None:

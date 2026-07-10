@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   humidity float's low byte as a 0-255 percentage value.
 - Split overlapping logical register ranges into separate Modbus requests so
   each IDM data point is read with its documented start address and size.
+- Treat pymodbus `ModbusIOException` no-response failures as connection
+  failures: close the potentially stale TCP socket, reconnect, and retry the
+  interrupted request instead of repeatedly using the same dead session.
 
 ### Documentation
 
