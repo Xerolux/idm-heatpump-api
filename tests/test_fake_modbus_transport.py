@@ -208,6 +208,41 @@ def test_batch_groups_do_not_span_unrequested_addresses() -> None:
     assert [[reg.name for reg in group] for group in groups] == [["temperature"], ["mode"]]
 
 
+def test_batch_groups_split_official_overlapping_data_points() -> None:
+    """IDM data points that overlap at a boundary require exact separate reads."""
+    client = IdmModbusClient("127.0.0.1")
+    registers = [
+        RegisterDef(1390, DataType.FLOAT, "hc_g_setpoint_flow_temp"),
+        RegisterDef(1392, DataType.FLOAT, "humidity_sensor"),
+        RegisterDef(1393, DataType.UCHAR, "hc_a_mode"),
+        RegisterDef(1394, DataType.UCHAR, "hc_b_mode"),
+    ]
+
+    groups = client._group_registers(registers)
+
+    assert [[reg.name for reg in group] for group in groups] == [
+        ["hc_g_setpoint_flow_temp", "humidity_sensor"],
+        ["hc_a_mode", "hc_b_mode"],
+    ]
+
+
+def test_batch_read_uses_exact_requests_for_overlapping_data_points() -> None:
+    client = IdmModbusClient("127.0.0.1", max_retries=1)
+    humidity_words = _raw_float_words(54.75)
+    transport = FakeModbusTransport(
+        input_registers={1392: humidity_words[0], 1393: 2},
+        short_reads={("input", 1392, 2): humidity_words},
+    )
+    client._client = transport  # type: ignore[assignment]
+    humidity = RegisterDef(1392, DataType.FLOAT, "humidity_sensor", min_val=0, max_val=100)
+    mode = RegisterDef(1393, DataType.UCHAR, "hc_a_mode", enum_options={0: "off", 2: "normal"})
+
+    result = asyncio.run(client.read_batch([humidity, mode]))
+
+    assert result == {"humidity_sensor": 54.75, "hc_a_mode": 2}
+    assert transport.read_calls == [("input", 1392, 2), ("input", 1393, 1)]
+
+
 def test_sentinel_and_non_finite_values_are_decoded_safely() -> None:
     client = IdmModbusClient("127.0.0.1")
 
@@ -312,10 +347,24 @@ def test_suspect_register_is_quarantined_from_later_batch_reads() -> None:
 
 def test_invalid_individual_value_is_not_exposed() -> None:
     client = IdmModbusClient("127.0.0.1", max_retries=1)
-    humidity = RegisterDef(1392, DataType.UCHAR, "humidity_sensor", min_val=0, max_val=100)
-    client._client = FakeModbusTransport(input_registers={1392: 188})  # type: ignore[assignment]
+    humidity = RegisterDef(1392, DataType.FLOAT, "humidity_sensor", min_val=0, max_val=100)
+    invalid_words = _raw_float_words(188.0)
+    client._client = FakeModbusTransport(  # type: ignore[assignment]
+        input_registers={1392: invalid_words[0], 1393: invalid_words[1]}
+    )
 
     assert asyncio.run(client._read_individual_fallback([humidity])) == {}
+
+
+def test_humidity_float_is_decoded_from_two_words() -> None:
+    client = IdmModbusClient("127.0.0.1", max_retries=1)
+    humidity = RegisterDef(1392, DataType.FLOAT, "humidity_sensor", min_val=0, max_val=100)
+    humidity_words = _raw_float_words(54.75)
+    client._client = FakeModbusTransport(  # type: ignore[assignment]
+        input_registers={1392: humidity_words[0], 1393: humidity_words[1]}
+    )
+
+    assert asyncio.run(client._read_individual_fallback([humidity])) == {"humidity_sensor": 54.75}
 
 
 def test_is_value_suspect_detects_out_of_range_enum() -> None:

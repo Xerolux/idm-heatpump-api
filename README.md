@@ -20,6 +20,7 @@ This library is primarily designed to power the unofficial [IDM Heatpump Home As
 > - GitHub Wiki: https://github.com/Xerolux/idm-heatpump-api/wiki
 > - PyPI: https://pypi.org/project/idm-heatpump-api/
 > - API contract: [docs/API-Contract.md](docs/API-Contract.md)
+> - Register-map invariants: [docs/Register-Map-Invariants.md](docs/Register-Map-Invariants.md)
 >
 > The `docs/` directory is the single source of truth and is used for both GitHub Pages and Wiki sync.
 
@@ -28,7 +29,7 @@ This library is primarily designed to power the unofficial [IDM Heatpump Home As
 * **Asynchronous:** Fully async operations using `pymodbus` with automatic reconnection.
 * **Auto-Detection:** Probes registers to detect the controller model, active heating circuits, zone modules, solar, ISC, PV, and cascade.
 * **Comprehensive Register Map:** 100+ registers covering temperatures, energy, status, heating circuits (A-G), zone modules, solar, ISC, cascade, boosters, and more.
-* **Batch Reads:** Intelligent grouping and batching of register reads for maximum efficiency.
+* **Batch Reads:** Safe grouping of exactly adjacent, non-overlapping register ranges.
 * **Resilient:** Configurable retries with exponential backoff and permanent failure tracking for unavailable registers.
 * **Write Support:** Safe register writes with validation, min/max bounds, and EEPROM-sensitive write protection.
 * **Metadata:** Each register includes Home Assistant mapping fields plus source, source version, supported models, sentinel values, and verification metadata.

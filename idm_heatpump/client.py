@@ -43,8 +43,8 @@ _T = TypeVar("_T")
 
 # IDM firmware variants have returned shifted or otherwise inconsistent values
 # when a single Modbus request spans addresses that are not part of the
-# requested register map.  Only merge registers whose address ranges touch.
-_MAX_GROUP_GAP = 0
+# requested register map. Some officially documented data points also overlap
+# at range boundaries, so batches must be contiguous *and* non-overlapping.
 _MAX_GROUP_SIZE = 40
 _PERMANENT_FAILURE_THRESHOLD = 3
 DEFAULT_EEPROM_WRITE_INTERVAL = 60.0
@@ -1392,9 +1392,10 @@ class IdmModbusClient:
         """Sort and group registers into contiguous chunks for batch reads.
 
         Registers are grouped by type (input/holding) and then merged into
-        contiguous chunks only when their address ranges touch. Sorting once
-        by ``(register_type, address)`` avoids the previous two-pass split and
-        keeps the grouping logic in one place.
+        contiguous chunks only when their address ranges touch without
+        overlapping. The official IDM map contains logical data points whose
+        ranges overlap at block boundaries; those must be separate requests
+        so each data point is read with its documented start address and size.
         """
         sorted_regs = sorted(regs, key=lambda r: (r.register_type.value, r.address))
         groups: list[list[RegisterDef]] = []
@@ -1412,7 +1413,7 @@ class IdmModbusClient:
 
             expected_next = last.address + last.size
             if (
-                reg.address <= expected_next + _MAX_GROUP_GAP
+                reg.address == expected_next
                 and (reg.address + reg.size - first.address) <= self._max_group_size
             ):
                 current_group.append(reg)

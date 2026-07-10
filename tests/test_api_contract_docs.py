@@ -7,6 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 API_CONTRACT = ROOT / "docs" / "API-Contract.md"
 COMPATIBILITY_MATRIX = ROOT / "docs" / "compatibility-matrix.json"
+REGISTER_INVARIANTS = ROOT / "docs" / "Register-Map-Invariants.md"
 
 
 def test_api_contract_documents_versioning_and_deprecation_policy() -> None:
@@ -43,6 +44,30 @@ def test_readme_links_api_contract() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
     assert "docs/API-Contract.md" in readme
+    assert "docs/Register-Map-Invariants.md" in readme
+
+
+def test_agent_guidance_requires_register_invariants() -> None:
+    guidance = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+
+    assert "docs/Register-Map-Invariants.md" in guidance
+    assert "Never shift an official address" in guidance
+    assert "1392/count=2" in guidance
+
+
+def test_register_invariants_preserve_official_protocol_facts() -> None:
+    invariants = REGISTER_INVARIANTS.read_text(encoding="utf-8")
+
+    for fact in [
+        "Humidity sensor B31 | 1392 | FLOAT",
+        "Heating limit A | 1442 | UCHAR",
+        "Active heating-circuit mode A | 1498 | UCHAR",
+        "next.address == previous.address + previous.size",
+        "humidity sensor at `1046 FLOAT`",
+        "Navigator 1.0/1.7 is not currently supported",
+        "300,000 writes per register",
+    ]:
+        assert fact in invariants
 
 
 def test_typed_package_marker_is_shipped() -> None:

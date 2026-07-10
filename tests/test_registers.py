@@ -393,18 +393,24 @@ class TestHeatingCircuitAddresses:
         assert regs["hc_a_mode"].address == 1393
         assert regs["hc_a_room_setpoint_heat_normal"].address == 1401
         assert regs["hc_a_heating_curve"].address == 1429
-        assert regs["hc_a_heating_limit"].address == 1443
-        assert regs["hc_a_active_mode"].address == 1499
-        assert regs["hc_a_parallel_shift"].address == 1506
+        assert regs["hc_a_heating_limit"].address == 1442
+        assert regs["hc_a_setpoint_flow_constant"].address == 1449
+        assert regs["hc_a_cooling_limit"].address == 1484
+        assert regs["hc_a_setpoint_flow_cooling"].address == 1491
+        assert regs["hc_a_active_mode"].address == 1498
+        assert regs["hc_a_parallel_shift"].address == 1505
         assert regs["hc_a_ext_room_temp"].address == 1650
 
     def test_circuit_g_addresses(self) -> None:
         regs = get_heating_circuit_registers("G")
         assert regs["hc_g_flow_temp"].address == 1362
         assert regs["hc_g_mode"].address == 1399
-        assert regs["hc_g_heating_limit"].address == 1449
-        assert regs["hc_g_setpoint_flow_cooling"].address == 1498
-        assert regs["hc_g_parallel_shift"].address == 1512
+        assert regs["hc_g_heating_limit"].address == 1448
+        assert regs["hc_g_setpoint_flow_constant"].address == 1455
+        assert regs["hc_g_cooling_limit"].address == 1490
+        assert regs["hc_g_setpoint_flow_cooling"].address == 1497
+        assert regs["hc_g_active_mode"].address == 1504
+        assert regs["hc_g_parallel_shift"].address == 1511
         assert regs["hc_g_ext_room_temp"].address == 1662
 
     def test_heating_curve_range(self) -> None:
@@ -414,8 +420,8 @@ class TestHeatingCircuitAddresses:
         assert curve.max_val == 3.5
 
 
-def test_full_register_map_has_no_address_overlaps() -> None:
-    """Every Modbus address must be owned by exactly one register."""
+def test_full_register_map_preserves_documented_boundary_overlaps() -> None:
+    """The official map intentionally overlaps logical ranges at block boundaries."""
     regs = build_register_map(
         circuits=list("ABCDEFG"),
         zone_modules=10,
@@ -429,14 +435,20 @@ def test_full_register_map_has_no_address_overlaps() -> None:
                 overlaps.append((addr, occupied[addr], name))
             else:
                 occupied[addr] = name
-    assert not overlaps, f"Address overlaps detected: {overlaps[:10]}"
+    normalized = {(addr, frozenset((first, second))) for addr, first, second in overlaps}
+    assert normalized == {
+        (1442, frozenset(("hc_g_heating_curve", "hc_a_heating_limit"))),
+        (1484, frozenset(("hc_g_room_setpoint_cool_eco", "hc_a_cooling_limit"))),
+        (1393, frozenset(("hc_a_mode", "humidity_sensor"))),
+    }
 
 
-def test_humidity_sensor_does_not_overlap_heating_circuit_mode() -> None:
-    """humidity_sensor occupies the single free register between setpoint_flow_temp G and hc_a_mode."""
+def test_humidity_sensor_uses_documented_float_encoding() -> None:
+    """Address 1392 is a two-word IEEE-754 value despite the 1393 mode boundary."""
     regs = build_register_map(circuits=list("ABCDEFG"))
     assert regs["humidity_sensor"].address == 1392
-    assert regs["humidity_sensor"].size == 1
+    assert regs["humidity_sensor"].datatype == DataType.FLOAT
+    assert regs["humidity_sensor"].size == 2
     assert regs["humidity_sensor"].min_val == 0
     assert regs["humidity_sensor"].max_val == 100
     assert regs["hc_a_mode"].address == 1393

@@ -112,6 +112,11 @@ reason and the safe replacement.
 
 ## Register Compatibility Rules
 
+The protocol rules, reviewed source documents, documented logical overlaps,
+and model-family boundaries in
+[`Register-Map-Invariants.md`](Register-Map-Invariants.md) are mandatory for all
+register-map changes.
+
 Register changes must include:
 
 - source or verification note;
