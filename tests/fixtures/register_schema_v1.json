@@ -158,8 +158,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": null,
+        "sentinel_values": [
+          -1
+        ],
+        "last_verified": "2026-07-10",
         "size": 1
       },
       "bivalence_point_1_2nd_gen": {
@@ -872,8 +874,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": null,
+        "sentinel_values": [
+          255
+        ],
+        "last_verified": "2026-07-10",
         "size": 1
       },
       "booster_interlock": {
@@ -2827,8 +2831,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": null,
+        "sentinel_values": [
+          254
+        ],
+        "last_verified": "2026-07-10",
         "size": 1
       },
       "ext_demand_groundwater_pump_m15_sw_max": {
@@ -2859,8 +2865,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": null,
+        "sentinel_values": [
+          254
+        ],
+        "last_verified": "2026-07-10",
         "size": 1
       },
       "ext_demand_temp_cooling": {
@@ -2955,8 +2963,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": null,
+        "sentinel_values": [
+          -1.0
+        ],
+        "last_verified": "2026-07-10",
         "size": 2
       },
       "ext_outdoor_temp": {
@@ -3504,8 +3514,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": null,
+        "sentinel_values": [
+          -1.0
+        ],
+        "last_verified": "2026-07-10",
         "size": 2
       },
       "hc_a_flow_temp": {
@@ -4031,8 +4043,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": null,
+        "sentinel_values": [
+          -1.0
+        ],
+        "last_verified": "2026-07-10",
         "size": 2
       },
       "hc_b_flow_temp": {
@@ -4558,8 +4572,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": null,
+        "sentinel_values": [
+          -1.0
+        ],
+        "last_verified": "2026-07-10",
         "size": 2
       },
       "hc_c_flow_temp": {
@@ -5085,8 +5101,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": null,
+        "sentinel_values": [
+          -1.0
+        ],
+        "last_verified": "2026-07-10",
         "size": 2
       },
       "hc_d_flow_temp": {
@@ -5612,8 +5630,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": null,
+        "sentinel_values": [
+          -1.0
+        ],
+        "last_verified": "2026-07-10",
         "size": 2
       },
       "hc_e_flow_temp": {
@@ -6139,8 +6159,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": null,
+        "sentinel_values": [
+          -1.0
+        ],
+        "last_verified": "2026-07-10",
         "size": 2
       },
       "hc_f_flow_temp": {
@@ -6666,8 +6688,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": null,
+        "sentinel_values": [
+          -1.0
+        ],
+        "last_verified": "2026-07-10",
         "size": 2
       },
       "hc_g_flow_temp": {
@@ -7578,8 +7602,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": null,
+        "sentinel_values": [
+          -1.0
+        ],
+        "last_verified": "2026-07-10",
         "size": 2
       },
       "internal_message": {
@@ -8694,8 +8720,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": null,
+        "sentinel_values": [
+          255
+        ],
+        "last_verified": "2026-07-10",
         "size": 1
       }
     },
@@ -8856,8 +8884,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": null,
+        "sentinel_values": [
+          -1
+        ],
+        "last_verified": "2026-07-10",
         "size": 1
       },
       "bivalence_point_1_2nd_gen": {
@@ -9570,8 +9600,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": null,
+        "sentinel_values": [
+          255
+        ],
+        "last_verified": "2026-07-10",
         "size": 1
       },
       "booster_interlock": {
@@ -11525,8 +11557,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": null,
+        "sentinel_values": [
+          254
+        ],
+        "last_verified": "2026-07-10",
         "size": 1
       },
       "ext_demand_groundwater_pump_m15_sw_max": {
@@ -11557,8 +11591,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": null,
+        "sentinel_values": [
+          254
+        ],
+        "last_verified": "2026-07-10",
         "size": 1
       },
       "ext_demand_temp_cooling": {
@@ -11653,8 +11689,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": null,
+        "sentinel_values": [
+          -1.0
+        ],
+        "last_verified": "2026-07-10",
         "size": 2
       },
       "ext_outdoor_temp": {
@@ -12202,8 +12240,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": null,
+        "sentinel_values": [
+          -1.0
+        ],
+        "last_verified": "2026-07-10",
         "size": 2
       },
       "hc_a_flow_temp": {
@@ -12729,8 +12769,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": null,
+        "sentinel_values": [
+          -1.0
+        ],
+        "last_verified": "2026-07-10",
         "size": 2
       },
       "hc_b_flow_temp": {
@@ -13256,8 +13298,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": null,
+        "sentinel_values": [
+          -1.0
+        ],
+        "last_verified": "2026-07-10",
         "size": 2
       },
       "hc_c_flow_temp": {
@@ -13783,8 +13827,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": null,
+        "sentinel_values": [
+          -1.0
+        ],
+        "last_verified": "2026-07-10",
         "size": 2
       },
       "hc_d_flow_temp": {
@@ -14310,8 +14356,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": null,
+        "sentinel_values": [
+          -1.0
+        ],
+        "last_verified": "2026-07-10",
         "size": 2
       },
       "hc_e_flow_temp": {
@@ -14837,8 +14885,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": null,
+        "sentinel_values": [
+          -1.0
+        ],
+        "last_verified": "2026-07-10",
         "size": 2
       },
       "hc_f_flow_temp": {
@@ -15364,8 +15414,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": null,
+        "sentinel_values": [
+          -1.0
+        ],
+        "last_verified": "2026-07-10",
         "size": 2
       },
       "hc_g_flow_temp": {
@@ -16276,8 +16328,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": null,
+        "sentinel_values": [
+          -1.0
+        ],
+        "last_verified": "2026-07-10",
         "size": 2
       },
       "internal_message": {
@@ -17392,8 +17446,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": null,
+        "sentinel_values": [
+          255
+        ],
+        "last_verified": "2026-07-10",
         "size": 1
       },
       "zm10_dehumidification": {
@@ -29664,8 +29720,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": null,
+        "sentinel_values": [
+          -1.0
+        ],
+        "last_verified": "2026-07-10",
         "size": 2
       },
       "ext_outdoor_temp": {
@@ -30021,8 +30079,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": null,
+        "sentinel_values": [
+          -1.0
+        ],
+        "last_verified": "2026-07-10",
         "size": 2
       },
       "hc_a_flow_temp": {
@@ -30773,8 +30833,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": null,
+        "sentinel_values": [
+          -1.0
+        ],
+        "last_verified": "2026-07-10",
         "size": 2
       },
       "internal_message": {
@@ -31429,8 +31491,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": null,
+        "sentinel_values": [
+          255
+        ],
+        "last_verified": "2026-07-10",
         "size": 1
       }
     }

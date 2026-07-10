@@ -163,3 +163,27 @@ Every register-map change must verify:
 Tests must model request-sensitive overlapping values where one exact request
 can return a float and another overlapping request can return a different
 logical UCHAR value.
+
+## Navigator 10 unavailable-sentinel capture (2026-07-10)
+
+A read-only hardware capture from a Navigator 10 controller verified the
+following unavailable values through FC04 individual reads. The controller
+returned the same raw words when the addresses were included in the API's
+normal adjacent, non-overlapping batches.
+
+| Data point | Address/count | Raw words | Decoded sentinel |
+| --- | --- | --- | ---: |
+| Variable input | 1006/1 | `FFFF` | `255` |
+| Heating-circuit A external room temperature | 1650/2 | `0000 BF80` | `-1.0` |
+| External humidity | 1692/2 | `0000 BF80` | `-1.0` |
+| External groundwater pump demand M15 | 1714/1 | `FFFE` | `254` |
+| External groundwater pump demand M15 SW Max | 1715/1 | `FFFE` | `254` |
+| Battery state of charge | 86/1 | `FFFF` | `-1` |
+| Booster fault | 4001/1 | `FFFF` | `255` |
+| Humidity sensor B31 | 1392/2 | `0000 BF80` | `-1.0` |
+
+Twenty repeated comparisons of the initially reported five registers produced
+100 identical batch/individual pairs. A broader pass covered 170 register
+definitions in 45 API groups plus 144 repeated comparisons of constrained
+single-word values; no raw batch/individual mismatch was observed. These
+sentinels therefore represent unavailable data, not corrupt batch responses.
