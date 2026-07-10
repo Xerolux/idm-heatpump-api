@@ -78,6 +78,12 @@
       "hass_integration_version": "pending",
       "status": "api-prepared",
       "notes": "Security and reliability patch for web host validation, safe Modbus writes, authentication handling, transient failure recovery, LF normalization, and reduced Navigator 2.0 startup traffic."
+    },
+    {
+      "api_version": "0.7.2",
+      "hass_integration_version": "0.8.1-beta.23",
+      "status": "api-prepared",
+      "notes": "Hardens Navigator 10/2.0/Pro batch reads: never spans unrequested address gaps, validates recovery reads, quarantines suspect registers, preserves documented sentinel values, and bounds humidity to 0-100%."
     }
   ]
 }
