@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.5] - 2026-07-10
+
+### Fixed
+
+- Mark the hardware-verified unavailable values for variable input, battery
+  state of charge, booster fault, external humidity, external room
+  temperatures, humidity sensor B31 and external groundwater-pump demands as
+  register sentinels. They are no longer quarantined, re-read individually and
+  warned about on every polling cycle as if they were corrupt batch values.
+
+### Tests
+
+- Record the anonymized Navigator 10 FC04 hardware capture and regression-test
+  the sentinel metadata used by batch validation.
+
 ## [0.7.4] - 2026-07-10
 
 ### Fixed

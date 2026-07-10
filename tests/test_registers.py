@@ -25,6 +25,30 @@ from idm_heatpump.registers import (
 )
 
 
+@pytest.mark.parametrize(
+    ("name", "sentinel_values"),
+    [
+        ("variable_input", (255,)),
+        ("battery_soc", (-1,)),
+        ("ext_demand_groundwater_pump_m15", (254,)),
+        ("ext_demand_groundwater_pump_m15_sw_max", (254,)),
+        ("booster_fault", (255,)),
+        ("ext_humidity", (-1.0,)),
+        ("hc_a_ext_room_temp", (-1.0,)),
+        ("humidity_sensor", (-1.0,)),
+    ],
+)
+def test_hardware_verified_unavailable_sentinels(
+    name: str,
+    sentinel_values: tuple[int | float, ...],
+) -> None:
+    """Unavailable hardware values must bypass corrupt-batch recovery."""
+    reg = build_register_map()[name]
+
+    assert reg.sentinel_values == sentinel_values
+    assert reg.last_verified == "2026-07-10"
+
+
 class TestEnergyRegisters:
     """Test energy register definitions."""
 
@@ -107,6 +131,7 @@ class TestPVRegisters:
         reg = _pv_registers()["battery_soc"]
         assert reg.datatype == DataType.INT16
         assert reg.size == 1
+        assert reg.sentinel_values == (-1,)
 
 
 class TestSystemRegisters:
@@ -123,6 +148,7 @@ class TestSystemRegisters:
         reg = regs["variable_input"]
         assert reg.address == 1006
         assert not reg.writable
+        assert reg.sentinel_values == (255,)
 
     def test_internal_message_is_uint16(self) -> None:
         """Message numbers go up to 999, so 1004 must not be masked to one byte."""

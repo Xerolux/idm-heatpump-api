@@ -93,9 +93,15 @@
     },
     {
       "api_version": "0.7.4",
-      "hass_integration_version": "pending",
-      "status": "api-prepared",
+      "hass_integration_version": "0.8.1-beta.26",
+      "status": "beta-tested",
       "notes": "Restores the documented Navigator register map and humidity float decoding, and reconnects after pymodbus no-response errors."
+    },
+    {
+      "api_version": "0.7.5",
+      "hass_integration_version": "0.8.1-beta.27",
+      "status": "hardware-verified",
+      "notes": "Declares unavailable sentinels verified on Navigator 10 hardware so normal optional-register values do not trigger corrupt-batch recovery and repeated warnings."
     }
   ]
 }

@@ -193,6 +193,8 @@ def _system_registers() -> dict[str, RegisterDef]:
             datatype=DataType.UCHAR,
             name="variable_input",
             enum_options=VARIABLE_INPUT_OPTIONS,
+            sentinel_values=(255,),
+            last_verified="2026-07-10",
             # "Variabler Eingang" – configurable special-function input
         ),
         "storage_temp": RegisterDef(
@@ -817,6 +819,8 @@ def _pv_registers() -> dict[str, RegisterDef]:
             writable=True,
             min_val=0,
             max_val=100,
+            sentinel_values=(-1,),
+            last_verified="2026-07-10",
             # WORD per official doc (single register, not FLOAT), -1 = unavailable
         ),
         "pv_target_value": RegisterDef(
@@ -936,6 +940,8 @@ def _external_pump_demand_registers() -> dict[str, RegisterDef]:
             writable=True,
             min_val=0,
             max_val=100,
+            sentinel_values=(254,),
+            last_verified="2026-07-10",
             # Groundwater pump M15 (SW/SWM/SW Twin) and brine/intermediate
             # circuit pump M16 (SW/SWM/SW Twin/SW Max). UCHAR per official doc.
         ),
@@ -947,6 +953,8 @@ def _external_pump_demand_registers() -> dict[str, RegisterDef]:
             writable=True,
             min_val=0,
             max_val=100,
+            sentinel_values=(254,),
+            last_verified="2026-07-10",
             # Groundwater pump M15 on SW Max. UCHAR per official doc.
         ),
     }
@@ -993,6 +1001,8 @@ def _booster_registers() -> dict[str, RegisterDef]:
             datatype=DataType.UCHAR,
             name="booster_fault",
             enum_options=BOOSTER_FAULT_OPTIONS,
+            sentinel_values=(255,),
+            last_verified="2026-07-10",
         ),
         "booster_interlock": RegisterDef(
             address=4002,
@@ -1182,6 +1192,8 @@ def _glt_registers() -> dict[str, RegisterDef]:
             writable=True,
             min_val=0,
             max_val=100,
+            sentinel_values=(-1.0,),
+            last_verified="2026-07-10",
         ),
         "ext_demand_temp_heating": RegisterDef(
             address=1694,
@@ -1429,6 +1441,8 @@ def get_heating_circuit_registers(
         writable=True,
         min_val=15,
         max_val=30,
+        sentinel_values=(-1.0,),
+        last_verified="2026-07-10",
     )
 
     return regs
@@ -1666,6 +1680,8 @@ def _build_register_map_impl(
         min_val=0,
         max_val=100,
         state_class="measurement",
+        sentinel_values=(-1.0,),
+        last_verified="2026-07-10",
     )
 
     return all_regs
