@@ -1,135 +1,82 @@
-# Entities
+# Supported Devices
 
-> **Note**: This document is being updated for the Navigator 10 generation and full English translation. The Python library itself (client + registers) is fully up to date.
+This page describes which IDM Navigator controllers the library supports, how
+feature detection gates register groups, and the `IdmModelInfo` shape consumers
+can rely on. For the full register map, see [Modbus Register](Modbus-Register).
 
-## Navigator 10 Specifics (2025)
+## Device matrix
 
-The library now includes all registers from the official iDM "MODBUS TCP NAVIGATOR 10" documentation (18.06.2025):
+| Device | Firmware | Heating circuits | Zone modules | Status |
+|--------|----------|------------------|--------------|--------|
+| IDM Navigator 10 | NAV10_20.23+ (2025) | up to 7 (A–G) | up to 10 (6 default, 8 configurable) | Maintainer-confirmed |
+| IDM Navigator 2.0 | firmware-dependent | up to 7 (A–G) | firmware-dependent | Expected; needs broader raw detection captures |
+| IDM Navigator Pro | firmware-dependent | up to 7 (A–G) | up to 10 (8 configurable) | Expected; needs complete diagnostics |
 
-- Heat sink flow rate (1072 l/min) — highly recommended for systems with plate heat exchangers
-- Power limitation (4108 / 4112)
-- Complete Booster A/B monitoring (4001–4052)
-- Additional fault registers and external pump demands
-- All other registers remain compatible with Navigator 2.0 / Pro
+> Navigator 1.0/1.7 is a separate protocol family and is **not** supported.
 
-## Sensoren
+For firmware references, see [Firmware Compatibility](firmware_compatibility)
+and the machine-readable [`compatibility-matrix.json`](compatibility-matrix.json).
 
-Die Integration erstellt uber 100 Sensor-Entities fur verschiedene Messwerte.
+## Feature-gated register groups
 
-### System-Sensoren
+`detect_model()` returns an `IdmModelInfo` whose flags and features gate which
+register groups `build_register_map(model_info=...)` includes. The constants
+`FEATURE_HEATING_CIRCUITS`, `FEATURE_ZONE_MODULES`, `FEATURE_SOLAR`,
+`FEATURE_ISC`, `FEATURE_PV`, and `FEATURE_CASCADE` label these groups.
 
-| Entity | Beschreibung | Adresse |
-|--------|-------------|---------|
-| `sensor.{name}_outdoor_temp` | Aussentemperatur | 1000 |
-| `sensor.{name}_flow_temp` | Vorlauftemperatur | 1001 |
-| `sensor.{name}_return_temp` | Rucklauftemperatur | 1002 |
-| `sensor.{name}_dhw_temp` | Warmwassertemperatur | 1003 |
-| `sensor.{name}_dhw_setpoint` | Warmwasser-Sollwert | 1004 |
-| `sensor.{name}_system_mode` | System-Betriebsmodus | 1005 |
-| `sensor.{name}_system_state` | System-Zustand | 1006 |
-| `sensor.{name}_heat_request` | Warmeanforderung | 1008 |
-| `sensor.{name}_flow_rate` | Durchfluss | 1010 |
-| `sensor.{name}_system_pressure` | Systemdruck | 1011 |
-| `sensor.{name}_compressor_runtime` | Kompressor-Laufzeit | 1012 |
-| `sensor.{name}_heat_quantity` | Warmemenge | 1013 |
+| Register group | Gated by | Examples |
+|----------------|----------|----------|
+| Heating circuits A–G | active circuits + `FEATURE_HEATING_CIRCUITS` | flow/return temps, setpoints, mode, curve, room temp, mixer |
+| Zone modules | `zone_modules` count + `FEATURE_ZONE_MODULES` | per-room temp / setpoint / humidity / mode / relay |
+| Solar | `has_solar` + `FEATURE_SOLAR` | solar temps, solar mode |
+| ISC (Intelligent Surface Cooling) | `has_isc` + `FEATURE_ISC` | cold storage / recooling pump status |
+| PV / energy management | `has_pv` + `FEATURE_PV` | PV surplus, production, battery SoC/discharge, electric heater power |
+| Cascade | `has_cascade` + `FEATURE_CASCADE` | cascade temps, bivalence points |
+| Booster A/B | Navigator 10 map | second heat generator monitoring |
+| Heat sink / plate heat exchanger | Navigator 10 map | flow rate (1072 l/min) |
+| Power limitation | Navigator 10 map | demand response / peak shaving (4108 / 4112) |
+| Groundwater | Navigator 10 map | groundwater temperatures |
+| Additional faults / external pump demand | Navigator 10 map | source pump faults, external pump demands |
 
-### Heizkreis-Sensoren
+`build_register_map()` with no `model_info` returns only `CORE_REGISTERS`.
 
-Fur jeden aktivierten Heizkreis (A-G):
+## IdmModelInfo
 
-| Entity | Beschreibung |
-|--------|-------------|
-| `sensor.{name}_circuit_{x}_flow_temp` | Heizkreis-Vorlauftemperatur |
-| `sensor.{name}_circuit_{x}_return_temp` | Heizkreis-Rucklauftemperatur |
-| `sensor.{name}_circuit_{x}_setpoint` | Heizkreis-Sollwert |
-| `sensor.{name}_circuit_{x}_mode` | Heizkreis-Modus |
-| `sensor.{name}_circuit_{x}_state` | Heizkreis-Zustand |
-| `sensor.{name}_circuit_{x}_curve` | Heizkurve |
-| `sensor.{name}_circuit_{x}_room_temp` | Raumtemperatur |
-| `sensor.{name}_circuit_{x}_mixer_pos` | Mischerstellung |
+`detect_model()` returns a mutable `IdmModelInfo` dataclass:
 
-### Zonen-Sensoren
+| Field | Type | Meaning |
+|-------|------|---------|
+| `model_name` | `str` | One of `MODEL_NAVIGATOR_10`, `MODEL_NAVIGATOR_20`, `MODEL_NAVIGATOR_PRO`, or `MODEL_UNKNOWN`. |
+| `active_heating_circuits` | `list[str]` | Active circuit letters (subset of `HEATING_CIRCUIT_LETTERS`). |
+| `zone_modules` | `int` | Detected zone-module count. |
+| `has_solar` | `bool` | Solar thermal detected. |
+| `has_isc` | `bool` | ISC detected. |
+| `has_pv` | `bool` | PV / energy management detected. |
+| `has_cascade` | `bool` | Cascade controller detected. |
+| `features` | `set[str]` | Feature flag set using the `FEATURE_*` constants. |
+| `firmware_version` | `float \| None` | Firmware version, when `read_firmware=True`. |
 
-For each activated zone module and room (up to **8 configurable rooms**; 6 is the current Navigator 10 default):
+The `is_pro` property returns `True` when `zone_modules > 0`.
 
-| Entity | Beschreibung |
-|--------|-------------|
-| `sensor.{name}_zone_{z}_room_{r}_temp` | Raumtemperatur |
-| `sensor.{name}_zone_{z}_room_{r}_humidity` | Raumfeuchte |
-| `sensor.{name}_zone_{z}_room_{r}_mode` | Raum-Modus |
-| `sensor.{name}_zone_{z}_mode` | Zonen-Modus |
+## Limits
 
-### Energie & Solar
+| Constant | Value |
+|----------|-------|
+| `MAX_HEATING_CIRCUITS` | 7 |
+| `MAX_ZONE_MODULES` | 10 |
+| `MAX_ROOMS_PER_ZONE` | 8 (6 is the current Navigator 10 default) |
+| `HEATING_CIRCUIT_LETTERS` | `['A', 'B', 'C', 'D', 'E', 'F', 'G']` |
 
-| Entity | Beschreibung |
-|--------|-------------|
-| `sensor.{name}_energy_heating` | Energie Heizung |
-| `sensor.{name}_energy_dhw` | Energie Warmwasser |
-| `sensor.{name}_energy_total` | Energie gesamt |
-| `sensor.{name}_solar_temp_in` | Solar-Temperatur Vorlauf |
-| `sensor.{name}_solar_temp_out` | Solar-Temperatur Rucklauf |
-| `sensor.{name}_pv_power` | PV-Leistung |
-| `sensor.{name}_battery_soc` | Batterie-Ladezustand |
+## Detection diagnostics
 
-### Fachmann-Ebene Sensoren
+If detection returns unexpected results, collect a diagnostics snapshot and
+attach it to a bug report:
 
-Nur verfügbar wenn die Option **Fachmann-Ebene Codes anzeigen** im Config Flow aktiviert ist:
+```python
+model_info = await client.detect_model()
+diag = client.get_diagnostics()
+print(model_info)
+print(diag)
+```
 
-| Entity | Beschreibung |
-|--------|-------------|
-| `sensor.{name}_fachmann_ebene_1` | Aktueller Fachmann Ebene 1 Code (`TTMM`) |
-| `sensor.{name}_fachmann_ebene_2` | Aktueller Fachmann Ebene 2 Code (zeitbasiert) |
-
-### Fehler-Sensoren
-
-| Entity | Beschreibung |
-|--------|-------------|
-| `sensor.{name}_error_1` | Fehlercode 1 |
-| `sensor.{name}_error_2` | Fehlercode 2 |
-| `sensor.{name}_error_3` | Fehlercode 3 |
-
-## Numbers
-
-Beschreibbare Parameter mit Number-Entities:
-
-### System-Numbers
-
-| Entity | Beschreibung | Bereich |
-|--------|-------------|---------|
-| `number.{name}_dhw_setpoint` | Warmwasser-Sollwert | 10-60 C |
-| `number.{name}_heating_limit` | Heizgrenze | -20-30 C |
-
-### Heizkreis-Numbers
-
-| Entity | Beschreibung |
-|--------|-------------|
-| `number.{name}_circuit_{x}_setpoint` | Heizkreis-Sollwert |
-| `number.{name}_circuit_{x}_room_setpoint` | Raum-Sollwert |
-| `number.{name}_circuit_{x}_curve_offset` | Heizkurven-Versatz |
-
-## Selects
-
-Auswahlfelder fur Betriebsmodi:
-
-| Entity | Beschreibung | Optionen |
-|--------|-------------|----------|
-| `select.{name}_system_mode` | System-Betriebsmodus | Standby, Automatik, Abwesend, Urlaub, Nur Warmwasser, Nur Heizung |
-| `select.{name}_circuit_{x}_mode` | Heizkreis-Modus | Automatik, Dauerbetrieb, Abschalt, Zeitprogramm |
-| `select.{name}_zone_{z}_room_{r}_mode` | Raum-Modus | Komfort, Normal, Eco, Frostschutz |
-| `select.{name}_solar_mode` | Solar-Modus | Automatik, Dauerbetrieb, Aus |
-
-## Schalter (Switch)
-
-| Entity | Beschreibung |
-|--------|-------------|
-| `switch.{name}_glt_heat_request` | GLT-Warmeanforderung |
-| `switch.{name}_glt_cool_request` | GLT-Kuhlanforderung |
-
-## Binary Sensors
-
-| Entity | Beschreibung |
-|--------|-------------|
-| `binary_sensor.{name}_error_active` | Fehler aktiv |
-| `binary_sensor.{name}_heating_active` | Heizung aktiv |
-| `binary_sensor.{name}_dhw_active` | Warmwasser aktiv |
-| `binary_sensor.{name}_compressor_running` | Kompressor lauft |
+See [Known Limitations](Known-Limitations) for the detection caveats.

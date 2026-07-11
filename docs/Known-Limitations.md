@@ -1,70 +1,95 @@
-# Konfiguration
+# Known Limitations
 
-## Verbindungsparameter
+This page documents the boundaries of `idm-heatpump-api` so consumers know what
+is intentionally unsupported and where to be careful.
 
-| Parameter | Beschreibung | Standard |
-|-----------|-------------|----------|
-| **Host (IP)** | IP-Adresse des IDM Navigators | - (erforderlich) |
-| **Port** | Modbus TCP Port | 502 |
-| **Name** | Name der Integration (zur Unterscheidung bei mehreren) | IDM Navigator |
+## Unsupported protocol families
 
-## Optionen
+- **Navigator 1.0 / 1.7** is a separate protocol family. Its addresses must
+  not be copied into the Navigator 2.0/10/Pro map and it is **not supported**.
+- The optional web supplement is strictly **read-only**. There is no write path
+  through the local HTTP / WebSocket interface.
 
-### Scan-Intervall
+## Documented logical range overlaps
 
-Das Scan-Intervall bestimmt, wie haufig die Register ausgelesen werden.
+The official Navigator 2.0/10 map contains documented logical range overlaps at
+block boundaries (for example, humidity at `1392/count=2` and heating-circuit A
+mode at `1393/count=1`). The library reads each overlapping data point using
+its exact documented start address and size, and never shifts an official
+address merely to eliminate a logical range overlap. See
+[Register-Map Invariants](Register-Map-Invariants) for the full rules.
 
-| Wert | Empfehlung |
-|------|-----------|
-| 10 Sekunden | Fur aktive Uberwachung (Standard) |
-| 30 Sekunden | Ausgewogen |
-| 60 Sekunden | Fuer ruhigere Systeme |
+There is **no no-overlap invariant** — by design.
 
-### Heizkreise
+## EEPROM-sensitive registers
 
-Wahle die aktiven Heizkreise (A bis G). Nur aktivierte Heizkreise erstellen Entities in Home Assistant.
+`EEPROM_SENSITIVE_ADDRESSES` contains 89 addresses that are persisted to
+EEPROM on write and therefore have a limited number of write cycles. The
+library throttles writes to these addresses; consumers should write them
+sparingly and never in a tight loop.
 
-### Zonen
+## Cyclic GLT writes
 
-Gib die Anzahl der Zonen-Module an (0-10). Jedes Zonen-Modul unterstutzt bis zu 8 Raume.
+The GLT demand temperature registers (`1696` / `1698`) must be re-written
+cyclically (every 10 minutes) to stay active. Successful writes refresh an
+in-memory heartbeat deadline. Consumers can inspect the state:
 
-### Fachmann-Ebene Codes
-
-Aktiviere diese Option, um zwei zusätzliche Sensor-Entities zu erhalten, die die aktuellen Fachmann-Ebene-Zugriffscodes anzeigen:
-
-| Sensor | Beschreibung |
-|--------|-------------|
-| `sensor.{name}_fachmann_ebene_1` | 4-stelliger Code: Tag + Monat (`TTMM`) |
-| `sensor.{name}_fachmann_ebene_2` | 5-stelliger Code aus Stunde, Jahr, Monat, Tag |
-
-Die Codes werden automatisch jede Minute aktualisiert und können z. B. in einer HA-Dashboard-Karte oder Benachrichtigung angezeigt werden. Sie entsprechen den Codes, die am IDM Navigator-Display unter *Fachmannebene* eingegeben werden müssen.
-
-### Raumnamen
-
-Fur jeden Raum in jeder Zone kannst du einen individuellen Namen vergeben. Diese Namen werden als Entity-Namen in Home Assistant verwendet.
-
-## Rekonfiguration
-
-1. Gehe zu **Einstellungen → Gerate & Dienste**
-2. Klicke auf **IDM Heatpump**
-3. Klicke auf **Rekonfigurieren**
-4. Anderungen am Scan-Intervall, Heizkreisen und Zonen werden ubernommen
-
-## Debug-Logging
-
-Aktiviere erweitertes Logging zur Fehlerbehebung:
-
-```yaml
-logger:
-  default: info
-  logs:
-    custom_components.idm_heatpump: debug
+```python
+client.get_active_cyclic_writes()    # name -> deadline monotonic timestamp
+client.get_expired_cyclic_writes()   # names whose deadline has passed
+client.reset_cyclic_write_state()    # clear on shutdown/reload
 ```
 
-## EEPROM-Hinweis
+## Write safety
 
-Bestimmte Register sind **EEPROM-sensitive** (88 insgesamt). Diese Register werden beim Schreiben in den EEPROM gespeichert und haben eine beschrankte Anzahl an Schreibzyklen. Die Integration warnt vor zu haufigem Schreiben dieser Register.
+Writes are safety-sensitive. The library validates datatype, enum options,
+min/max bounds, finiteness, and integer-vs-fractional values before sending,
+and preserves EEPROM guards, cyclic-write rules, exact function codes, and
+documented sentinels. The `allow_custom_register=True` escape hatch bypasses
+**only** detected-model map membership; all other validation remains active.
+Expose it only behind an explicit advanced-user risk acknowledgement.
 
-## GLT-Zyklisches Schreiben
+## Model detection depends on raw captures
 
-Die Register 1696 und 1698 (GLT-Temperaturanforderungen) mussen alle 10 Minuten zyklisch beschrieben werden, um aktiv zu bleiben. Die Switch-Entities fur GLT-Anforderungen handhaben dies automatisch.
+Auto-detection probes capability registers to determine the model, active
+heating circuits, zone modules, solar, ISC, PV, and cascade. Status:
+
+- **Navigator 10** (NAV10_20.23+): maintainer-confirmed.
+- **Navigator 2.0 / Pro:** expected to work, but need broader raw detection
+  captures and complete diagnostics. Detection may be incomplete on older or
+  unusual firmware. Provide diagnostics via `get_diagnostics()` when reporting
+  issues.
+
+## Web supplement requires a PIN
+
+The local web supplement requires a configured local network PIN. Without a
+PIN, the factory helpers return `None` and only Modbus operation continues:
+
+```python
+from idm_heatpump import web_pin_configured, create_optional_navigator10_web_client
+
+web_pin_configured(None)                       # False
+create_optional_navigator10_web_client(h, None)  # returns None
+```
+
+## Local web transport is device-specific
+
+- **Navigator 10** uses a local WebSocket on port `61220`.
+- **Navigator 2.0** uses local HTTP with CSRF token handling.
+
+These are reverse-engineered boundaries, not a published API. See
+[Navigator Protocol Analysis](Navigator-Protocol-Analysis) for the validated
+transport boundary and explicitly unsupported areas.
+
+## Sentinel handling
+
+Context-specific unavailable values are decoded using the documented datatype
+and then interpreted as unavailable — they are never clamped or discarded at
+the raw-byte level to hide a datatype/address error. See [Data Polling](Data-Update)
+for how sentinels interact with batch validation.
+
+## No implied affiliation
+
+This project is an unofficial community project and is not affiliated with,
+endorsed by, or connected to IDM Energiesysteme GmbH. All trademarks belong to
+their respective owners.

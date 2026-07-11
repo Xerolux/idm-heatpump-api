@@ -1,7 +1,11 @@
 # Modbus Register Reference
 
 Register map verified against the official iDM **MODBUS TCP NAVIGATOR 10**
-documentation (Stand 18.06.2025, software NAV10_20.23-903.iup / T_NAV10_20.23-1336.iup).
+documentation (as of 2025-06-18, software NAV10_20.23-903.iup / T_NAV10_20.23-1336.iup).
+
+> Before editing addresses, datatypes, sizes, function codes, model gates,
+> batching, or write behavior, read
+> [Register-Map Invariants](Register-Map-Invariants) completely.
 
 - Modbus TCP port: **502**, Unit ID: **1**
 - `FLOAT` = IEEE 754, 32 bit, 2 registers, low word first (Reg_L, then Reg_H)

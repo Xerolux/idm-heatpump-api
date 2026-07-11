@@ -1,46 +1,102 @@
-# Datenaktualisierung
+# Data Polling
 
-## Wie werden Daten abgerufen?
+This page describes how the library reads data from the controller, how it
+recovers from implausible or rejected values, and the retry/reconnect model.
+See [Client Methods](Services) for the method signatures and [Examples](Examples)
+for copy-paste snippets.
 
-Die Integration verwendet Modbus TCP, um Registerdaten direkt von der IDM Wärmepumpe zu lesen. Alle Kommunikation erfolgt **lokal** – es gibt keine Cloud-Verbindung.
+All communication is **local Modbus TCP** — there is no cloud connection.
 
-## Polling-Mechanismus
+## Batch reads
 
-Die Integration nutzt den **DataUpdateCoordinator** von Home Assistant:
+`read_batch()` is the primary read path:
 
-- Alle Entitäten teilen sich **eine gemeinsame Abfrage** pro Polling-Zyklus
-- Modbus-Register werden in **Batches von bis zu 40 lückenlos aufeinanderfolgenden Adressen** gelesen, um die Anzahl der Netzwerkanfragen zu minimieren
-- Unplausible Batch-Werte werden einzeln nachgelesen und validiert; betroffene Register verbleiben danach für die laufende Verbindung im sicheren Einzelabruf
-- Der Coordinator aktualisiert alle Entitäten gleichzeitig nach jeder erfolgreichen Abfrage
+- Registers are grouped in a single pass by `(register_type, address)`.
+- Each group spans exactly adjacent, non-overlapping addresses — never across
+  gaps and never across overlapping logical data points (see
+  [Register-Map Invariants](Register-Map-Invariants)).
+- A single Modbus request reads up to `max_group_size` registers (default 40).
+- All entities share one read per polling cycle, minimizing network requests.
 
-## Konfiguriertes Intervall
+## Implausible-value recovery
 
-Das Abfrageintervall ist **frei konfigurierbar** (5–300 Sekunden, Standard: 10 Sekunden):
+Some controllers occasionally return corrupt values inside large grouped
+responses. The library validates every decoded value against the register's
+declared enum options, numeric range, and sentinel metadata:
 
-- **Einstellungen → IDM Heatpump → Konfigurieren → Abfrageintervall**
-- Kürzere Intervalle bieten schnellere Updates, erzeugen aber mehr Netzwerklast
-- Empfehlung: 10–30 Sekunden für normalen Betrieb
+1. If a grouped value is implausible, the register is re-read individually.
+2. The individual value is validated before being exposed.
+3. If the individual value is valid, it is returned and the register stays on
+   the safe individual-read path for the rest of the session.
+4. The affected register names are exposed via `get_batch_unsafe_registers()`
+   and `IdmClientDiagnostics.batch_unsafe_registers`.
 
-## Entitätsverfügbarkeit
+Consumers can quarantine a register themselves when an external plausibility
+check detects a grouped value that is syntactically valid but wrong:
 
-Eine Entität wird als **unavailable** markiert wenn:
-- Die Verbindung zur Wärmepumpe unterbrochen ist
-- Der Modbus-Register-Wert den Sentinel-Wert `-1.0` zurückgibt (unused/inaktives Register)
-- Die Option "Unbenutzte Sensoren ausblenden" aktiviert ist
+```python
+client.mark_batch_unsafe("humidity_sensor")
+```
 
-## Schreibvorgänge (writable entities)
+This is session-local and does not persist across client instances.
 
-Number-, Select- und Switch-Entitäten können Werte in die Wärmepumpe schreiben:
-1. Der neue Wert wird **optimistisch** sofort in der UI angezeigt
-2. Ein vollständiger Refresh wird danach ausgelöst, um den tatsächlichen Gerätezustand zu bestätigen
-3. **EEPROM-geschützte Register** dürfen nur einmal pro Minute beschrieben werden, um Hardwareverschleiß zu vermeiden
+## Unsupported-register tracking
 
-## Fehlerbehandlung
+When the controller rejects an address with Modbus exception code 2
+("Illegal Data Address"), the register is recorded as unsupported:
 
-- Bei Verbindungsfehlern wird automatisch eine **Repair Issue** in Home Assistant erstellt
-- Sobald die Verbindung wiederhergestellt ist, verschwindet die Repair Issue automatisch
-- Der DataUpdateCoordinator loggt Verbindungsfehler einmalig (nicht bei jedem fehlgeschlagenen Zyklus)
+- `get_unsupported_registers()` returns the sorted tuple of explicitly
+  rejected register names.
+- It never includes registers that merely failed repeatedly for a transient
+  reason.
+- `reset_failed_registers()` clears the tracking so they can be retried.
 
-## Technician Code Sensoren
+Consumers that maintain their own polling skip-list can use this to avoid
+futile requests.
 
-Die optionalen Technician-Code-Sensoren aktualisieren sich **unabhängig** alle 60 Sekunden über einen eigenen Timer, da sie keine Modbus-Registerwerte sind, sondern berechnete Codes.
+## Permanently failed registers
+
+Registers that fail repeatedly after retries are marked permanently failed and
+are skipped by subsequent `read_register()` / `read_batch()` calls until
+`reset_failed_registers()` is invoked. A successful individual read resets the
+transient failure counter, so intermittent errors cannot permanently disable a
+working register.
+
+## Retry and reconnect model
+
+- Each command is retried up to `max_retries` (default `MAX_RETRIES = 3`).
+- The backoff uses adaptive exponential growth (`RETRY_BACKOFF_BASE = 0.5`).
+- `TimeoutError` (including `asyncio.TimeoutError`) is treated as a retryable
+  transport error — a slow or unresponsive controller no longer bypasses the
+  retry loop.
+- pymodbus `ModbusIOException` no-response failures are treated as connection
+  failures: the potentially stale TCP socket is closed, a reconnect is
+  attempted, and the interrupted request is retried instead of reusing a dead
+  session.
+- Exhausted transport and no-response failures from grouped and individual
+  fallback reads are propagated rather than treated as register-specific
+  errors, so valid registers are not disabled.
+- The connection-suspect flag (`IdmClientDiagnostics.connection_suspect`)
+  indicates the client wants a fresh connection; consumers can trigger it
+  immediately with `force_reconnect()`.
+
+## Sentinel values
+
+Context-specific unavailable values (for example `-1.0` for an unused heating
+circuit's flow temperature, or hardware-verified sentinels like `255` at
+specific capability registers) are recorded in each register's
+`sentinel_values` metadata. These are decoded using the documented datatype
+and then interpreted as "unavailable" — they are never clamped or discarded at
+the raw-byte level to hide a datatype/address error.
+
+## Polling guidance for consumers
+
+- **Modbus poll interval:** choose based on the use case. 10–30 seconds is a
+  good default for active monitoring; 60+ seconds for quieter systems.
+- **Web poll interval:** the recommended interval is
+  `RECOMMENDED_WEB_SCAN_INTERVAL` (30 seconds). Poll Modbus and web in
+  parallel, or start the web task a few milliseconds later if the controller
+  needs gentler pacing.
+- **Writes:** EEPROM-sensitive registers are throttled (write sparingly). Cyclic
+  GLT demand registers must be re-written periodically (every 10 minutes) to
+  stay active — see [Known Limitations](Known-Limitations).

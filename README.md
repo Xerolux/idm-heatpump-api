@@ -11,7 +11,7 @@
 [![PayPal](https://img.shields.io/badge/PayPal-xerolux-blue?logo=paypal&style=for-the-badge)](https://paypal.me/xerolux)
 [![Tesla Referral](https://img.shields.io/badge/Tesla-Referral-red?style=for-the-badge&logo=tesla)](https://ts.la/sebastian564489)
 
-An asynchronous Python library for communicating with **IDM Navigator heat pumps** (2.0, Pro, and Navigator 10) over Modbus TCP.
+An asynchronous Python library for communicating with **IDM Navigator heat pumps** (Navigator 2.0, Pro, and Navigator 10) over Modbus TCP.
 
 This library is primarily designed to power the unofficial [IDM Heatpump Home Assistant custom integration](https://github.com/Xerolux/idm-heatpump-hass), but it can be used independently for any Python project that needs to monitor or control an IDM heat pump.
 
@@ -28,31 +28,41 @@ This library is primarily designed to power the unofficial [IDM Heatpump Home As
 
 * **Asynchronous:** Fully async operations using `pymodbus` with automatic reconnection.
 * **Auto-Detection:** Probes registers to detect the controller model, active heating circuits, zone modules, solar, ISC, PV, and cascade.
-* **Comprehensive Register Map:** 100+ registers covering temperatures, energy, status, heating circuits (A-G), zone modules, solar, ISC, cascade, boosters, and more.
-* **Batch Reads:** Safe grouping of exactly adjacent, non-overlapping register ranges.
-* **Resilient:** Configurable retries with exponential backoff and permanent failure tracking for unavailable registers.
-* **Write Support:** Safe register writes with validation, min/max bounds, and EEPROM-sensitive write protection.
-* **Metadata:** Each register includes Home Assistant mapping fields plus source, source version, supported models, sentinel values, and verification metadata.
+* **Comprehensive Register Map:** 100+ registers covering temperatures, energy, status, heating circuits (A–G), zone modules, solar, ISC, cascade, boosters, heat-sink sensors, power limitation, and more.
+* **Safe Batch Reads:** Grouping of exactly adjacent, non-overlapping register ranges (up to 40 registers per request) with automatic single-register fallback for implausible grouped values.
+* **Resilient:** Configurable retries with adaptive exponential backoff, permanent-failure tracking for unavailable registers, and connection-suspect detection that forces a reconnect on dead sessions.
+* **Write Support:** Safe register writes with datatype, enum, min/max and finiteness validation, EEPROM throttling, and cyclic-write heartbeats. Includes a `dry_run`/`simulate_write` path for validating without sending.
+* **Optional Web Supplement:** Read-only access to local-web-only values (flow rate, hot gas, refrigerant pressure, board temperature, software version, …) via Navigator 10 WebSocket or Navigator 2.0 HTTP, including notifications and statistics.
+* **Metadata-Rich:** Each register carries Home Assistant mapping fields plus source, source version, supported models, sentinel values, and verification metadata.
+* **Typed:** Ships a `py.typed` marker and full inline type annotations.
 
 ## Supported Devices
 
 | Device | Firmware | Heating Circuits | Zone Modules | Status |
-|-------|----------|------------|-------------|--------|
-| IDM Navigator 10 | NAV10_20.23+ (2025) | up to 7 (A-G) | up to 10 (6 default, 8 configurable) | Maintainer-confirmed |
-| IDM Navigator 2.0 | firmware-dependent | up to 7 (A-G) | firmware-dependent | Expected; needs broader raw detection captures |
-| IDM Navigator Pro | firmware-dependent | up to 7 (A-G) | up to 10 (8 configurable) | Expected; needs complete diagnostics |
+|-------|----------|------------------|--------------|--------|
+| IDM Navigator 10 | NAV10_20.23+ (2025) | up to 7 (A–G) | up to 10 (6 default, 8 configurable) | Maintainer-confirmed |
+| IDM Navigator 2.0 | firmware-dependent | up to 7 (A–G) | firmware-dependent | Expected; needs broader raw detection captures |
+| IDM Navigator Pro | firmware-dependent | up to 7 (A–G) | up to 10 (8 configurable) | Expected; needs complete diagnostics |
+
+> Navigator 1.0/1.7 is a separate protocol family and is **not** supported.
 
 ## Requirements
 
-- Modbus TCP must be enabled on the IDM controller (Settings -> Building Management -> Modbus TCP = On).
-- Default port: `502`
-- Default slave ID: `1`
+- Modbus TCP must be enabled on the IDM controller (Settings → Building Management → Modbus TCP = On).
+- Default port: `502` (`DEFAULT_PORT`)
+- Default slave ID: `1` (`DEFAULT_SLAVE_ID`)
 - Python 3.12+
 
 ## Installation
 
 ```bash
 pip install idm-heatpump-api
+```
+
+For the optional local-web supplement (Navigator 10 WebSocket / Navigator 2.0 HTTP):
+
+```bash
+pip install "idm-heatpump-api[web]"
 ```
 
 ## Basic Usage
@@ -102,20 +112,19 @@ The library provides fine-grained control for advanced scenarios:
 - `build_register_map(circuits=["A", "B"], zone_modules=2, rooms_per_zone=4)`: Manual register map without auto-detection.
 - `get_heating_circuit_registers("A")`: Registers for a single heating circuit.
 - `get_zone_module_registers(zone_index=1, room_count=6)`: Registers for a single zone module.
+- `client.read_value("outdoor_temp")` / `client.set_value("dhw_setpoint", 48)`: Key-based read/write helpers (resolve via the registry).
+- `client.set_value("dhw_setpoint", 48, dry_run=True)`: Validate and encode a write **without sending** it. Returns a `WriteSafetyResult`.
+- `client.simulate_write(reg, value, dry_run=True)`: Lower-level validation/encoding of a `RegisterDef` or key; also returns `WriteSafetyResult`.
+- `client.write_register(custom_reg, value, allow_custom_register=True)`: Explicit advanced escape hatch for user-authorized raw writes. Model-map membership is skipped, but datatype and value-safety validation remains active.
 - `client.probe_register(address=1850, count=2)`: Probe a single register without affecting failure tracking.
+- `client.force_reconnect()`: Hard-close the current TCP connection and open a fresh one.
+- `client.get_diagnostics()`: Return an `IdmClientDiagnostics` snapshot (navigator type, connection state, firmware, last error, permanently-failed and batch-unsafe registers, connection-suspect flag).
+- `client.get_last_error_context()` / `client.clear_last_error_context()`: Inspect the last structured `ModbusErrorContext` (operation, address, count, register type, error type, message, attempt).
 - `client.reset_failed_registers()`: Retry permanently failed registers.
-- `client.get_unsupported_registers()`: Return the register names explicitly rejected by
-  the controller with Modbus exception code 2 ("Illegal Data Address"). This is
-  useful for consumers that maintain their own polling skip-list; it never
-  includes registers that merely failed repeatedly for a transient reason.
-- `client.get_batch_unsafe_registers()`: Return registers that produced an invalid
-  grouped value and are therefore read individually for the rest of the client session.
-- `client.mark_batch_unsafe(register)`: Force a register into that session-local
-  individual-read path when an external plausibility check detects a valid-looking
-  but incorrect grouped value.
-- `client.write_register(custom_reg, value, allow_custom_register=True)`: Explicit
-  advanced escape hatch for user-authorized raw writes. Model-map membership is
-  skipped, but datatype and value safety validation remains active.
+- `client.get_unsupported_registers()`: Return the register names explicitly rejected by the controller with Modbus exception code 2 ("Illegal Data Address"). Useful for consumers that maintain their own polling skip-list; it never includes registers that merely failed repeatedly for a transient reason.
+- `client.get_batch_unsafe_registers()` / `client.mark_batch_unsafe(reg)`: Registers that produced an invalid grouped value are read individually for the rest of the client session. `mark_batch_unsafe` lets a consumer quarantine a register when an external plausibility check detects a valid-looking but incorrect grouped value.
+- `client.get_active_cyclic_writes()` / `client.get_expired_cyclic_writes()` / `client.reset_cyclic_write_state()`: Track cyclic GLT write heartbeats. Successful writes to cyclic GLT registers refresh an in-memory deadline; consumers can detect stale external demands and clear the state on reload or shutdown.
+- `client.decode_value(registers, reg)` / `client.encode_value(value, reg)`: Public codec helpers (`ModbusCodec` mixin) for manual (de)serialization.
 
 Register metadata for HA integration mapping:
 
@@ -136,33 +145,20 @@ print(reg.sentinel_values)       # context-specific unavailable values
 print(reg.last_verified)         # optional hardware verification label
 ```
 
-Successful writes to cyclic GLT registers refresh an in-memory heartbeat
-deadline. Consumers can inspect `get_active_cyclic_writes()` and
-`get_expired_cyclic_writes()` to detect stale external demands and can clear the
-state with `reset_cyclic_write_state()` on reload or shutdown.
-
 ## Optional Local Web Supplement
 
-Some IDM values are available in the local web interface but not in the
-published Modbus map, for example flow rate, hot gas temperature, refrigerant
-pressure values, board temperature, central-unit battery voltage, and the
-controller software version. The optional `idm_heatpump.web` module is read-only
-and is intended to run alongside the Modbus client.
+Some IDM values are available in the local web interface but not in the published Modbus map, for example flow rate, hot gas temperature, refrigerant pressure values, board temperature, central-unit battery voltage, and the controller software version. The optional `idm_heatpump.web` module is read-only and is intended to run alongside the Modbus client.
 
-See [`docs/Navigator-Protocol-Analysis.md`](docs/Navigator-Protocol-Analysis.md)
-for the validated local transport boundary, reverse-engineering evidence and
-explicitly unsupported protocol areas.
+See [`docs/Navigator-Protocol-Analysis.md`](docs/Navigator-Protocol-Analysis.md) for the validated local transport boundary, reverse-engineering evidence and explicitly unsupported protocol areas.
 
-Install the optional dependency when using the web client:
+Two transports are supported:
 
-```bash
-pip install "idm-heatpump-api[web]"
-```
+- **Navigator 10** — local WebSocket on port `61220` via `IdmNavigator10WebClient` (created through `create_optional_navigator10_web_client()`). Supports `read_data()`, `read_statistics()`, and `read_notifications()`.
+- **Navigator 2.0** — local HTTP with CSRF token handling via `IdmNavigator20WebClient` (created through `create_optional_navigator20_web_client()`). Supports `read_data()`, `read_extra_data()`, and `capabilities()`.
 
-Navigator 2.0 uses the local HTTP interface with CSRF token handling. Navigator
-10 uses the local WebSocket interface on port `61220`. A Home Assistant
-consumer should poll Modbus and web data in parallel, or start the web poll a few
-milliseconds after the Modbus poll if the controller needs gentler pacing:
+If the user does not configure a local network PIN, consumers should not create a web client. Both factories return `None` for `None`, empty, or whitespace-only PIN values so Modbus-only operation can continue without errors. Use `web_pin_configured(pin)` to check explicitly.
+
+A Home Assistant consumer should poll Modbus and web data in parallel, or start the web poll a few milliseconds after the Modbus poll if the controller needs gentler pacing:
 
 ```python
 import asyncio
@@ -192,7 +188,7 @@ async def main():
         print(web_data.navigator_version)
         print(web_data.software_version)
         print(web_data.heatpump_model)
-        print(web_data.simple_values.get("flowmeter"))
+        print(web_data.get_numeric("flowmeter"))
 
     if web is not None:
         await web.close()
@@ -201,10 +197,7 @@ async def main():
 asyncio.run(main())
 ```
 
-If the user does not configure a local network PIN, consumers should not create
-a web client. `create_optional_navigator10_web_client()` and
-`create_optional_navigator20_web_client()` return `None` for `None`, empty, or
-whitespace-only PIN values so Modbus-only operation can continue without errors.
+Web errors are raised as subclasses of `IdmWebError` (e.g. `IdmWebConnectionError`, `IdmWebAuthenticationError`/`IdmWebPinRejectedError`, `IdmWebCsrfError`, `IdmWebProtocolError`/`IdmWebWebSocketError`/`IdmWebResponseError`, `IdmWebTimeoutError`, `IdmWebDependencyError`). Short legacy aliases (`AuthenticationError`, `ConnectionError`, `TimeoutError`, `CsrfError`, `WebSocketError`, `ProtocolError`, `PinRejectedError`) remain available but the `IdmWeb*` names are preferred. The recommended web scan interval is `RECOMMENDED_WEB_SCAN_INTERVAL` (30 s).
 
 ## Public API
 
@@ -214,39 +207,17 @@ Supported consumers should import from the package root:
 from idm_heatpump import IdmModbusClient, build_register_map
 ```
 
-The public API is the package root `__all__` contract and is protected by a
-snapshot test. It currently includes:
+The public API is the package root `__all__` contract, protected by a snapshot test (`tests/test_public_api.py`). It currently includes:
 
-- Client and metadata types: `IdmModbusClient`, `IdmModelInfo`,
-  `IllegalAddressError`, `ModbusErrorContext`, `RegisterDef`, `DataType`, `RegisterType`,
-  `WriteClass`, `IdmWebData`, `IdmWebValue`, `IdmWebValueDescription`
-- Register builders: `build_register_map`, `get_all_registers`, `get_register`,
-  `get_detection_registers`, `get_heating_circuit_registers`,
-  `get_zone_module_registers`
-- Optional web supplement helpers: `create_optional_navigator10_web_client`,
-  `create_optional_navigator20_web_client`, `web_pin_configured`,
-  `WEB_VALUE_DESCRIPTIONS`
-- Register collections and option maps: `CORE_REGISTERS`,
-  `SYSTEM_MODE_OPTIONS`, `CIRCUIT_MODE_OPTIONS`, `ROOM_MODE_OPTIONS`,
-  `ZONE_MODULE_MODE_OPTIONS`, `ACTIVE_HC_MODE_OPTIONS`, `SOLAR_MODE_OPTIONS`,
-  `SMART_GRID_OPTIONS`, `ISC_MODE_OPTIONS`, `HP_OPERATING_MODE_OPTIONS`,
-  `BIVALENCE_STATE_OPTIONS`, `BOOSTER_FAULT_OPTIONS`, `EVU_LOCK_OPTIONS`,
-  `VARIABLE_INPUT_OPTIONS`
-- Model, feature, and connection constants: `MODEL_NAVIGATOR_20`,
-  `MODEL_NAVIGATOR_PRO`, `MODEL_NAVIGATOR_10`, `MODEL_UNKNOWN`,
-  `FEATURE_HEATING_CIRCUITS`, `FEATURE_ZONE_MODULES`, `FEATURE_SOLAR`,
-  `FEATURE_ISC`, `FEATURE_PV`, `FEATURE_CASCADE`, `HEATING_CIRCUIT_LETTERS`,
-  `MAX_HEATING_CIRCUITS`, `MAX_ZONE_MODULES`, `MAX_ROOMS_PER_ZONE`,
-  `DEFAULT_PORT`, `DEFAULT_SLAVE_ID`, `DEFAULT_TIMEOUT`, `MAX_RETRIES`,
-  `RETRY_BACKOFF_BASE`, `EEPROM_SENSITIVE_ADDRESSES`,
-  `RECOMMENDED_WEB_SCAN_INTERVAL`
+- **Client and metadata types:** `IdmModbusClient`, `IdmModelInfo`, `RegisterDef`, `DataType`, `RegisterType`, `WriteClass`, `WriteSafetyResult`, `ModbusErrorContext`, `ModbusCodec`, `IdmClientDiagnostics`, `FeatureFlags`, `IllegalAddressError`, `AdaptiveBackoff`, `PollRateLimiter`, `quiet_pymodbus_logging`
+- **Register builders and registry:** `build_register_map`, `get_all_registers`, `get_register`, `get_register_registry`, `get_detection_registers`, `get_heating_circuit_registers`, `get_zone_module_registers`, `RegisterRegistry`, `CORE_REGISTERS`
+- **Optional web supplement:** `IdmNavigator10WebClient`, `IdmNavigator20WebClient`, `create_optional_navigator10_web_client`, `create_optional_navigator20_web_client`, `web_pin_configured`, `IdmWebData`, `IdmWebValue`, `IdmWebValueDescription`, `IdmWebNotifications`, `IdmWebNotification`, `IdmWebDiagnostics`, `WEB_VALUE_DESCRIPTIONS`, `RECOMMENDED_WEB_SCAN_INTERVAL`, `IdmWebError`, `IdmWebDependencyError`, `IdmWebConnectionError`, `IdmWebTimeoutError`, `IdmWebAuthenticationError`, `IdmWebPinRejectedError`, `IdmWebCsrfError`, `IdmWebProtocolError`, `IdmWebWebSocketError`, `IdmWebResponseError`, and the legacy aliases `AuthenticationError`, `PinRejectedError`, `CsrfError`, `ConnectionError`, `TimeoutError`, `WebSocketError`, `ProtocolError`
+- **Option maps:** `SYSTEM_MODE_OPTIONS`, `CIRCUIT_MODE_OPTIONS`, `ROOM_MODE_OPTIONS`, `ZONE_MODULE_MODE_OPTIONS`, `ACTIVE_HC_MODE_OPTIONS`, `SOLAR_MODE_OPTIONS`, `SMART_GRID_OPTIONS`, `ISC_MODE_OPTIONS`, `HP_OPERATING_MODE_OPTIONS`, `BIVALENCE_STATE_OPTIONS`, `BOOSTER_FAULT_OPTIONS`, `EVU_LOCK_OPTIONS`, `VARIABLE_INPUT_OPTIONS`
+- **Model, feature, and connection constants:** `MODEL_NAVIGATOR_20`, `MODEL_NAVIGATOR_PRO`, `MODEL_NAVIGATOR_10`, `MODEL_UNKNOWN`, `MODEL_DETECTION_TIMEOUT`, `MODEL_DETECTION_MAX_RETRIES`, `FEATURE_HEATING_CIRCUITS`, `FEATURE_ZONE_MODULES`, `FEATURE_SOLAR`, `FEATURE_ISC`, `FEATURE_PV`, `FEATURE_CASCADE`, `HEATING_CIRCUIT_LETTERS`, `MAX_HEATING_CIRCUITS`, `MAX_ZONE_MODULES`, `MAX_ROOMS_PER_ZONE`, `DEFAULT_PORT`, `DEFAULT_SLAVE_ID`, `DEFAULT_TIMEOUT`, `MAX_RETRIES`, `RETRY_BACKOFF_BASE`, `EEPROM_SENSITIVE_ADDRESSES`
 
-The package ships a `py.typed` marker so type checkers can consume its inline
-type annotations.
+The package ships a `py.typed` marker so type checkers can consume its inline type annotations.
 
-Imports from submodules such as `idm_heatpump.client` or
-`idm_heatpump.registers` are internal convenience imports and may change as the
-library is reorganized.
+Imports from submodules such as `idm_heatpump.client` or `idm_heatpump.registers` are internal convenience imports and may change as the library is reorganized.
 
 ## Navigator 10 Support
 
@@ -263,7 +234,7 @@ The library fully covers the official 2025 Navigator 10 Modbus TCP specification
 
 ## Contributing
 
-Please open an issue or pull request for bug reports, improvements, and documentation updates.
+Please open an issue or pull request for bug reports, improvements, and documentation updates. See [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/Contributing (2).md](docs/Contributing%20%282%29.md) for details.
 
 ## License
 
