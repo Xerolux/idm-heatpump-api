@@ -363,6 +363,20 @@ def test_detect_model_treats_zero_cascade_register_as_present() -> None:
     assert model_info.has_cascade is True
 
 
+def test_detect_model_treats_cascade_sentinel_as_unavailable() -> None:
+    """The UCHAR sentinel 255 is a response, but not cascade capability."""
+    client = ProbeOnlyClient(
+        {
+            (1350, 2): [0, 16968],
+            (1147, 1): [0xFFFF],
+        }
+    )
+
+    model_info = asyncio.run(client.detect_model())
+
+    assert model_info.has_cascade is False
+
+
 def test_register_map_is_cached_after_model_detection() -> None:
     """_validate_model_availability should not rebuild the map on every call."""
     client = ProbeOnlyClient(
@@ -534,6 +548,24 @@ def test_write_safety_rejects_unknown_and_read_only_registers() -> None:
         client.simulate_write("does_not_exist", 1)
     with pytest.raises(ValueError, match="read-only"):
         client.simulate_write("outdoor_temp", 21.5)
+
+
+def test_custom_write_requires_explicit_model_validation_bypass() -> None:
+    client = ProbeOnlyClient(
+        {
+            (1350, 2): [0, 16968],
+            (4108, 2): [0, 16968],
+        }
+    )
+    asyncio.run(client.detect_model())
+    custom = RegisterDef(1999, DataType.UINT16, "manual_1999", writable=True)
+
+    with pytest.raises(ValueError, match="not available for detected model"):
+        client.simulate_write(custom, 42)
+
+    plan = client.simulate_write(custom, 42, allow_custom_register=True)
+
+    assert plan.encoded_registers == (42,)
 
 
 def test_write_safety_rejects_invalid_enum_boolean_and_fractional_integer_values() -> None:

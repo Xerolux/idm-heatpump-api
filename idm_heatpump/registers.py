@@ -478,6 +478,8 @@ def _hp_status_registers() -> dict[str, RegisterDef]:
             address=1147,
             datatype=DataType.UCHAR,
             name="cascade_available_heating",
+            sentinel_values=(255,),
+            last_verified="2026-07-10",
         ),
         "cascade_available_cooling": RegisterDef(
             address=1148,

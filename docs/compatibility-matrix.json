@@ -102,6 +102,12 @@
       "hass_integration_version": "0.8.1-beta.27",
       "status": "hardware-verified",
       "notes": "Declares unavailable sentinels verified on Navigator 10 hardware so normal optional-register values do not trigger corrupt-batch recovery and repeated warnings."
+    },
+    {
+      "api_version": "0.7.6",
+      "hass_integration_version": "0.8.1-beta.28",
+      "status": "hardware-verified",
+      "notes": "Hardens transport failure propagation, recognizes the verified cascade-unavailable sentinel, supports consumer-driven batch quarantine, and adds explicitly acknowledged custom-register writes."
     }
   ]
 }

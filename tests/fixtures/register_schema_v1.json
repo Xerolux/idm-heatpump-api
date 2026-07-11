@@ -1036,8 +1036,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": null,
+        "sentinel_values": [
+          255
+        ],
+        "last_verified": "2026-07-10",
         "size": 1
       },
       "cascade_avg_flow_cooling": {
@@ -9762,8 +9764,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": null,
+        "sentinel_values": [
+          255
+        ],
+        "last_verified": "2026-07-10",
         "size": 1
       },
       "cascade_avg_flow_cooling": {
@@ -28469,8 +28473,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": null,
+        "sentinel_values": [
+          255
+        ],
+        "last_verified": "2026-07-10",
         "size": 1
       },
       "cascade_running_cooling": {

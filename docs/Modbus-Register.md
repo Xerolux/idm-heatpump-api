@@ -307,8 +307,9 @@ Per-circuit registers (index: A=0 … G=6):
 ## Zone Modules 1–10 (Single Room Control)
 
 Base addresses: 2000, 2065, 2130, 2195, 2260, 2325, 2390, 2455, 2520, 2585
-(zone module N base = 2000 + (N-1) × 65). Each module supports up to 6 rooms;
-each room block is **7 registers** wide, starting at base+2.
+(zone module N base = 2000 + (N-1) × 65). Each module supports up to 8
+configurable rooms (6 is the current Navigator 10 default); each room block is
+**7 registers** wide, starting at base+2.
 
 | Offset | Name pattern | Type | Access | Unit | Notes |
 |--------|--------------|------|--------|------|-------|
