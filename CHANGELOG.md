@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Detect non-contiguous heating-circuit configurations (e.g. only circuits A and D installed, with B/C unconfigured) in `IdmModbusClient.detect_model()`. Heating-circuit detection no longer early-breaks after two sentinel slots and additionally probes the active operating-mode register (1498-1504) as a second presence signal, so an installed circuit that reports -1.0 on its flow-temperature register is still detected when its active-mode register confirms configuration. Source: two-device Navigator 10 capture (2026-07-16).
+
 ## [0.7.7] - 2026-07-16
 
 ### Fixed
