@@ -140,7 +140,13 @@ def test_detect_model_ignores_incomplete_probe_responses() -> None:
 
 
 def test_detect_model_ignores_unavailable_heating_circuit_sentinel() -> None:
-    """A responding -1.0 flow register means an unconfigured circuit slot."""
+    """A -1.0 flow register with no active-mode confirmation means an unconfigured slot.
+
+    All seven slots A-G are probed (no early-break); each unconfigured slot has
+    both a -1.0 flow-temperature sentinel and the active-mode UCHAR sentinel
+    (raw word 0xFFFF), so neither presence signal fires and only circuit A is
+    reported. This documents the "only A is installed" case.
+    """
     unavailable_flow = ModbusCodec.encode_float32(-1.0)
     client = ProbeOnlyClient(
         {
@@ -151,14 +157,96 @@ def test_detect_model_ignores_unavailable_heating_circuit_sentinel() -> None:
             (1358, 2): unavailable_flow,
             (1360, 2): unavailable_flow,
             (1362, 2): unavailable_flow,
+            # Active-mode registers: A configured (0), B-G "not configured" sentinel.
+            (1498, 1): [0],
+            (1499, 1): [0xFFFF],
+            (1500, 1): [0xFFFF],
+            (1501, 1): [0xFFFF],
+            (1502, 1): [0xFFFF],
+            (1503, 1): [0xFFFF],
+            (1504, 1): [0xFFFF],
         }
     )
 
     model_info = asyncio.run(client.detect_model())
 
     assert model_info.active_heating_circuits == ["A"]
+    # All seven heating-circuit slots are now probed (no early-break).
+    assert (1350, 2) in client.probe_calls
     assert (1352, 2) in client.probe_calls
-    assert (1356, 2) not in client.probe_calls
+    assert (1356, 2) in client.probe_calls
+    assert (1362, 2) in client.probe_calls
+
+
+def test_detect_model_finds_non_contiguous_heating_circuits() -> None:
+    """Non-contiguous installed circuits (e.g. only A and D) must be detected.
+
+    Regression guard for a 2-device Navigator 10 capture (2026-07-16): an ALM
+    with heating circuits A and D physically installed reported only ['A'],
+    because detection early-broke after the two unconfigured sentinel slots
+    B and C and never reached D. D reports a real flow temperature (26.9 C)
+    AND a non-sentinel active-mode value; B/C report -1.0 flow temperature AND
+    the UCHAR 0xFFFF "not configured" sentinel, so they are correctly excluded.
+    """
+    unavailable_flow = ModbusCodec.encode_float32(-1.0)
+    client = ProbeOnlyClient(
+        {
+            # Flow temperatures: A and D real, B/C/E/F/G sentinel.
+            (1350, 2): ModbusCodec.encode_float32(27.61),
+            (1352, 2): unavailable_flow,
+            (1354, 2): unavailable_flow,
+            (1356, 2): ModbusCodec.encode_float32(26.90),
+            (1358, 2): unavailable_flow,
+            (1360, 2): unavailable_flow,
+            (1362, 2): unavailable_flow,
+            # Active-mode: A and D configured (0), B/C/E/F/G "not configured".
+            (1498, 1): [0],
+            (1499, 1): [0xFFFF],
+            (1500, 1): [0xFFFF],
+            (1501, 1): [0],
+            (1502, 1): [0xFFFF],
+            (1503, 1): [0xFFFF],
+            (1504, 1): [0xFFFF],
+        }
+    )
+
+    model_info = asyncio.run(client.detect_model())
+
+    assert model_info.active_heating_circuits == ["A", "D"]
+    assert FEATURE_HEATING_CIRCUITS in model_info.features
+
+
+def test_detect_model_active_mode_detects_circuit_without_flow_temp() -> None:
+    """A circuit whose flow temp is -1.0 but whose active-mode is configured counts.
+
+    ODER-logic presence: an installed circuit can report -1.0 on flow temperature
+    (e.g. pump off, no flow sensor) while its active-mode register confirms it is
+    configured. This must still be detected as active.
+    """
+    unavailable_flow = ModbusCodec.encode_float32(-1.0)
+    client = ProbeOnlyClient(
+        {
+            # A: real flow. B: flow sentinel BUT active-mode configured.
+            (1350, 2): ModbusCodec.encode_float32(25.0),
+            (1352, 2): unavailable_flow,
+            (1354, 2): unavailable_flow,
+            (1356, 2): unavailable_flow,
+            (1358, 2): unavailable_flow,
+            (1360, 2): unavailable_flow,
+            (1362, 2): unavailable_flow,
+            (1498, 1): [0],
+            (1499, 1): [2],  # circuit B configured despite -1.0 flow temp
+            (1500, 1): [0xFFFF],
+            (1501, 1): [0xFFFF],
+            (1502, 1): [0xFFFF],
+            (1503, 1): [0xFFFF],
+            (1504, 1): [0xFFFF],
+        }
+    )
+
+    model_info = asyncio.run(client.detect_model())
+
+    assert model_info.active_heating_circuits == ["A", "B"]
 
 
 def test_detect_model_navigator_20_with_heat_sink_flow_rate() -> None:
@@ -199,15 +287,27 @@ def test_detect_model_can_skip_unreliable_firmware_probe() -> None:
     assert (4120, 2) not in client.probe_calls
 
 
-def test_detect_model_stops_after_consecutive_empty_optional_slots() -> None:
-    """Missing contiguous optional blocks should not force every possible probe."""
+def test_detect_model_scans_all_heating_circuits_but_stops_zone_modules() -> None:
+    """Heating circuits are fully scanned A-G; zone modules still early-break.
+
+    Heating-circuit detection no longer early-breaks on empty slots, because
+    installed circuits can be non-contiguous (e.g. A+D with B/C unconfigured),
+    so all seven flow-temperature and active-mode slots are probed. Zone-module
+    detection keeps its early-break, since those are always contiguous.
+    """
     client = ProbeOnlyClient({})
 
     asyncio.run(client.detect_model())
 
+    # All seven heating-circuit flow-temperature slots are probed.
     assert (1350, 2) in client.probe_calls
     assert (1352, 2) in client.probe_calls
-    assert (1354, 2) not in client.probe_calls
+    assert (1354, 2) in client.probe_calls
+    assert (1356, 2) in client.probe_calls
+    assert (1358, 2) in client.probe_calls
+    assert (1360, 2) in client.probe_calls
+    assert (1362, 2) in client.probe_calls
+    # Zone-module probing still early-breaks after consecutive empty slots.
     assert (2000, 1) in client.probe_calls
     assert (2065, 1) in client.probe_calls
     assert (2130, 1) not in client.probe_calls

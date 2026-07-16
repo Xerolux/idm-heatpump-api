@@ -65,6 +65,15 @@ _TRANSPORT_ERRORS = (ConnectionException, ModbusIOException, OSError, TimeoutErr
 _DETECT_HC_FLOW_BASE = 1350
 _DETECT_HC_STEP = 2
 _DETECT_HC_FLOW_UNAVAILABLE = -1.0
+# Active operating-mode register per heating circuit (UCHAR, step 1).
+# A configured/installed circuit answers with a value whose low byte is not
+# the UCHAR "not configured" sentinel 255 (raw word 0xFFFF), per const.py
+# ACTIVE_HC_MODE_OPTIONS. Used as a second presence signal alongside the
+# flow-temperature probe, because an installed circuit can report -1.0 on
+# its flow-temperature register (e.g. pump off, no flow sensor) while still
+# being configured. See docs/Register-Map-Invariants.md (active mode A=1498).
+_DETECT_HC_ACTIVE_MODE_BASE = 1498
+_DETECT_HC_ACTIVE_MODE_UNAVAILABLE = 255  # UCHAR sentinel, raw word 0xFFFF
 _DETECT_ZONE_MODULE_BASE = 2000
 _DETECT_ZONE_MODULE_STEP = 65
 _DETECT_EMPTY_SLOT_STOP_THRESHOLD = 2
@@ -879,7 +888,14 @@ class IdmModbusClient:
         """Detect the IDM heat pump model and capabilities by probing registers.
 
         Strategy:
-          1. Probe heating circuit flow temperatures (1350-1362)
+          1. Probe heating circuit flow temperatures (1350-1362) and, as a
+             second presence signal, the active operating-mode register
+             (1498-1504). All seven slots A-G are probed; detection does not
+             early-break on sentinel slots, because installed circuits can be
+             non-contiguous (e.g. only A and D configured, with B/C unconfigured).
+             A circuit counts as active when its flow temperature is a real
+             value (not the -1.0 sentinel) OR its active-mode register is not
+             the UCHAR "not configured" sentinel (raw word 0xFFFF).
           2. Probe zone module presence (2000, 2065, ...)
           3. Probe solar register (1850)
           4. Probe ISC register (1870)
@@ -895,28 +911,47 @@ class IdmModbusClient:
         await self._ensure_connected()
 
         active_circuits: list[str] = []
-        missing_circuit_slots = 0
         for i in range(MAX_HEATING_CIRCUITS):
             addr = _DETECT_HC_FLOW_BASE + i * _DETECT_HC_STEP
             regs = await self._probe_model_register(addr, 2)
             val = self._probe_float_value(regs, min_val=-50.0, max_val=80.0)
             # Navigator controllers return -1.0 for the flow-temperature
             # register of an unconfigured heating-circuit slot. The register
-            # still responds, so treating every two-word response as active
-            # incorrectly reports all seven possible circuits on such units.
-            unavailable = val == _DETECT_HC_FLOW_UNAVAILABLE
-            if val is not None and not unavailable:
+            # still responds, so the -1.0 sentinel alone must not imply an
+            # active circuit, but a real (non-sentinel) reading is a strong
+            # presence signal.
+            flow_unavailable = val == _DETECT_HC_FLOW_UNAVAILABLE
+            flow_real = val is not None and not flow_unavailable
+
+            # Second presence signal: the active operating-mode register. An
+            # installed circuit answers with a low byte != 255 (raw 0xFFFF is
+            # the UCHAR "not configured" sentinel). This catches circuits that
+            # report -1.0 on flow temperature (e.g. pump off, no flow sensor)
+            # while still being physically configured.
+            mode_addr = _DETECT_HC_ACTIVE_MODE_BASE + i
+            mode_regs = await self._probe_model_register(mode_addr, 1)
+            mode_configured = (
+                mode_regs is not None
+                and len(mode_regs) == 1
+                and (mode_regs[0] & 0xFF) != _DETECT_HC_ACTIVE_MODE_UNAVAILABLE
+            )
+
+            if flow_real:
                 active_circuits.append(HEATING_CIRCUIT_LETTERS[i])
-                missing_circuit_slots = 0
-            elif regs is not None and len(regs) == 2 and not unavailable:
-                # Registers responded but value was out-of-range or not decodable;
-                # treat the heating circuit slot as active anyway.
+            elif mode_configured:
+                # Flow temperature is absent/sentinel but the active-mode
+                # register confirms the circuit is configured. Treat as active.
                 active_circuits.append(HEATING_CIRCUIT_LETTERS[i])
-                missing_circuit_slots = 0
-            else:
-                missing_circuit_slots += 1
-            if missing_circuit_slots >= _DETECT_EMPTY_SLOT_STOP_THRESHOLD:
-                break
+            elif regs is not None and len(regs) == 2 and not flow_unavailable:
+                # Registers responded but value was out-of-range or not decodable
+                # and the active-mode register did not confirm configuration;
+                # keep the legacy conservative behavior of treating a responding
+                # non-sentinel flow register as an active slot.
+                active_circuits.append(HEATING_CIRCUIT_LETTERS[i])
+            # All seven slots A-G are probed; do not early-break. Installed
+            # circuits can be non-contiguous (e.g. only A and D configured with
+            # B/C unconfigured), so stopping after two sentinel slots would
+            # miss a real circuit further along the address range.
 
         zone_modules = 0
         missing_zone_slots = 0
