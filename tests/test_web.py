@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 import pytest
@@ -18,6 +19,7 @@ from idm_heatpump.web import (
     IdmWebResponseError,
     IdmWebValue,
     _extract_csrf_token,
+    _is_ip_literal,
     _looks_like_data_response,
     create_optional_navigator10_web_client,
     create_optional_navigator20_web_client,
@@ -618,6 +620,67 @@ class FakeHttpSession:
 
     async def close(self) -> None:
         self.closed = True
+
+
+@pytest.mark.parametrize(
+    ("host", "expected"),
+    [
+        ("192.168.1.50", True),
+        ("192.168.1.50:80", True),
+        ("2001:db8::1", True),
+        ("[2001:db8::1]", True),
+        ("[2001:db8::1]:80", True),
+        ("idm-navigator.local", False),
+        ("idm-navigator.local:80", False),
+    ],
+)
+def test_is_ip_literal_detects_ip_hosts(host: str, expected: bool) -> None:
+    assert _is_ip_literal(host) is expected
+
+
+@pytest.mark.parametrize(
+    ("host", "unsafe"), [("192.168.1.50", True), ("idm-navigator.local", False)]
+)
+def test_navigator20_internal_session_cookie_jar_matches_host_type(
+    monkeypatch: pytest.MonkeyPatch, host: str, unsafe: bool
+) -> None:
+    created_cookie_jars: list[FakeCookieJar] = []
+
+    class FakeCookieJar:
+        def __init__(self, *, unsafe: bool = False) -> None:
+            self.unsafe = unsafe
+            created_cookie_jars.append(self)
+
+    class FakeClientSession(FakeHttpSession):
+        def __init__(self, *, cookie_jar: FakeCookieJar) -> None:
+            super().__init__(
+                {
+                    ("GET", "/"): [FakeHttpResponse(200, "OK")],
+                    ("POST", "/"): [FakeHttpResponse(200, "OK")],
+                    ("GET", "/data/info.php"): [FakeHttpResponse(200, '{"heatpump":"ok"}')],
+                }
+            )
+            self.cookie_jar = cookie_jar
+
+    class FakeAiohttp:
+        CookieJar = FakeCookieJar
+        ClientSession = FakeClientSession
+
+    monkeypatch.setattr("idm_heatpump.web._require_aiohttp", lambda: FakeAiohttp)
+
+    client = IdmNavigator20WebClient(host, "1234", timeout=1)
+    asyncio.run(client.connect())
+
+    assert created_cookie_jars[0].unsafe is unsafe
+    assert isinstance(client._session, FakeClientSession)
+
+
+def test_navigator20_external_session_is_not_replaced() -> None:
+    session = FakeHttpSession({})
+    client = IdmNavigator20WebClient("192.168.1.50", "1234", timeout=1, session=session)
+
+    assert client._session is session
+    assert client._own_session is False
 
 
 @pytest.mark.asyncio
