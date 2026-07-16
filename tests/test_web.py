@@ -967,7 +967,9 @@ async def test_navigator20_context_manager_connects_and_closes(
             ("GET", "/data/heatpump.php"): [FakeHttpResponse(200, '{"heatpump":"ok"}')],
         }
     )
-    monkeypatch.setattr("aiohttp.ClientSession", lambda: session)
+    # Navigator 2.0 builds its own cookie_jar and passes it to ClientSession;
+    # the fake ignores that kwarg and returns the prebuilt session.
+    monkeypatch.setattr("aiohttp.ClientSession", lambda *args, **kwargs: session)
 
     async with IdmNavigator20WebClient("192.0.2.10", "1234", timeout=1) as client:
         assert client._data_paths == ("/data/heatpump.php",)
@@ -995,7 +997,7 @@ async def test_navigator20_close_resets_state_even_when_session_close_fails(
             ("GET", "/data/heatpump.php"): [FakeHttpResponse(200, '{"heatpump":"ok"}')],
         }
     )
-    monkeypatch.setattr("aiohttp.ClientSession", lambda: session)
+    monkeypatch.setattr("aiohttp.ClientSession", lambda *args, **kwargs: session)
     client = IdmNavigator20WebClient("192.0.2.10", "1234", timeout=1)
     await client.connect()
     assert client._own_session is True
