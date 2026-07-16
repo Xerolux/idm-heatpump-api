@@ -99,8 +99,18 @@ SENSOR_NAME_MAP: dict[str, str] = {
     "B41": "water_temp_bottom",
     "B45": "loading_temperature",
     "B48": "water_temp_top",
+    # Heating-circuit flow temperatures. Verified linear sequence B51+i for
+    # circuits A-G: B51=A (and existing), B52=B, B53=C (existing), B54=D
+    # (verified live on a Navigator 10 ALM with circuits A+D, 26.8 C matching
+    # Modbus register 1356), B55=E, B56=F, B57=G. The device only sends codes
+    # for configured circuits, so unconfigured ones are simply absent.
     "B51": "flow_temp_HK_A",
+    "B52": "flow_temp_HK_B",
     "B53": "flow_temp_HK_C",
+    "B54": "flow_temp_HK_D",
+    "B55": "flow_temp_HK_E",
+    "B56": "flow_temp_HK_F",
+    "B57": "flow_temp_HK_G",
     "B61": "room_temperature_HK_A",
     "B71": "hotgas_temperature",
     "B78": "verdamper_pressure",
@@ -182,8 +192,24 @@ NAVIGATOR10_SETTING_NAME_MAP: dict[tuple[str, str], str] = {
     ("4789", "M13"): "ventilator_direction_1",
     ("4789", "E1"): "compressor_heating",
     ("4789", "M73"): "flow_pump_output",
+    # Heating-circuit pump and mixer. Verified linear sequences M31+i (pump)
+    # and M41+i (mixer) for circuits A-G: M31/M41=A (existing), M34/M44=D
+    # (verified live on a Nav10 ALM with circuits A+D). The device only sends
+    # codes for configured circuits.
     ("4789", "M31"): "pump_heating_circuitA",
+    ("4789", "M32"): "pump_heating_circuitB",
+    ("4789", "M33"): "pump_heating_circuitC",
+    ("4789", "M34"): "pump_heating_circuitD",
+    ("4789", "M35"): "pump_heating_circuitE",
+    ("4789", "M36"): "pump_heating_circuitF",
+    ("4789", "M37"): "pump_heating_circuitG",
     ("4789", "M41"): "mixer_heating_circuitA",
+    ("4789", "M42"): "mixer_heating_circuitB",
+    ("4789", "M43"): "mixer_heating_circuitC",
+    ("4789", "M44"): "mixer_heating_circuitD",
+    ("4789", "M45"): "mixer_heating_circuitE",
+    ("4789", "M46"): "mixer_heating_circuitF",
+    ("4789", "M47"): "mixer_heating_circuitG",
     ("4789", "2./3. Wärmeerzeuger"): "heat_generator_2nd_3rd",
     ("4789", "2. Wärmeerzeuger"): "heat_generator_2nd",
     ("4789", "M63"): "valve_heating_hotwater",
