@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Detect non-contiguous heating-circuit configurations (e.g. only circuits A and D installed, with B/C unconfigured) in `IdmModbusClient.detect_model()`. Heating-circuit detection no longer early-breaks after two sentinel slots and additionally probes the active operating-mode register (1498-1504) as a second presence signal, so an installed circuit that reports -1.0 on its flow-temperature register is still detected when its active-mode register confirms configuration. Source: two-device Navigator 10 capture (2026-07-16).
+- Expose heating-circuit flow temperature, pump, and mixer for circuits B-G in the Navigator 10 web client. Previously only HK A and HK C were mapped; HK D (and B/E/F/G) were silently dropped even when the controller reported them. Mappings follow the verified linear raw-key sequences B51+i (flow temperature), M31+i (pump), and M41+i (mixer); B54/M34/M44 for circuit D confirmed live on a Navigator 10 ALM with circuits A+D (2026-07-16).
 
 ## [0.7.7] - 2026-07-16
 

@@ -40,6 +40,8 @@ NAV10_SENSOR_HTML = """
 <tr><td> </td><td>Batteriespannung Zentraleinheit</td><td>3.00V</td></tr>
 <tr><td>B2</td><td>Durchfluss</td><td>0.0l/min</td></tr>
 <tr><td>B5</td><td>Taupunktwächter Heizkreis A</td><td>1</td><td></td></tr>
+<tr><td>B51</td><td>Vorlauftemperatur HK A</td><td>27.6</td><td>°C</td></tr>
+<tr><td>B54</td><td>Vorlauftemperatur HK D</td><td>26.8</td><td>°C</td></tr>
 <tr><td>Modell</td><td></td><td>iDM ALM 6-15</td></tr>
 <tr><td>Laufzeit Stufe&nbsp;1</td><td>24.5h</td></tr>
 <tr><td>myIDMID</td><td>m123@example</td></tr>
@@ -69,6 +71,11 @@ def test_parse_idm_html_table_values_maps_known_values() -> None:
     assert values["hotwater_tapping_heat_quantity"].numeric_value == 1653.1
     assert values["hotwater_tapping_heat_quantity"].unit == "kWh"
     assert values["hotwater_circulation_heat_quantity"].value == "4384.7kWh"
+    # Heating-circuit flow temperatures (A+D, verified live Nav10 ALM).
+    assert values["flow_temp_HK_A"].numeric_value == 27.6
+    assert values["flow_temp_HK_A"].unit == "°C"
+    assert values["flow_temp_HK_D"].numeric_value == 26.8
+    assert values["flow_temp_HK_D"].unit == "°C"
 
 
 def test_web_data_helpers_return_defaults_and_numeric_values() -> None:
@@ -110,6 +117,10 @@ def test_parse_navigator_setting_response_uses_setting_specific_names() -> None:
                 <table>
                 <tr><td>M1</td><td>Verdichter 1</td><td>0</td><td></td></tr>
                 <tr><td>M73</td><td>Ladepumpe</td><td>100</td><td></td></tr>
+                <tr><td>M31</td><td>Pumpe Heizkreis A</td><td>0</td><td></td></tr>
+                <tr><td>M41</td><td>Mischer Heizkreis A</td><td>Aus</td><td></td></tr>
+                <tr><td>M34</td><td>Pumpe Heizkreis D</td><td>0</td><td></td></tr>
+                <tr><td>M44</td><td>Mischer Heizkreis D</td><td>Aus</td><td></td></tr>
                 <tr><td>M64</td><td>Zirkulationspumpe</td><td>Aus</td><td></td></tr>
                 </table>
                 """,
@@ -122,6 +133,11 @@ def test_parse_navigator_setting_response_uses_setting_specific_names() -> None:
     assert values["compressor_1"].value == "0"
     assert values["flow_pump_output"].value == "100"
     assert values["hotwater_circulation_pump"].value == "Aus"
+    # Heating-circuit pump/mixer mappings (A+D, verified live Nav10 ALM).
+    assert values["pump_heating_circuitA"].value == "0"
+    assert values["mixer_heating_circuitA"].value == "Aus"
+    assert values["pump_heating_circuitD"].value == "0"
+    assert values["mixer_heating_circuitD"].value == "Aus"
 
     raw_analogue = json.dumps(
         {
