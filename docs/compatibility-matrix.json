@@ -108,6 +108,12 @@
       "hass_integration_version": "0.8.1-beta.28",
       "status": "hardware-verified",
       "notes": "Hardens transport failure propagation, recognizes the verified cascade-unavailable sentinel, supports consumer-driven batch quarantine, and adds explicitly acknowledged custom-register writes."
+    },
+    {
+      "api_version": "0.7.7",
+      "hass_integration_version": "pending",
+      "status": "pending",
+      "notes": "Stabilizes Navigator 2.0 local web login for direct IPv4/IPv6 hosts by allowing IP-literal cookies on API-owned aiohttp sessions."
     }
   ]
 }
