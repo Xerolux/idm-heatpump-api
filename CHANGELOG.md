@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.7] - 2026-07-16
+
 ### Fixed
 
 - Stabilize Navigator 2.0 local web logins for direct IPv4/IPv6 hosts by allowing aiohttp to accept cookies from IP literals when the API creates its own HTTP session.
