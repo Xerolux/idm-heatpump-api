@@ -114,6 +114,12 @@
       "hass_integration_version": "pending",
       "status": "pending",
       "notes": "Stabilizes Navigator 2.0 local web login for direct IPv4/IPv6 hosts by allowing IP-literal cookies on API-owned aiohttp sessions."
+    },
+    {
+      "api_version": "0.8.0",
+      "hass_integration_version": "pending",
+      "status": "pending",
+      "notes": "Detects non-contiguous heating circuits (e.g. A+D) via active-mode cross-check and exposes heating circuits B-G in the Navigator 10 web client. Source: two-device Navigator 10 ALM capture (2026-07-16)."
     }
   ]
 }
