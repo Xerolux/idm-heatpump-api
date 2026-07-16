@@ -200,6 +200,30 @@ _PASSWORD_INPUT_RE = re.compile(
 _LOGGER = logging.getLogger(__name__)
 
 
+def _is_ip_literal(host: str) -> bool:
+    """Return whether a configured host string is an IPv4 or IPv6 literal.
+
+    Accepts plain IPv4/IPv6 literals, IPv4/hostname-style values with a
+    single port separator, and bracketed IPv6 literals such as
+    ``[2001:db8::1]`` or ``[2001:db8::1]:80``. Hostnames intentionally return
+    ``False`` so they keep aiohttp's safe default cookie handling.
+    """
+    candidate = host.strip()
+    if not candidate:
+        return False
+
+    if candidate.startswith("[") and "]" in candidate:
+        candidate = candidate[1 : candidate.index("]")]
+    elif candidate.count(":") == 1:
+        candidate = candidate.rsplit(":", 1)[0]
+
+    try:
+        ipaddress.ip_address(candidate)
+    except ValueError:
+        return False
+    return True
+
+
 def _format_url_host(host: str) -> str:
     """Validate a configured host and format IPv6 literals for URL authorities."""
     if not host or host != host.strip():
@@ -1152,7 +1176,8 @@ class IdmNavigator20WebClient:
         async with self._lock:
             if self._session is None:
                 aiohttp = _require_aiohttp()
-                self._session = aiohttp.ClientSession()
+                cookie_jar = aiohttp.CookieJar(unsafe=_is_ip_literal(self._host))
+                self._session = aiohttp.ClientSession(cookie_jar=cookie_jar)
                 self._own_session = True
             try:
                 initial = await self._initial_get()
