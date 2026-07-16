@@ -10,6 +10,11 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish (for example, v0.7.7)"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -54,17 +59,27 @@ jobs:
           assert "outdoor_temp" in build_register_map(circuits=["A"])
           PY
 
-      - name: Derive version from tag
-        id: tag
+      - name: Validate release tag
         run: |
-          REF="${GITHUB_REF_NAME:-}"
-          if [ -z "$REF" ]; then
-            REF="${{ github.event.inputs.tag || '' }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            REF="${{ github.event.inputs.tag }}"
+          else
+            REF="${GITHUB_REF_NAME}"
           fi
+
+          case "$REF" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *)
+              echo "Release tag must look like v1.2.3, got: $REF" >&2
+              exit 1
+              ;;
+          esac
+
           VERSION="${REF#v}"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if ! grep -q "^version = \"${VERSION}\"$" pyproject.toml; then
+            echo "pyproject.toml version does not match ${REF}" >&2
+            exit 1
+          fi
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b
-        with:
-          password: ${{ secrets.PYPI }}
