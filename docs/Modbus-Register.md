@@ -157,20 +157,20 @@ documentation (as of 2025-06-18, software NAV10_20.23-903.iup / T_NAV10_20.23-13
 | 1437 | `hc_e_heating_curve` | FLOAT | RW | - | 0.1..3.5 | EEPROM |
 | 1439 | `hc_f_heating_curve` | FLOAT | RW | - | 0.1..3.5 | EEPROM |
 | 1441 | `hc_g_heating_curve` | FLOAT | RW | - | 0.1..3.5 | EEPROM |
-| 1443 | `hc_a_heating_limit` | UCHAR | RW | °C | 0..50 | EEPROM |
-| 1444 | `hc_b_heating_limit` | UCHAR | RW | °C | 0..50 | EEPROM |
-| 1445 | `hc_c_heating_limit` | UCHAR | RW | °C | 0..50 | EEPROM |
-| 1446 | `hc_d_heating_limit` | UCHAR | RW | °C | 0..50 | EEPROM |
-| 1447 | `hc_e_heating_limit` | UCHAR | RW | °C | 0..50 | EEPROM |
-| 1448 | `hc_f_heating_limit` | UCHAR | RW | °C | 0..50 | EEPROM |
-| 1449 | `hc_g_heating_limit` | UCHAR | RW | °C | 0..50 | EEPROM |
-| 1450 | `hc_a_setpoint_flow_constant` | UCHAR | RW | °C | 20..90 | EEPROM |
-| 1451 | `hc_b_setpoint_flow_constant` | UCHAR | RW | °C | 20..90 | EEPROM |
-| 1452 | `hc_c_setpoint_flow_constant` | UCHAR | RW | °C | 20..90 | EEPROM |
-| 1453 | `hc_d_setpoint_flow_constant` | UCHAR | RW | °C | 20..90 | EEPROM |
-| 1454 | `hc_e_setpoint_flow_constant` | UCHAR | RW | °C | 20..90 | EEPROM |
-| 1455 | `hc_f_setpoint_flow_constant` | UCHAR | RW | °C | 20..90 | EEPROM |
-| 1456 | `hc_g_setpoint_flow_constant` | UCHAR | RW | °C | 20..90 | EEPROM |
+| 1442 | `hc_a_heating_limit` | UCHAR | RW | °C | 0..50 | EEPROM |
+| 1443 | `hc_b_heating_limit` | UCHAR | RW | °C | 0..50 | EEPROM |
+| 1444 | `hc_c_heating_limit` | UCHAR | RW | °C | 0..50 | EEPROM |
+| 1445 | `hc_d_heating_limit` | UCHAR | RW | °C | 0..50 | EEPROM |
+| 1446 | `hc_e_heating_limit` | UCHAR | RW | °C | 0..50 | EEPROM |
+| 1447 | `hc_f_heating_limit` | UCHAR | RW | °C | 0..50 | EEPROM |
+| 1448 | `hc_g_heating_limit` | UCHAR | RW | °C | 0..50 | EEPROM |
+| 1449 | `hc_a_setpoint_flow_constant` | UCHAR | RW | °C | 20..90 | EEPROM |
+| 1450 | `hc_b_setpoint_flow_constant` | UCHAR | RW | °C | 20..90 | EEPROM |
+| 1451 | `hc_c_setpoint_flow_constant` | UCHAR | RW | °C | 20..90 | EEPROM |
+| 1452 | `hc_d_setpoint_flow_constant` | UCHAR | RW | °C | 20..90 | EEPROM |
+| 1453 | `hc_e_setpoint_flow_constant` | UCHAR | RW | °C | 20..90 | EEPROM |
+| 1454 | `hc_f_setpoint_flow_constant` | UCHAR | RW | °C | 20..90 | EEPROM |
+| 1455 | `hc_g_setpoint_flow_constant` | UCHAR | RW | °C | 20..90 | EEPROM |
 | 1457 | `hc_a_room_setpoint_cool_normal` | FLOAT | RW | °C | 15..30 | EEPROM |
 | 1459 | `hc_b_room_setpoint_cool_normal` | FLOAT | RW | °C | 15..30 | EEPROM |
 | 1461 | `hc_c_room_setpoint_cool_normal` | FLOAT | RW | °C | 15..30 | EEPROM |
@@ -185,34 +185,34 @@ documentation (as of 2025-06-18, software NAV10_20.23-903.iup / T_NAV10_20.23-13
 | 1479 | `hc_e_room_setpoint_cool_eco` | FLOAT | RW | °C | 15..30 | EEPROM |
 | 1481 | `hc_f_room_setpoint_cool_eco` | FLOAT | RW | °C | 15..30 | EEPROM |
 | 1483 | `hc_g_room_setpoint_cool_eco` | FLOAT | RW | °C | 15..30 | EEPROM |
-| 1485 | `hc_a_cooling_limit` | UCHAR | RW | °C | 0..36 | EEPROM |
-| 1486 | `hc_b_cooling_limit` | UCHAR | RW | °C | 0..36 | EEPROM |
-| 1487 | `hc_c_cooling_limit` | UCHAR | RW | °C | 0..36 | EEPROM |
-| 1488 | `hc_d_cooling_limit` | UCHAR | RW | °C | 0..36 | EEPROM |
-| 1489 | `hc_e_cooling_limit` | UCHAR | RW | °C | 0..36 | EEPROM |
-| 1490 | `hc_f_cooling_limit` | UCHAR | RW | °C | 0..36 | EEPROM |
-| 1491 | `hc_g_cooling_limit` | UCHAR | RW | °C | 0..36 | EEPROM |
-| 1492 | `hc_a_setpoint_flow_cooling` | UCHAR | RW | °C | 8..30 | EEPROM |
-| 1493 | `hc_b_setpoint_flow_cooling` | UCHAR | RW | °C | 8..30 | EEPROM |
-| 1494 | `hc_c_setpoint_flow_cooling` | UCHAR | RW | °C | 8..30 | EEPROM |
-| 1495 | `hc_d_setpoint_flow_cooling` | UCHAR | RW | °C | 8..30 | EEPROM |
-| 1496 | `hc_e_setpoint_flow_cooling` | UCHAR | RW | °C | 8..30 | EEPROM |
-| 1497 | `hc_f_setpoint_flow_cooling` | UCHAR | RW | °C | 8..30 | EEPROM |
-| 1498 | `hc_g_setpoint_flow_cooling` | UCHAR | RW | °C | 8..30 | EEPROM |
-| 1499 | `hc_a_active_mode` | UCHAR | RO | - |  | 0=Off; 1=Heating; 2=Cooling; 255=Not configured / Unavailable |
-| 1500 | `hc_b_active_mode` | UCHAR | RO | - |  | 0=Off; 1=Heating; 2=Cooling; 255=Not configured / Unavailable |
-| 1501 | `hc_c_active_mode` | UCHAR | RO | - |  | 0=Off; 1=Heating; 2=Cooling; 255=Not configured / Unavailable |
-| 1502 | `hc_d_active_mode` | UCHAR | RO | - |  | 0=Off; 1=Heating; 2=Cooling; 255=Not configured / Unavailable |
-| 1503 | `hc_e_active_mode` | UCHAR | RO | - |  | 0=Off; 1=Heating; 2=Cooling; 255=Not configured / Unavailable |
-| 1504 | `hc_f_active_mode` | UCHAR | RO | - |  | 0=Off; 1=Heating; 2=Cooling; 255=Not configured / Unavailable |
-| 1505 | `hc_g_active_mode` | UCHAR | RO | - |  | 0=Off; 1=Heating; 2=Cooling; 255=Not configured / Unavailable |
-| 1506 | `hc_a_parallel_shift` | UCHAR | RW | °C | 0..30 | EEPROM |
-| 1507 | `hc_b_parallel_shift` | UCHAR | RW | °C | 0..30 | EEPROM |
-| 1508 | `hc_c_parallel_shift` | UCHAR | RW | °C | 0..30 | EEPROM |
-| 1509 | `hc_d_parallel_shift` | UCHAR | RW | °C | 0..30 | EEPROM |
-| 1510 | `hc_e_parallel_shift` | UCHAR | RW | °C | 0..30 | EEPROM |
-| 1511 | `hc_f_parallel_shift` | UCHAR | RW | °C | 0..30 | EEPROM |
-| 1512 | `hc_g_parallel_shift` | UCHAR | RW | °C | 0..30 | EEPROM |
+| 1484 | `hc_a_cooling_limit` | UCHAR | RW | °C | 0..36 | EEPROM |
+| 1485 | `hc_b_cooling_limit` | UCHAR | RW | °C | 0..36 | EEPROM |
+| 1486 | `hc_c_cooling_limit` | UCHAR | RW | °C | 0..36 | EEPROM |
+| 1487 | `hc_d_cooling_limit` | UCHAR | RW | °C | 0..36 | EEPROM |
+| 1488 | `hc_e_cooling_limit` | UCHAR | RW | °C | 0..36 | EEPROM |
+| 1489 | `hc_f_cooling_limit` | UCHAR | RW | °C | 0..36 | EEPROM |
+| 1490 | `hc_g_cooling_limit` | UCHAR | RW | °C | 0..36 | EEPROM |
+| 1491 | `hc_a_setpoint_flow_cooling` | UCHAR | RW | °C | 8..30 | EEPROM |
+| 1492 | `hc_b_setpoint_flow_cooling` | UCHAR | RW | °C | 8..30 | EEPROM |
+| 1493 | `hc_c_setpoint_flow_cooling` | UCHAR | RW | °C | 8..30 | EEPROM |
+| 1494 | `hc_d_setpoint_flow_cooling` | UCHAR | RW | °C | 8..30 | EEPROM |
+| 1495 | `hc_e_setpoint_flow_cooling` | UCHAR | RW | °C | 8..30 | EEPROM |
+| 1496 | `hc_f_setpoint_flow_cooling` | UCHAR | RW | °C | 8..30 | EEPROM |
+| 1497 | `hc_g_setpoint_flow_cooling` | UCHAR | RW | °C | 8..30 | EEPROM |
+| 1498 | `hc_a_active_mode` | UCHAR | RO | - |  | 0=Off; 1=Heating; 2=Cooling; 255=Not configured / Unavailable |
+| 1499 | `hc_b_active_mode` | UCHAR | RO | - |  | 0=Off; 1=Heating; 2=Cooling; 255=Not configured / Unavailable |
+| 1500 | `hc_c_active_mode` | UCHAR | RO | - |  | 0=Off; 1=Heating; 2=Cooling; 255=Not configured / Unavailable |
+| 1501 | `hc_d_active_mode` | UCHAR | RO | - |  | 0=Off; 1=Heating; 2=Cooling; 255=Not configured / Unavailable |
+| 1502 | `hc_e_active_mode` | UCHAR | RO | - |  | 0=Off; 1=Heating; 2=Cooling; 255=Not configured / Unavailable |
+| 1503 | `hc_f_active_mode` | UCHAR | RO | - |  | 0=Off; 1=Heating; 2=Cooling; 255=Not configured / Unavailable |
+| 1504 | `hc_g_active_mode` | UCHAR | RO | - |  | 0=Off; 1=Heating; 2=Cooling; 255=Not configured / Unavailable |
+| 1505 | `hc_a_parallel_shift` | UCHAR | RW | °C | 0..30 | EEPROM |
+| 1506 | `hc_b_parallel_shift` | UCHAR | RW | °C | 0..30 | EEPROM |
+| 1507 | `hc_c_parallel_shift` | UCHAR | RW | °C | 0..30 | EEPROM |
+| 1508 | `hc_d_parallel_shift` | UCHAR | RW | °C | 0..30 | EEPROM |
+| 1509 | `hc_e_parallel_shift` | UCHAR | RW | °C | 0..30 | EEPROM |
+| 1510 | `hc_f_parallel_shift` | UCHAR | RW | °C | 0..30 | EEPROM |
+| 1511 | `hc_g_parallel_shift` | UCHAR | RW | °C | 0..30 | EEPROM |
 | 1650 | `hc_a_ext_room_temp` | FLOAT | RW | °C | 15..30 |  |
 | 1652 | `hc_b_ext_room_temp` | FLOAT | RW | °C | 15..30 |  |
 | 1654 | `hc_c_ext_room_temp` | FLOAT | RW | °C | 15..30 |  |
@@ -298,14 +298,14 @@ Per-circuit registers (index: A=0 … G=6):
 | 1401 | 2 | `hc_X_room_setpoint_heat_normal` | FLOAT | RW | °C | 15..30 |
 | 1415 | 2 | `hc_X_room_setpoint_heat_eco` | FLOAT | RW | °C | 10..25 |
 | 1429 | 2 | `hc_X_heating_curve` | FLOAT | RW | - | 0.1..3.5 |
-| 1443 | 1 | `hc_X_heating_limit` | UCHAR | RW | °C | 0..50 |
-| 1450 | 1 | `hc_X_setpoint_flow_constant` | UCHAR | RW | °C | 20..90 |
+| 1442 | 1 | `hc_X_heating_limit` | UCHAR | RW | °C | 0..50 |
+| 1449 | 1 | `hc_X_setpoint_flow_constant` | UCHAR | RW | °C | 20..90 |
 | 1457 | 2 | `hc_X_room_setpoint_cool_normal` | FLOAT | RW | °C | 15..30 |
 | 1471 | 2 | `hc_X_room_setpoint_cool_eco` | FLOAT | RW | °C | 15..30 |
-| 1485 | 1 | `hc_X_cooling_limit` | UCHAR | RW | °C | 0..36 |
-| 1492 | 1 | `hc_X_setpoint_flow_cooling` | UCHAR | RW | °C | 8..30 |
-| 1499 | 1 | `hc_X_active_mode` | UCHAR | RO | - |  |
-| 1506 | 1 | `hc_X_parallel_shift` | UCHAR | RW | °C | 0..30 |
+| 1484 | 1 | `hc_X_cooling_limit` | UCHAR | RW | °C | 0..36 |
+| 1491 | 1 | `hc_X_setpoint_flow_cooling` | UCHAR | RW | °C | 8..30 |
+| 1498 | 1 | `hc_X_active_mode` | UCHAR | RO | - |  |
+| 1505 | 1 | `hc_X_parallel_shift` | UCHAR | RW | °C | 0..30 |
 | 1650 | 2 | `hc_X_ext_room_temp` | FLOAT | RW | °C | 15..30 |
 
 ## Zone Modules 1–10 (Single Room Control)
