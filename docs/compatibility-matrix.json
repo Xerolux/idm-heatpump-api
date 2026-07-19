@@ -120,6 +120,12 @@
       "hass_integration_version": "pending",
       "status": "pending",
       "notes": "Detects non-contiguous heating circuits (e.g. A+D) via active-mode cross-check and exposes heating circuits B-G in the Navigator 10 web client. Source: two-device Navigator 10 ALM capture (2026-07-16)."
+    },
+    {
+      "api_version": "0.8.1",
+      "hass_integration_version": "0.8.4",
+      "status": "api-prepared",
+      "notes": "Marks zone-module room relay registers (zm{z}_room{r}_relay) as binary status bits so the Home Assistant integration can expose them as binary_sensor entities with on/off instead of numeric 0/1 sensors. Closes Xerolux/idm-heatpump-hass#128."
     }
   ]
 }

@@ -1530,6 +1530,7 @@ def get_zone_module_registers(
             address=room_base + 6,
             datatype=DataType.UCHAR,
             name=f"zm{z}_room{room}_relay",
+            binary=True,
         )
 
     return regs

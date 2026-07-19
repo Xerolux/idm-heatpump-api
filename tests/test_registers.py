@@ -378,6 +378,20 @@ class TestZoneModules:
         assert humidity_reg.min_val == 0
         assert humidity_reg.max_val == 100
 
+    def test_zone_module_relay_is_binary(self) -> None:
+        """Zone module room relay is a read-only binary status bit (issue #128).
+
+        The relay reflects an on/off hardware state, so it must carry
+        ``binary=True`` (while staying UCHAR on the wire) and remain
+        read-only so downstream consumers route it to a binary_sensor.
+        """
+        regs = get_zone_module_registers(1, room_count=2)
+        for room in (1, 2):
+            relay_reg = regs[f"zm1_room{room}_relay"]
+            assert relay_reg.binary is True
+            assert relay_reg.writable is False
+            assert relay_reg.datatype.value == "UCHAR"
+
     def test_zone_module_room_addresses(self) -> None:
         """Room blocks are 7 registers wide; addresses match the official doc."""
         regs = get_zone_module_registers(1, room_count=6)
