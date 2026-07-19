@@ -87,9 +87,7 @@ def test_detailed_heating_circuit_table_matches_code() -> None:
             continue
         code_addr = int(getattr(reg, "address"))
         if code_addr != documented_addr:
-            failures.append(
-                f"{name}: docs say {documented_addr}, code says {code_addr}"
-            )
+            failures.append(f"{name}: docs say {documented_addr}, code says {code_addr}")
 
     assert not failures, "heating-circuit doc/code address drift:\n  " + "\n  ".join(
         sorted(failures)
@@ -110,9 +108,7 @@ def test_patterns_table_base_addresses_match_code() -> None:
 
     # Pattern rows look like:
     #   | 1442 | 1 | `hc_X_heating_limit` | UCHAR | RW | °C | 0..50 |
-    row_re = re.compile(
-        r"^\|\s*(\d+)\s*\|\s*(\d+)\s*\|\s*`hc_X_(\w+)`\s*\|", re.MULTILINE
-    )
+    row_re = re.compile(r"^\|\s*(\d+)\s*\|\s*(\d+)\s*\|\s*`hc_X_(\w+)`\s*\|", re.MULTILINE)
     matches = row_re.findall(section)
     assert matches, "expected to find hc_X_* pattern rows in the patterns table"
 
@@ -123,14 +119,8 @@ def test_patterns_table_base_addresses_match_code() -> None:
         documented_base, documented_step = int(base_str), int(step_str)
         code_base, code_step = _HC_BLOCKS[suffix]
         if documented_base != code_base:
-            failures.append(
-                f"hc_X_{suffix}: docs base {documented_base}, code base {code_base}"
-            )
+            failures.append(f"hc_X_{suffix}: docs base {documented_base}, code base {code_base}")
         if documented_step != code_step:
-            failures.append(
-                f"hc_X_{suffix}: docs step {documented_step}, code step {code_step}"
-            )
+            failures.append(f"hc_X_{suffix}: docs step {documented_step}, code step {code_step}")
 
-    assert not failures, "patterns table base/step drift:\n  " + "\n  ".join(
-        sorted(failures)
-    )
+    assert not failures, "patterns table base/step drift:\n  " + "\n  ".join(sorted(failures))
