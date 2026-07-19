@@ -177,3 +177,4 @@ an explicit integration compatibility entry in
 | 0.7.3 | 0.8.1-beta.23 | Ignores unavailable heating-circuit slot sentinels during model detection. |
 | 0.7.4 | 0.8.1-beta.26 | Restores documented Navigator register addresses and reconnects after pymodbus no-response errors. |
 | 0.7.5 | 0.8.1-beta.27 | Adds hardware-verified unavailable sentinels for optional Navigator 10 values. |
+| 0.8.1 | 0.8.4 | Marks zone-module room relays as binary so the integration exposes them as `binary_sensor` (on/off) instead of numeric sensors. Closes Xerolux/idm-heatpump-hass#128. |

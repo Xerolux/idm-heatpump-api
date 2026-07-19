@@ -7,23 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-07-19
+
 ### Fixed
 
-- Correct heating-circuit address drift in `docs/Modbus-Register.md`. Six
-  UCHAR blocks (`hc_X_heating_limit`, `hc_X_setpoint_flow_constant`,
-  `hc_X_cooling_limit`, `hc_X_setpoint_flow_cooling`, `hc_X_active_mode`,
-  `hc_X_parallel_shift`) were documented at the shifted addresses introduced
-  in 0.6.0 (e.g. `1443+idx`), even though the code had already been reverted
-  to the original overlapping addresses that preserve the documented
-  heating-curve-G / heating-limit-A boundary (e.g. `1442+idx`, matching
-  `docs/Register-Map-Invariants.md` and `tests/fixtures/register_schema_v1.json`).
-  The detailed table and the `## Heating Circuits A-G` patterns table now both
-  match the code for all circuits A-G. Source: 2026-07-16 Navigator 10 live
-  capture and the authoritative register map. No code change; documentation
-  and tests only.
-- Add a regression test (`tests/test_modbus_register_doc.py`) that parses the
-  documented heating-circuit tables and locks every address against the
-  register map built by `build_register_map`, preventing future drift.
+- Mark zone-module room relay registers (`zm{z}_room{r}_relay`) as binary status bits. The registers keep their `UCHAR` wire type but now carry `binary=True` so downstream consumers (e.g. the Home Assistant integration) expose them as `binary_sensor` entities with `on`/`off` instead of numeric sensors showing `0`/`1`. Matches the existing library convention for UCHAR status bits (`heating_demand`, `cooling_demand`, `compressor_status_*`). Closes Xerolux/idm-heatpump-hass#128.
+- Correct heating-circuit address drift in `docs/Modbus-Register.md`. Six UCHAR blocks (`hc_X_heating_limit`, `hc_X_setpoint_flow_constant`, `hc_X_cooling_limit`, `hc_X_setpoint_flow_cooling`, `hc_X_active_mode`, `hc_X_parallel_shift`) were documented at the shifted addresses introduced in 0.6.0 (e.g. `1443+idx`), even though the code had already been reverted to the original overlapping addresses that preserve the documented heating-curve-G / heating-limit-A boundary (e.g. `1442+idx`, matching `docs/Register-Map-Invariants.md` and `tests/fixtures/register_schema_v1.json`). The detailed table and the `## Heating Circuits A-G` patterns table now both match the code for all circuits A-G. Source: 2026-07-16 Navigator 10 live capture and the authoritative register map. No code change; documentation and tests only.
+- Add a regression test (`tests/test_modbus_register_doc.py`) that parses the documented heating-circuit tables and locks every address against the register map built by `build_register_map`, preventing future drift.
 
 ## [0.8.0] - 2026-07-16
 
