@@ -126,6 +126,12 @@
       "hass_integration_version": "0.8.4",
       "status": "api-prepared",
       "notes": "Marks zone-module room relay registers (zm{z}_room{r}_relay) as binary status bits so the Home Assistant integration can expose them as binary_sensor entities with on/off instead of numeric 0/1 sensors. Closes Xerolux/idm-heatpump-hass#128."
+    },
+    {
+      "api_version": "0.8.2",
+      "hass_integration_version": "pending",
+      "status": "api-prepared",
+      "notes": "Adds neutral binary register semantics metadata. The Home Assistant integration validates this API through its api-main CI path, while its released manifest pin and integration version remain unchanged until a separate tested addon release."
     }
   ]
 }
