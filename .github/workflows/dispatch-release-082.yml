@@ -25,6 +25,8 @@ jobs:
           fetch-depth: 0
       - name: Check whether 0.8.2 still needs release
         id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           CURRENT_VERSION=$(python - <<'PY'
           import tomllib
@@ -32,7 +34,12 @@ jobs:
               print(tomllib.load(file)["project"]["version"])
           PY
           )
-          if [ "$CURRENT_VERSION" = "0.8.1" ] && ! git rev-parse "v0.8.2" >/dev/null 2>&1; then
+          ACTIVE_RELEASES=$(gh api \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/release.yml/runs?per_page=20" \
+            --jq '[.workflow_runs[] | select(.status == "queued" or .status == "in_progress")] | length')
+          if [ "$CURRENT_VERSION" = "0.8.1" ] \
+            && ! git rev-parse "v0.8.2" >/dev/null 2>&1 \
+            && [ "$ACTIVE_RELEASES" = "0" ]; then
             echo "dispatch=true" >> "$GITHUB_OUTPUT"
           else
             echo "dispatch=false" >> "$GITHUB_OUTPUT"
@@ -44,5 +51,4 @@ jobs:
         run: |
           gh workflow run release.yml \
             --ref main \
-            -f bump=auto-patch \
-            -f prerelease=false
+            -f version_mode=auto-patch
