@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+## [0.8.2] - 2026-07-20
+
+### Added
+
+- Add a Home-Assistant-independent binary register metadata catalog with explicit on/off values, optional bit masks, active-low inversion, and neutral semantic device classes.
+- Add `get_binary_register_metadata()` for heating, cooling and hot-water demands, summary alarms, compressor status registers, and dynamically generated zone-room relay names.
+- Export the new binary metadata types and catalog through the package-root public API.
+- Document the binary metadata contract and add validation, register-map, dynamic-name, and public-API snapshot tests.
+
+### Compatibility
+
+- The change is additive. Existing `RegisterDef` objects, Modbus decoding, batch reads, writes, and direct Pymodbus consumers remain unchanged.
+
 ## [0.8.1] - 2026-07-19
 
 ### Fixed
