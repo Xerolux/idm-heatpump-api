@@ -10,7 +10,7 @@ on:
 
 permissions:
   actions: write
-  contents: read
+  contents: write
 
 concurrency:
   group: dispatch-api-0.8.2
@@ -23,8 +23,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Check whether 0.8.2 still needs release
-        id: guard
+      - name: Inspect release state
+        id: state
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           CURRENT_VERSION=$(python - <<'PY'
           import tomllib
@@ -32,13 +34,26 @@ jobs:
               print(tomllib.load(file)["project"]["version"])
           PY
           )
-          if [ "$CURRENT_VERSION" = "0.8.1" ] && ! git rev-parse "v0.8.2" >/dev/null 2>&1; then
-            echo "dispatch=true" >> "$GITHUB_OUTPUT"
+          if git rev-parse "v0.8.2" >/dev/null 2>&1; then
+            TAG_EXISTS=true
           else
-            echo "dispatch=false" >> "$GITHUB_OUTPUT"
+            TAG_EXISTS=false
           fi
+          ACTIVE_RUNS=$(gh api \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/release.yml/runs?per_page=20" \
+            --jq '[.workflow_runs[] | select(.status == "queued" or .status == "in_progress")] | length')
+          if [ "$CURRENT_VERSION" = "0.8.1" ] && [ "$TAG_EXISTS" = "false" ]; then
+            NEEDS_RELEASE=true
+          else
+            NEEDS_RELEASE=false
+          fi
+          echo "version=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag_exists=$TAG_EXISTS" >> "$GITHUB_OUTPUT"
+          echo "active_runs=$ACTIVE_RUNS" >> "$GITHUB_OUTPUT"
+          echo "needs_release=$NEEDS_RELEASE" >> "$GITHUB_OUTPUT"
       - name: Dispatch existing release workflow
-        if: steps.guard.outputs.dispatch == 'true'
+        id: dispatch
+        if: steps.state.outputs.needs_release == 'true' && steps.state.outputs.active_runs == '0'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -46,3 +61,53 @@ jobs:
             --ref main \
             -f bump=auto-patch \
             -f prerelease=false
+          echo "dispatched=true" >> "$GITHUB_OUTPUT"
+      - name: Record release state
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.state.outputs.version }}
+          TAG_EXISTS: ${{ steps.state.outputs.tag_exists }}
+          ACTIVE_RUNS: ${{ steps.state.outputs.active_runs }}
+          NEEDS_RELEASE: ${{ steps.state.outputs.needs_release }}
+          DISPATCHED: ${{ steps.dispatch.outputs.dispatched || 'false' }}
+        run: |
+          sleep 5
+          LATEST=$(gh api \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/release.yml/runs?per_page=1" \
+            --jq '.workflow_runs[0] | {id, status, conclusion, html_url, event, head_sha, created_at}')
+          python - <<'PY'
+          import json
+          import os
+
+          latest = json.loads(os.environ["LATEST"])
+          status = {
+              "version": os.environ["VERSION"],
+              "tag_exists": os.environ["TAG_EXISTS"] == "true",
+              "active_runs_before_dispatch": int(os.environ["ACTIVE_RUNS"]),
+              "needs_release": os.environ["NEEDS_RELEASE"] == "true",
+              "dispatched_by_this_run": os.environ["DISPATCHED"] == "true",
+              "latest_release_workflow": latest,
+          }
+          with open("/tmp/release-082-status.json", "w", encoding="utf-8") as file:
+              json.dump(status, file, indent=2)
+              file.write("\n")
+          PY
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.state.outputs.version }}
+          TAG_EXISTS: ${{ steps.state.outputs.tag_exists }}
+          ACTIVE_RUNS: ${{ steps.state.outputs.active_runs }}
+          NEEDS_RELEASE: ${{ steps.state.outputs.needs_release }}
+          DISPATCHED: ${{ steps.dispatch.outputs.dispatched || 'false' }}
+          LATEST: ${{ steps.latest.outputs.latest }}
+      - name: Publish status branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan release-082-status
+          git rm -rf .
+          cp /tmp/release-082-status.json release-082-status.json
+          git add release-082-status.json
+          git commit -m "ci: record API 0.8.2 release state"
+          git push --force origin HEAD:automation/release-082-status
