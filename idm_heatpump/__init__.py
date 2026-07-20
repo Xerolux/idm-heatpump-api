@@ -1,5 +1,12 @@
 """Public API for idm-heatpump-api."""
 
+from .binary_metadata import (
+    BINARY_REGISTER_METADATA,
+    BinaryDeviceClass,
+    BinaryRegisterMetadata,
+    BinaryValue,
+    get_binary_register_metadata,
+)
 from .client import (
     AdaptiveBackoff,
     DataType,
@@ -100,6 +107,7 @@ from .web import (
 
 __all__ = [
     "ACTIVE_HC_MODE_OPTIONS",
+    "BINARY_REGISTER_METADATA",
     "BIVALENCE_STATE_OPTIONS",
     "BOOSTER_FAULT_OPTIONS",
     "CIRCUIT_MODE_OPTIONS",
@@ -136,6 +144,9 @@ __all__ = [
     "VARIABLE_INPUT_OPTIONS",
     "ZONE_MODULE_MODE_OPTIONS",
     "AuthenticationError",
+    "BinaryDeviceClass",
+    "BinaryRegisterMetadata",
+    "BinaryValue",
     "ConnectionError",
     "CsrfError",
     "AdaptiveBackoff",
@@ -181,6 +192,7 @@ __all__ = [
     "create_optional_navigator10_web_client",
     "create_optional_navigator20_web_client",
     "get_all_registers",
+    "get_binary_register_metadata",
     "get_detection_registers",
     "get_heating_circuit_registers",
     "get_register",
