@@ -93,6 +93,61 @@ def test_detect_model_uses_shared_feature_constants() -> None:
     assert client.model_name == MODEL_NAVIGATOR_10
 
 
+def test_detect_model_does_not_misclassify_sentinel_power_limit_as_navigator_10() -> None:
+    """A Navigator 2.0 controller (e.g. IDM Terra SWM) that answers the
+    Navigator-10-only power_limit_hp register (4108) with a sentinel value
+    must NOT be classified as Navigator 10. Regression test: previously any
+    non-error response at 4108 was treated as a Navigator 10 indicator,
+    which then broke setup because the 4001+ register block was polled next
+    and correctly rejected by the Navigator 2.0 controller.
+    """
+    # Sentinel -1.0 encoded as FLOAT32 little-endian word pair [0, 49024].
+    client = ProbeOnlyClient(
+        {
+            (1350, 2): [0, 16968],  # 25.0 C -> circuit A present
+            (1498, 1): [0],  # active-mode A configured
+            (4108, 2): [0, 49024],  # power_limit_hp sentinel (-1.0)
+        }
+    )
+
+    model_info = asyncio.run(client.detect_model())
+
+    assert model_info.model_name == MODEL_NAVIGATOR_20
+    assert client.model_name == MODEL_NAVIGATOR_20
+
+
+def test_detect_model_does_not_misclassify_zero_power_limit_as_navigator_10() -> None:
+    """A zero power_limit_hp (0.0, i.e. feature configured-off) must also not
+    imply Navigator 10, mirroring the sentinel guard."""
+    client = ProbeOnlyClient(
+        {
+            (1350, 2): [0, 16968],  # 25.0 C -> circuit A present
+            (1498, 1): [0],  # active-mode A configured
+            (4108, 2): [0, 0],  # power_limit_hp = 0.0
+        }
+    )
+
+    model_info = asyncio.run(client.detect_model())
+
+    assert model_info.model_name == MODEL_NAVIGATOR_20
+
+
+def test_detect_model_classifies_real_power_limit_as_navigator_10() -> None:
+    """A plausible configured power limit (>0) at 4108 still classifies as
+    Navigator 10, preserving the original detection behavior."""
+    client = ProbeOnlyClient(
+        {
+            (1350, 2): [0, 16968],  # 25.0 C -> circuit A present
+            (1498, 1): [0],  # active-mode A configured
+            (4108, 2): [0, 16968],  # power_limit_hp = 25.0 kW (plausible)
+        }
+    )
+
+    model_info = asyncio.run(client.detect_model())
+
+    assert model_info.model_name == MODEL_NAVIGATOR_10
+
+
 def test_model_name_defaults_before_detection() -> None:
     """model_name should fall back to the default model until detection runs."""
     client = IdmModbusClient("127.0.0.1")
