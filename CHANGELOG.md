@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+## [0.8.3] - 2026-07-22
+
+### Fixed
+
+- **Modellerkennung: Terra SWM / Navigator 2.0 wurde fälschlich als Navigator 10 erkannt.** Register `power_limit_hp` (Adresse 4108) wurde als Navigator-10-Indikator genutzt, wobei bereits das bloße Antworten (ohne Illegal-Address-Fehler) als Indikator gewertet wurde. Einige Navigator-2.0-Regelungen – namentlich die IDM Terra SWM – beantworten diese Adresse jedoch mit einem Sentinel-Wert (`-1.0` / `0xFFFF` oder `0.0`) anstatt sie abzulehnen. Dadurch wurde die Anlage als Navigator 10 klassifiziert, beim nachfolgenden Poll des Navigator-10-only-Registerblocks (ab 4001) korrekt mit Modbus-Ausnahmecode 2 abgelehnt und das Setup brach ab. Die Erkennung wertet jetzt nur noch plausible, konfigurierte Power-Limit-Werte (>0 kW, ≤200 kW) als Navigator-10-Indikator; Sentinel- und Nullwerte führen zur korrekten Klassifizierung als Navigator 2.0. Siehe Integration Issue #44.
+
+### Compatibility
+
+- Keine Änderung an `RegisterDef`, Modbus-Dekodierung, Batch-Reads, Schreibpfaden oder dem Web-Client. Lediglich die Modellauswahl in `detect_model()` ist für von der Fehlklassifizierung betroffene Anlagen korrigiert; alle anderen Installationen verhalten sich unverändert.
+
+
+## [0.8.2] - 2026-07-20
+
+### Added
+
+- Add a Home-Assistant-independent binary register metadata catalog with explicit on/off values, optional bit masks, active-low inversion, and neutral semantic device classes.
+- Add `get_binary_register_metadata()` for heating, cooling and hot-water demands, summary alarms, compressor status registers, and dynamically generated zone-room relay names.
+- Export the new binary metadata types and catalog through the package-root public API.
+- Document the binary metadata contract and add validation, register-map, dynamic-name, and public-API snapshot tests.
+
+### Compatibility
+
+- The change is additive. Existing `RegisterDef` objects, Modbus decoding, batch reads, writes, and direct Pymodbus consumers remain unchanged.
+
 ## [0.8.1] - 2026-07-19
 
 ### Fixed

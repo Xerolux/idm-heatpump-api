@@ -6,6 +6,7 @@ import idm_heatpump
 
 EXPECTED_PUBLIC_API = [
     "ACTIVE_HC_MODE_OPTIONS",
+    "BINARY_REGISTER_METADATA",
     "BIVALENCE_STATE_OPTIONS",
     "BOOSTER_FAULT_OPTIONS",
     "CIRCUIT_MODE_OPTIONS",
@@ -42,6 +43,9 @@ EXPECTED_PUBLIC_API = [
     "VARIABLE_INPUT_OPTIONS",
     "ZONE_MODULE_MODE_OPTIONS",
     "AuthenticationError",
+    "BinaryDeviceClass",
+    "BinaryRegisterMetadata",
+    "BinaryValue",
     "ConnectionError",
     "CsrfError",
     "AdaptiveBackoff",
@@ -87,6 +91,7 @@ EXPECTED_PUBLIC_API = [
     "create_optional_navigator10_web_client",
     "create_optional_navigator20_web_client",
     "get_all_registers",
+    "get_binary_register_metadata",
     "get_detection_registers",
     "get_heating_circuit_registers",
     "get_register",

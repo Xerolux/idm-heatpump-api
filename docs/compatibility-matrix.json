@@ -126,6 +126,18 @@
       "hass_integration_version": "0.8.4",
       "status": "api-prepared",
       "notes": "Marks zone-module room relay registers (zm{z}_room{r}_relay) as binary status bits so the Home Assistant integration can expose them as binary_sensor entities with on/off instead of numeric 0/1 sensors. Closes Xerolux/idm-heatpump-hass#128."
+    },
+    {
+      "api_version": "0.8.2",
+      "hass_integration_version": "pending",
+      "status": "api-prepared",
+      "notes": "Adds neutral binary register semantics metadata. The Home Assistant integration validates this API through its api-main CI path, while its released manifest pin and integration version remain unchanged until a separate tested addon release."
+    },
+    {
+      "api_version": "0.8.3",
+      "hass_integration_version": "0.8.5-beta.3",
+      "status": "api-prepared",
+      "notes": "Fixes Navigator 2.0 model detection: register power_limit_hp (4108) returning a sentinel value (e.g. -1.0 / 0.0) on IDM Terra SWM controllers is no longer misclassified as Navigator 10. See Xerolux/idm-heatpump-hass#44."
     }
   ]
 }

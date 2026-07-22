@@ -1012,10 +1012,20 @@ class IdmModbusClient:
         # with software 20.23-245) and would misclassify them as Navigator 10.
         # Address 4108 (power_limit_hp) is a much safer differentiator because it
         # belongs to the Navigator-10-only power-limitation register block.
+        #
+        # BUT: some Navigator 2.0 controllers (notably the IDM Terra SWM) respond
+        # to address 4108 with a sentinel value (-1.0 / 0xFFFF or 0.0) instead of
+        # rejecting it with Modbus exception code 2. A mere "the register
+        # answered" check therefore misclassifies them as Navigator 10 and then
+        # breaks setup because the Navigator-10-only register block (4001+) is
+        # polled next and correctly rejected. To stay robust, treat 4108 as a
+        # Navigator 10 indicator only when it returns a plausible, configured
+        # power-limit value (positive, finite, within a realistic kW range).
         has_navigator_10_indicators = False
         try:
-            pl = await self._probe_model_register(4108, 2)
-            if pl is not None and len(pl) == 2:
+            pl_regs = await self._probe_model_register(4108, 2)
+            pl_value = self._probe_float_value(pl_regs, min_val=0.1, max_val=200.0)
+            if pl_value is not None:
                 has_navigator_10_indicators = True
         except (ModbusException, ConnectionException, OSError):
             pass
