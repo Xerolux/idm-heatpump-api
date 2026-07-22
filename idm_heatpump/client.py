@@ -517,6 +517,11 @@ class IdmModbusClient:
             return MODEL_NAVIGATOR_20
         return self._model_info.model_name
 
+    def set_model_info(self, model_info: IdmModelInfo) -> None:
+        """Set or override the detected model info explicitly."""
+        self._model_info = model_info
+        self._cached_register_map = None
+
     async def connect(self) -> None:
         """Establish a connection to the Modbus device."""
         async with self._lock:
@@ -1022,13 +1027,27 @@ class IdmModbusClient:
         # Navigator 10 indicator only when it returns a plausible, configured
         # power-limit value (positive, finite, within a realistic kW range).
         has_navigator_10_indicators = False
+        pl_regs: list[int] | None = None
         try:
             pl_regs = await self._probe_model_register(4108, 2)
+        except (ModbusException, ConnectionException, OSError):
+            pl_regs = None
+
+        if pl_regs is not None:
             pl_value = self._probe_float_value(pl_regs, min_val=0.1, max_val=200.0)
             if pl_value is not None:
                 has_navigator_10_indicators = True
-        except (ModbusException, ConnectionException, OSError):
-            pass
+
+        if not has_navigator_10_indicators:
+            # Address 4108 was missing or returned sentinel/0.0 (-1.0). Probe address 4001
+            # (booster_fault) to distinguish real Navigator 10 controllers (which answer 4001)
+            # from Navigator 2.0 controllers like Terra SWM (which reject 4001 with Modbus Exception 2).
+            try:
+                booster_regs = await self._probe_model_register(4001, 1)
+                if booster_regs is not None and len(booster_regs) == 1:
+                    has_navigator_10_indicators = True
+            except (ModbusException, ConnectionException, OSError):
+                pass
 
         if has_navigator_10_indicators or zone_modules > 0:
             # Navigator 10 is the current generation; also report Pro-like capabilities

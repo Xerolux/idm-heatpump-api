@@ -10,6 +10,7 @@ from pymodbus.exceptions import ModbusException
 from idm_heatpump.client import (
     DataType,
     IdmModbusClient,
+    IdmModelInfo,
     IllegalAddressError,
     ModbusCodec,
     PollRateLimiter,
@@ -146,6 +147,41 @@ def test_detect_model_classifies_real_power_limit_as_navigator_10() -> None:
     model_info = asyncio.run(client.detect_model())
 
     assert model_info.model_name == MODEL_NAVIGATOR_10
+
+
+def test_detect_model_classifies_navigator_10_with_sentinel_power_limit_and_booster_block() -> None:
+    """A real Navigator 10 controller returning sentinel (-1.0) for power_limit_hp (4108)
+    but supporting the 4000 booster block (4001) MUST be detected as Navigator 10."""
+    client = ProbeOnlyClient(
+        {
+            (1350, 2): [0, 16968],  # 25.0 C -> circuit A present
+            (1498, 1): [0],  # active-mode A configured
+            (4108, 2): [0, 49024],  # power_limit_hp sentinel (-1.0)
+            (4001, 1): [65535],  # booster_fault sentinel (255) / 4000 block available
+        }
+    )
+
+    model_info = asyncio.run(client.detect_model())
+
+    assert model_info.model_name == MODEL_NAVIGATOR_10
+    assert client.model_name == MODEL_NAVIGATOR_10
+
+
+def test_set_model_info_overrides_detected_model() -> None:
+    """set_model_info should allow explicitly setting/overriding model_info on client."""
+    client = IdmModbusClient("127.0.0.1")
+    info = IdmModelInfo(
+        model_name=MODEL_NAVIGATOR_10,
+        active_heating_circuits=["A"],
+        zone_modules=0,
+        has_solar=False,
+        has_isc=False,
+        has_pv=False,
+        has_cascade=False,
+    )
+    client.set_model_info(info)
+    assert client.model_info == info
+    assert client.model_name == MODEL_NAVIGATOR_10
 
 
 def test_model_name_defaults_before_detection() -> None:

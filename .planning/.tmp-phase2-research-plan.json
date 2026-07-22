@@ -1,0 +1,21 @@
+{
+  "ecosystem": "npm",
+  "config": {
+    "exa_search": false,
+    "brave_search": false,
+    "firecrawl": false,
+    "tavily_search": false
+  },
+  "questions": [
+    {
+      "text": "What is the authoritative Node.js API and current release for modbus-serial TCP connections, unit ID, timeout, input-register reads, holding-register reads, close behavior, and Promise usage?",
+      "kind": "docs",
+      "library": "modbus-serial"
+    },
+    {
+      "text": "What security and lifecycle caveats does the official modbus-serial project document for Modbus TCP clients?",
+      "kind": "docs",
+      "library": "modbus-serial"
+    }
+  ]
+}
