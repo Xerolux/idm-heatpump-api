@@ -8,17 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 
-## [0.8.3] - 2026-07-22
+## [0.8.4] - 2026-07-22
 
 ### Fixed
 
 - **Modellerkennung: Navigator 10 mit Standard-Power-Limit (-1.0) wurde als Navigator 2.0 fehlklassifiziert.** Wenn das Register `power_limit_hp` (Adresse 4108) den Standardwert `-1.0` ("keine Leistungsbegrenzung") liefert, prüft `detect_model()` nun zusätzlich das Booster-Register (Adresse 4001). Echtes Navigator-10-Geräte antworten auf Adresse 4001 sauber (auch ohne installierten Booster mit `0xFFFF` / Sentinel 255), während Navigator-2.0-Geräte (wie Terra SWM) Adresse 4001 mit Modbus Ausnahmecode 2 (Illegal Data Address) ablehnen.
-- **Modellerkennung: Terra SWM / Navigator 2.0 wurde fälschlich als Navigator 10 erkannt.** Sentinel- und Nullwerte an 4108 alleine führen nicht mehr zur fälschlichen Annahme eines Navigator 10; durch die Kombination von 4108 und 4001 wird Terra SWM sauber als Navigator 2.0 erkannt und Navigator 10 Geräte werden auch ohne aktives Power-Limit korrekt als Navigator 10 erkannt.
 - **`IdmHeatPumpClient.set_model_info()` hinzugefügt:** Erlaubt das explizite Setzen bzw. Überschreiben der Modellinformationen durch aufrufende Verbraucher (z.B. Home Assistant Integration oder Web-Erkennung).
 
 ### Compatibility
 
 - Keine Änderung an `RegisterDef`, Modbus-Dekodierung, Batch-Reads, Schreibpfaden oder dem Web-Client. Lediglich die Modellauswahl in `detect_model()` ist für alle Anlagen präzisiert.
+
+
+## [0.8.3] - 2026-07-22
+
+### Fixed
+
+- **Modellerkennung: Terra SWM / Navigator 2.0 wurde fälschlich als Navigator 10 erkannt.** Register `power_limit_hp` (Adresse 4108) wurde als Navigator-10-Indikator genutzt, wobei bereits das bloße Antworten (ohne Illegal-Address-Fehler) als Indikator gewertet wurde. Einige Navigator-2.0-Regelungen – namentlich die IDM Terra SWM – beantworten diese Adresse jedoch mit einem Sentinel-Wert (`-1.0` / `0xFFFF` oder `0.0`) anstatt sie abzulehnen. Dadurch wurde die Anlage als Navigator 10 klassifiziert, beim nachfolgenden Poll des Navigator-10-only-Registerblocks (ab 4001) korrekt mit Modbus-Ausnahmecode 2 abgelehnt und das Setup brach ab. Die Erkennung wertet jetzt nur noch plausible, konfigurierte Power-Limit-Werte (>0 kW, ≤200 kW) als Navigator-10-Indikator; Sentinel- und Nullwerte führen zur korrekten Klassifizierung als Navigator 2.0. Siehe Integration Issue #44.
+
+### Compatibility
+
+- Keine Änderung an `RegisterDef`, Modbus-Dekodierung, Batch-Reads, Schreibpfaden oder dem Web-Client. Lediglich die Modellauswahl in `detect_model()` ist für von der Fehlklassifizierung betroffene Anlagen korrigiert; alle anderen Installationen verhalten sich unverändert.
 
 
 ## [0.8.2] - 2026-07-20

@@ -138,6 +138,12 @@
       "hass_integration_version": "0.8.5-beta.3",
       "status": "api-prepared",
       "notes": "Fixes Navigator 2.0 model detection: register power_limit_hp (4108) returning a sentinel value (e.g. -1.0 / 0.0) on IDM Terra SWM controllers is no longer misclassified as Navigator 10. See Xerolux/idm-heatpump-hass#44."
+    },
+    {
+      "api_version": "0.8.4",
+      "hass_integration_version": "0.8.5",
+      "status": "api-prepared",
+      "notes": "Fixes Navigator 10 model detection when power_limit_hp (4108) is set to sentinel/default -1.0 by probing address 4001 (booster_fault), and adds set_model_info() helper."
     }
   ]
 }
