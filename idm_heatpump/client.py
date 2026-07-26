@@ -74,6 +74,11 @@ _DETECT_HC_FLOW_UNAVAILABLE = -1.0
 # being configured. See docs/Register-Map-Invariants.md (active mode A=1498).
 _DETECT_HC_ACTIVE_MODE_BASE = 1498
 _DETECT_HC_ACTIVE_MODE_UNAVAILABLE = 255  # UCHAR sentinel, raw word 0xFFFF
+# booster_fault (4001, UCHAR): "not configured" sentinel 255 (raw word 0xFFFF).
+# A non-sentinel answer proves the booster block exists (Navigator 10); a
+# sentinel answer is family-neutral because some Navigator 2.0 firmwares answer
+# Navigator-10-only registers with a sentinel instead of rejecting them.
+_DETECT_BOOSTER_FAULT_UNAVAILABLE = 255  # UCHAR sentinel, raw word 0xFFFF
 _DETECT_ZONE_MODULE_BASE = 2000
 _DETECT_ZONE_MODULE_STEP = 65
 _DETECT_EMPTY_SLOT_STOP_THRESHOLD = 2
@@ -1040,11 +1045,20 @@ class IdmModbusClient:
 
         if not has_navigator_10_indicators:
             # Address 4108 was missing or returned sentinel/0.0 (-1.0). Probe address 4001
-            # (booster_fault) to distinguish real Navigator 10 controllers (which answer 4001)
-            # from Navigator 2.0 controllers like Terra SWM (which reject 4001 with Modbus Exception 2).
+            # (booster_fault) to distinguish real Navigator 10 controllers (which expose the
+            # booster block) from Navigator 2.0 controllers (which reject 4001 with Modbus
+            # Exception 2). However, a "booster not configured" answer (low byte == 255, the
+            # register's declared sentinel) is family-neutral: some Navigator 2.0 firmwares
+            # answer Navigator-10-only registers with a sentinel instead of rejecting them
+            # (the same Terra SWM behavior seen at 4108). Count only a non-sentinel value as
+            # a genuine Navigator 10 indicator, consistent with the 4108 plausibility check.
             try:
                 booster_regs = await self._probe_model_register(4001, 1)
-                if booster_regs is not None and len(booster_regs) == 1:
+                if (
+                    booster_regs is not None
+                    and len(booster_regs) == 1
+                    and (booster_regs[0] & 0xFF) != _DETECT_BOOSTER_FAULT_UNAVAILABLE
+                ):
                     has_navigator_10_indicators = True
             except (ModbusException, ConnectionException, OSError):
                 pass

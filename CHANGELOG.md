@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 
+## [0.8.5] - 2026-07-25
+
+### Fixed
+
+- **Modellerkennung: Navigator 2.0 mit `0xFFFF`-Antwort auf `booster_fault` (4001) wurde als Navigator 10 fehlklassifiziert.** Der in 0.8.4 eingeführte Booster-Fallback wertete **jede** 1-Register-Antwort auf Adresse 4001 als Navigator-10-Indikator — einschließlich des deklarierten „nicht konfiguriert"-Sentinels `255` (roh `0xFFFF`). Einige Navigator-2.0-Regelungen beantworten Navigator-10-only-Register jedoch mit einem Sentinel statt sie mit Modbus-Ausnahmecode 2 abzulehnen (dasselbe Terra-SWM-Verhalten, das 0.8.3 bereits für Adresse 4108 korrigierte). `detect_model()` wertet 4001 jetzt konsistent zu 4108: nur ein **nicht-sentinel** Wert (low byte ≠ 255) gilt als echter Navigator-10-Nachweis. Behebt Integration-Issue #170.
+
+### Compatibility
+
+- **Trade-off (bewusste Entscheidung, dokumentiert):** Ein echtes Navigator 10 **ohne** konfigurierten Booster, das 4001 mit dem Sentinel `255` beantwortet, verliert dieses Ersatz-Indikator. Die Erkennung fällt dann auf `Navigator 2.0` zurück (Registerplan ohne Nav10-only-Block), sofern Adresse 4108 keinen plausiblen Power-Limit-Wert liefert. Abfangen über (a) den primären Indikator 4108, (b) die Verbraucher-Firmware-/Web-Reconciliation (z. B. `NAV10_`-Firmware-Prefix → `set_model_info()`) oder (c) den manuellen Modell-Override in der Integration. Ein Nav 2.0 mit falscher Nav10-Klassifizierung (Nav10-only-Block wird gepollt, EEPROM-Schreibgating aktiv) ist das größere Anlagenrisiko als eine Nav10-Untererkennung, die sicher auf den 2.0-Registerplan zurückfällt.
+- Keine Änderung an `RegisterDef`, Modbus-Dekodierung, Batch-Reads, Schreibpfaden oder dem Web-Client. Lediglich die 4001-Wertvalidierung in `detect_model()` ist präzisiert.
+
+
 ## [0.8.4] - 2026-07-22
 
 ### Fixed

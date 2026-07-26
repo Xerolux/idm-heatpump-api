@@ -149,15 +149,37 @@ def test_detect_model_classifies_real_power_limit_as_navigator_10() -> None:
     assert model_info.model_name == MODEL_NAVIGATOR_10
 
 
-def test_detect_model_classifies_navigator_10_with_sentinel_power_limit_and_booster_block() -> None:
-    """A real Navigator 10 controller returning sentinel (-1.0) for power_limit_hp (4108)
-    but supporting the 4000 booster block (4001) MUST be detected as Navigator 10."""
+def test_detect_model_does_not_misclassify_sentinel_booster_fault_as_navigator_10() -> None:
+    """#170: a Navigator 2.0 that answers booster_fault (4001) with its declared
+    "not configured" sentinel (255 / raw 0xFFFF) must NOT be classified as Navigator 10.
+    Some Navigator 2.0 firmwares answer Navigator-10-only registers with a sentinel
+    instead of rejecting them (the same Terra SWM behavior seen at 4108). Only a
+    non-sentinel 4001 value is a genuine Navigator 10 indicator."""
     client = ProbeOnlyClient(
         {
             (1350, 2): [0, 16968],  # 25.0 C -> circuit A present
             (1498, 1): [0],  # active-mode A configured
             (4108, 2): [0, 49024],  # power_limit_hp sentinel (-1.0)
-            (4001, 1): [65535],  # booster_fault sentinel (255) / 4000 block available
+            (4001, 1): [65535],  # booster_fault "not configured" sentinel (255)
+        }
+    )
+
+    model_info = asyncio.run(client.detect_model())
+
+    assert model_info.model_name == MODEL_NAVIGATOR_20
+    assert client.model_name == MODEL_NAVIGATOR_20
+
+
+def test_detect_model_classifies_navigator_10_with_real_booster_block() -> None:
+    """A genuine Navigator 10 with the booster block present (4001 answers a real,
+    non-sentinel fault value) MUST still be detected as Navigator 10 when power_limit
+    is at its factory sentinel, preserving the 0.8.4 fallback behavior."""
+    client = ProbeOnlyClient(
+        {
+            (1350, 2): [0, 16968],  # 25.0 C -> circuit A present
+            (1498, 1): [0],  # active-mode A configured
+            (4108, 2): [0, 49024],  # power_limit_hp sentinel (-1.0, no limit configured)
+            (4001, 1): [0],  # booster_fault = 0 (booster present, no fault) -> real Nav10
         }
     )
 
