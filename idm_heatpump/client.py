@@ -175,6 +175,22 @@ class DataType(Enum):
     BITFLAG = "BITFLAG"
 
 
+# Declared "unused / not configured" sentinels per datatype. These are the
+# device-documented marker values a register returns when the corresponding
+# hardware/function is absent, grouped by the register's decoded datatype.
+# A register can override ``sentinel_values`` explicitly (including a different
+# set); ``RegisterDef.effective_sentinel_values`` falls back to this mapping when
+# the register does not declare its own. BOOL/BITFLAG/INT8 have no numeric
+# sentinel. (Phase 6 / SENT-01: makes the integration's former -1/255/65535
+# heuristic data-driven and device-specific.)
+DATATYPE_SENTINEL_DEFAULTS: dict[DataType, tuple[int | float, ...]] = {
+    DataType.FLOAT: (-1.0,),
+    DataType.UCHAR: (255,),
+    DataType.UINT16: (65535,),
+    DataType.INT16: (-1, -32768),
+}
+
+
 class RegisterType(Enum):
     INPUT = "input"
     HOLDING = "holding"
@@ -421,6 +437,21 @@ class RegisterDef:
         if self.eeprom_sensitive:
             return WriteClass.EEPROM
         return WriteClass.VOLATILE
+
+    @property
+    def effective_sentinel_values(self) -> tuple[int | float | str, ...]:
+        """Sentinel values that mean 'unused / not configured' for this register.
+
+        If the register declares ``sentinel_values`` explicitly, that set is
+        authoritative (this allows opt-outs and overrides, e.g. pump-status
+        registers where ``-1`` is a valid 'off' reading). Otherwise the
+        datatype-specific default from ``DATATYPE_SENTINEL_DEFAULTS`` applies.
+        Consumers should treat a non-empty result as the single authority for the
+        unused classification and not also apply a numeric heuristic.
+        """
+        if self.sentinel_values:
+            return self.sentinel_values
+        return DATATYPE_SENTINEL_DEFAULTS.get(self.datatype, ())
 
 
 class IdmModbusClient:

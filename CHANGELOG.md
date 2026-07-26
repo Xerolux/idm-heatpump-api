@@ -8,6 +8,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 
+## [0.8.7] - 2026-07-26
+
+### Added
+
+- **`RegisterDef.effective_sentinel_values`** und datentypbasierte
+  Default-Sentinelwerte (`DATATYPE_SENTINEL_DEFAULTS`): FLOAT → `-1.0`, UCHAR →
+  `255`, UINT16 → `65535`, INT16 → `(-1, -32768)`. Ein Register ohne
+  explizite `sentinel_values` erbt nun den dokumentierten Default seines
+  Datentyps; eine explizite Angabe bleibt autoritativ (Override oder Opt-out).
+  Damit ist die API die alleinige Quelle für die „unbenutzt/nicht konfiguriert"-
+  Klassifikation (SENT-01); die Integration braucht keine numerische Heuristik
+  mehr.
+
+### Changed
+
+- **Pumpenstatus-Register** (`charging_pump_status`, `brine_pump_status`,
+  `heat_source_pump_status`, `isc_cold_storage_pump_status`,
+  `isc_recooling_pump_status`, `heat_sink_charging_pump_signal`,
+  `booster_a/b_source_pump`, `booster_a/b_charging_pump`) deklarieren jetzt
+  explizit `sentinel_values=(-32768, 65535, 255)` — `-1` bleibt als gültiges
+  „Aus" erhalten, das bisher über die Ausnahmeliste `NEGATIVE_ONE_VALID_REGISTERS`
+  der Integration abgefangen wurde.
+
+### Compatibility
+
+- Keine Änderung an Adressen, Datentypen, Batch-Reads, Schreibpfaden oder dem
+  Web-Client. Lediglich `RegisterDef` erhält eine berechnete Eigenschaft; das
+  Feld `sentinel_values` ist unverändert. Verbraucher, die bisher die
+  Integrationssseitige Heuristik nutzten, können jetzt
+  `effective_sentinel_values` als Autorität verwenden.
+
+
 ## [0.8.6] - 2026-07-26
 
 ### Fixed

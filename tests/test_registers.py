@@ -49,6 +49,90 @@ def test_hardware_verified_unavailable_sentinels(
     assert reg.last_verified == "2026-07-10"
 
 
+@pytest.mark.parametrize(
+    ("datatype", "expected"),
+    [
+        (DataType.FLOAT, (-1.0,)),
+        (DataType.UCHAR, (255,)),
+        (DataType.UINT16, (65535,)),
+        (DataType.INT16, (-1, -32768)),
+    ],
+)
+def test_effective_sentinel_defaults_by_datatype(
+    datatype: DataType, expected: tuple[int | float, ...]
+) -> None:
+    """SENT-01: a register without an explicit sentinel declaration inherits the
+    documented datatype-specific default (former integration-side heuristic)."""
+    from idm_heatpump.client import RegisterDef
+
+    reg = RegisterDef(address=9999, datatype=datatype, name=f"probe_{datatype.value}")
+
+    assert reg.sentinel_values == ()
+    assert reg.effective_sentinel_values == expected
+
+
+def test_effective_sentinel_explicit_override_is_authoritative() -> None:
+    """An explicit sentinel_values declaration overrides the datatype default,
+    including a non-default set."""
+    from idm_heatpump.client import RegisterDef
+
+    reg = RegisterDef(
+        address=9998, datatype=DataType.UCHAR, name="probe_override", sentinel_values=(13,)
+    )
+
+    assert reg.effective_sentinel_values == (13,)
+
+
+def test_effective_sentinel_no_default_for_bool_bitflag() -> None:
+    """BOOL/BITFLAG have no numeric unused sentinel."""
+    from idm_heatpump.client import RegisterDef
+
+    for dt in (DataType.BOOL, DataType.BITFLAG):
+        reg = RegisterDef(address=9997, datatype=dt, name=f"probe_{dt.value}")
+        assert reg.effective_sentinel_values == ()
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "charging_pump_status",
+        "brine_pump_status",
+        "heat_source_pump_status",
+        "isc_cold_storage_pump_status",
+        "isc_recooling_pump_status",
+        "heat_sink_charging_pump_signal",
+        "booster_a_source_pump",
+        "booster_a_charging_pump",
+        "booster_b_source_pump",
+        "booster_b_charging_pump",
+    ],
+)
+def test_pump_status_registers_keep_negative_one_valid(name: str) -> None:
+    """SENT-01: pump-status registers where -1 means 'off' must NOT declare -1 as
+    an unused sentinel (previously handled by the integration's
+    NEGATIVE_ONE_VALID_REGISTERS exception list)."""
+    reg = build_register_map()[name]
+
+    assert reg.datatype == DataType.INT16
+    assert -1 not in reg.effective_sentinel_values
+    # the override is explicit, so it does not fall through to the INT16 default
+    assert reg.sentinel_values == reg.effective_sentinel_values
+
+
+def test_every_numeric_register_has_a_sentinel_declaration() -> None:
+    """SENT-01 coverage: every numeric register resolves to a non-empty sentinel
+    set (either explicit or datatype default), so the integration never needs to
+    fall back to a raw numeric heuristic for FLOAT/UCHAR/UINT16/INT16."""
+    numeric = {DataType.FLOAT, DataType.UCHAR, DataType.UINT16, DataType.INT16, DataType.INT8}
+    reg_map = build_register_map()
+    without = [
+        name
+        for name, reg in reg_map.items()
+        if reg.datatype in numeric and not reg.effective_sentinel_values
+    ]
+    assert without == [], f"numeric registers without a sentinel: {without}"
+
+
 class TestEnergyRegisters:
     """Test energy register definitions."""
 
