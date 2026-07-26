@@ -168,6 +168,12 @@
       "hass_integration_version": "0.9.0",
       "status": "tested",
       "notes": "First 0.9.x stable. Bundles 0.8.6 (Navigator 10 standby detection via 4122/4126) and 0.8.7 (sentinel authority). Additive and backward-compatible only. Verified live on Navigator 10 (firmware NAV10_20.24-880-g265e09c4a); Navigator 2.0 / Terra SWM covered by the unit-test matrix."
+    },
+    {
+      "api_version": "0.9.1",
+      "hass_integration_version": "0.9.1",
+      "status": "tested",
+      "notes": "Adds a public IdmModbusClient.eeprom_write_interval property (getter/setter) so the integration can expose the EEPROM write cooldown as an advanced option (default 60s, lowerable at the user's own risk). No address/type/write-path changes."
     }
   ]
 }

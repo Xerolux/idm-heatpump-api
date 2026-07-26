@@ -539,6 +539,24 @@ class IdmModbusClient:
         return self._client is not None and self._client.connected
 
     @property
+    def eeprom_write_interval(self) -> float:
+        """Minimum seconds between two writes to the same EEPROM register.
+
+        EEPROM registers have a limited number of write cycles. The default
+        (``DEFAULT_EEPROM_WRITE_INTERVAL`` = 60 s) protects the hardware by
+        refusing a second write to the same EEPROM register within the interval.
+        Consumers may lower it for power-user/debug setups, explicitly accepting
+        faster EEPROM wear.
+        """
+        return self._eeprom_write_interval
+
+    @eeprom_write_interval.setter
+    def eeprom_write_interval(self, value: float) -> None:
+        if not math.isfinite(value) or value <= 0:
+            raise ValueError(f"eeprom_write_interval must be finite and positive, got {value}")
+        self._eeprom_write_interval = float(value)
+
+    @property
     def model_info(self) -> IdmModelInfo | None:
         return self._model_info
 

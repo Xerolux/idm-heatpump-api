@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 
+## [0.9.1] - 2026-07-26
+
+### Added
+
+- **`IdmModbusClient.eeprom_write_interval`** als öffentliche Property (Getter +
+  Setter): ermöglicht Verbrauchern, das EEPROM-Schreib-Cooldown (Default 60s)
+  pro Instanz zu überschreiben – z. B. für erweiterte HA-Integrationsoptionen.
+  Der Default bleibt 60s; ein Senken erfolgt ausdrücklich auf eigenes Risiko
+  (EEPROM-Verschleiß). Setter validiert > 0 und endlich.
+
+### Compatibility
+
+- Keine Änderung an Adressen, Datentypen, Batch-Reads oder dem Web-Client.
+  Lediglich eine neue Property; das interne `_eeprom_write_interval` bleibt.
+
+
 ## [0.9.0] - 2026-07-26
 
 Erste 0.9.x-Stable der API. Bündelt die 0.8.6/0.8.7-Zwischenschritte

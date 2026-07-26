@@ -270,6 +270,18 @@ def test_set_model_info_overrides_detected_model() -> None:
     assert client.model_name == MODEL_NAVIGATOR_10
 
 
+def test_eeprom_write_interval_property_round_trip() -> None:
+    """The eeprom_write_interval property exposes and validates the EEPROM cooldown."""
+    client = IdmModbusClient("127.0.0.1")
+    assert client.eeprom_write_interval == 60.0
+    client.eeprom_write_interval = 15.0
+    assert client.eeprom_write_interval == 15.0
+    with pytest.raises(ValueError):
+        client.eeprom_write_interval = 0
+    with pytest.raises(ValueError):
+        client.eeprom_write_interval = -5
+
+
 def test_model_name_defaults_before_detection() -> None:
     """model_name should fall back to the default model until detection runs."""
     client = IdmModbusClient("127.0.0.1")
