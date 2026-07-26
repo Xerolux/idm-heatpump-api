@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 
+## [0.8.6] - 2026-07-26
+
+### Fixed
+
+- **Modellerkennung: echtes Navigator 10 ohne konfigurierten Booster und im Standby wurde als Navigator 2.0 fehlklassifiziert (#170 live).** Die in 0.8.5 gestraffte Sentinel-Validierung für `booster_fault` (4001) schloss korrekt Terra-SWM-Navigator-2.0-Geräte aus, entzog aber auch echten Navigator-10-Anlagen ohne Booster den Ersatz-Indikator, sobald `power_limit_hp` (4108) im Standby einen unplausiblen Wert (`-1.0`/Sentinel bzw. `0.0`) lieferte. `detect_model()` zieht nun zusätzlich die Navigator-10-only-Leistungsregister `power_consumption_hp` (4122) und `thermal_power_flow_sensor` (4126) heran: Antworten **beide** Register (auch mit `0.0` im Standby), gilt das als starker, familienspezifischer Navigator-10-Nachweis. Navigator-2.0-Regelungen (inkl. IDM Terra SWM) lehnen diese Adressen mit Modbus-Ausnahmecode 2 ab, sodass die Unterscheidung sicher bleibt. Verifiziert an einer Live-Anlage mit Firmware `NAV10_20.24-880-g265e09c4a`.
+
+### Compatibility
+
+- Keine Änderung an `RegisterDef`, Modbus-Dekodierung, Batch-Reads, Schreibpfaden oder dem Web-Client. Lediglich `detect_model()` erhält einen zusätzlichen, strengen Tertiär-Indikator (4122 UND 4126 müssen beide antworten).
+- Schließt die Lücke aus dem 0.8.5-Kompatibilitätshinweis („echtes Nav10 ohne Booster fällt auf 2.0 zurück"): ein solches Gerät wird jetzt zuverlässig als Navigator 10 erkannt, ohne die Terra-SWM-Sicherung (#44/#65) aufzuweichen.
+
+
 ## [0.8.5] - 2026-07-25
 
 ### Fixed

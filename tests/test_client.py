@@ -189,6 +189,70 @@ def test_detect_model_classifies_navigator_10_with_real_booster_block() -> None:
     assert client.model_name == MODEL_NAVIGATOR_10
 
 
+def test_detect_model_classifies_navigator_10_by_power_measurement_block() -> None:
+    """#170 live regression: a genuine Navigator 10 in standby, with no booster
+    configured (4001 = 255) and an inactive power limit (4108 sentinel), is still
+    recognized as Navigator 10 through the Navigator-10-only power-measurement
+    registers 4122 (power_consumption_hp) and 4126 (thermal_power_flow_sensor),
+    which respond (here 0.0) on a real Nav10 but are rejected with Modbus
+    Exception 2 by Navigator 2.0 controllers. Verified against a live
+    NAV10_20.24-880-g265e09c4a controller."""
+    client = ProbeOnlyClient(
+        {
+            (1350, 2): [0, 16968],  # 25.0 C -> circuit A present
+            (1498, 1): [0],  # active-mode A configured
+            (4108, 2): [0, 49024],  # power_limit_hp sentinel (-1.0)
+            (4001, 1): [65535],  # booster_fault "not configured" sentinel (255)
+            (4122, 2): [0, 0],  # power_consumption_hp = 0.0 (standby, register present)
+            (4126, 2): [0, 0],  # thermal_power_flow_sensor = 0.0 (standby, register present)
+        }
+    )
+
+    model_info = asyncio.run(client.detect_model())
+
+    assert model_info.model_name == MODEL_NAVIGATOR_10
+    assert client.model_name == MODEL_NAVIGATOR_10
+
+
+def test_detect_model_requires_both_power_measurement_registers_for_nav10() -> None:
+    """Only one of 4122/4126 responding must NOT classify as Navigator 10; both
+    are required to keep the discriminator strict against partial echoes."""
+    client = ProbeOnlyClient(
+        {
+            (1350, 2): [0, 16968],
+            (1498, 1): [0],
+            (4108, 2): [0, 49024],
+            (4001, 1): [65535],
+            (4122, 2): [0, 0],  # present
+            # (4126, 2) intentionally absent -> rejected by the controller
+        }
+    )
+
+    model_info = asyncio.run(client.detect_model())
+
+    assert model_info.model_name == MODEL_NAVIGATOR_20
+
+
+def test_detect_model_nav20_rejecting_power_measurement_block_stays_nav20() -> None:
+    """A Navigator 2.0 (e.g. IDM Terra SWM) that rejects the Navigator-10-only
+    power-measurement block with Modbus Exception 2 must stay Navigator 2.0,
+    even when it answers 4108/4001 with a sentinel. This guards against
+    reintroducing the Terra SWM misclassification (#44/#65)."""
+    client = ProbeOnlyClient(
+        {
+            (1350, 2): [0, 16968],
+            (1498, 1): [0],
+            (4108, 2): [0, 49024],  # sentinel echo
+            (4001, 1): [65535],  # sentinel echo
+            # 4122 and 4126 intentionally absent -> Exception 2 on a Nav2.0
+        }
+    )
+
+    model_info = asyncio.run(client.detect_model())
+
+    assert model_info.model_name == MODEL_NAVIGATOR_20
+
+
 def test_set_model_info_overrides_detected_model() -> None:
     """set_model_info should allow explicitly setting/overriding model_info on client."""
     client = IdmModbusClient("127.0.0.1")

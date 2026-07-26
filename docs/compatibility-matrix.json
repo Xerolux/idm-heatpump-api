@@ -150,6 +150,12 @@
       "hass_integration_version": "0.8.6-beta.1",
       "status": "api-prepared",
       "notes": "Fixes Navigator 2.0 model detection: a booster_fault (4001) response of the declared 'not configured' sentinel (255 / 0xFFFF) is no longer misclassified as Navigator 10; only a non-sentinel 4001 value proves the Navigator 10 booster block, consistent with the 4108 plausibility check. See Xerolux/idm-heatpump-hass#170."
+    },
+    {
+      "api_version": "0.8.6",
+      "hass_integration_version": "0.8.6-beta.2",
+      "status": "hardware-verified",
+      "notes": "Adds a strict tertiary Navigator 10 indicator: the Navigator-10-only registers power_consumption_hp (4122) and thermal_power_flow_sensor (4126) must BOTH respond. Closes the gap from 0.8.5 where a real Navigator 10 in standby without a configured booster (4108 unplausible, 4001 sentinel) was misdetected as Navigator 2.0. Verified live on a Navigator 10 controller (firmware NAV10_20.24-880-g265e09c4a). Navigator 2.0 / IDM Terra SWM stay Navigator 2.0 because they reject 4122/4126 with Modbus Exception 2. See Xerolux/idm-heatpump-hass#170."
     }
   ]
 }

@@ -1063,6 +1063,30 @@ class IdmModbusClient:
             except (ModbusException, ConnectionException, OSError):
                 pass
 
+        if not has_navigator_10_indicators:
+            # Tertiary signal: the Navigator-10-only power-measurement registers
+            # 4122 (power_consumption_hp) and 4126 (thermal_power_flow_sensor).
+            # A genuine Navigator 10 exposes both even in standby (they read 0.0)
+            # and even when no booster is configured (4001 = 255) and the power
+            # limit is inactive (4108 sentinel/~0.0). Navigator 2.0 controllers,
+            # including the IDM Terra SWM, reject these addresses with Modbus
+            # Exception 2 (they belong to the Navigator-10-only 4001+ block), so
+            # BOTH responding is a strong family-specific Navigator 10 signal
+            # that cannot be produced by a Navigator 2.0. This closes the
+            # real-world gap where a standby Navigator 10 without a booster was
+            # misclassified as Navigator 2.0 (#170 live case).
+            nav10_block_present = True
+            for nav10_addr in (4122, 4126):
+                try:
+                    nav10_regs = await self._probe_model_register(nav10_addr, 2)
+                except (ModbusException, ConnectionException, OSError):
+                    nav10_regs = None
+                if nav10_regs is None or len(nav10_regs) != 2:
+                    nav10_block_present = False
+                    break
+            if nav10_block_present:
+                has_navigator_10_indicators = True
+
         if has_navigator_10_indicators or zone_modules > 0:
             # Navigator 10 is the current generation; also report Pro-like capabilities
             model_name = MODEL_NAVIGATOR_10 if has_navigator_10_indicators else MODEL_NAVIGATOR_PRO
