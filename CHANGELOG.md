@@ -8,6 +8,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 
+## [0.9.0] - 2026-07-26
+
+Erste 0.9.x-Stable der API. Bündelt die 0.8.6/0.8.7-Zwischenschritte
+(Navigator-10-Standby-Erkennung, Sentinel-Authorität) und erklärt sie für
+stabil. Keine neuen Brechstellen; alle Änderungen sind additiv und
+rückwärtskompatibel.
+
+### Added (seit 0.8.5 stable)
+
+- **`RegisterDef.effective_sentinel_values`** und datentypbasierte
+  Default-Sentinels (`DATATYPE_SENTINEL_DEFAULTS`): FLOAT → `-1.0`, UCHAR →
+  `255`, UINT16 → `65535`, INT16 → `(-1, -32768)`. Explizite `sentinel_values`
+  pro Register bleiben autoritativ (Override/Opt-out). Damit ist die API die
+  alleinige Quelle der „unbenutzt/nicht konfiguriert"-Klassifikation.
+- **Strenger tertiärer Navigator-10-Indikator:** die Nav10-only-Register
+  `power_consumption_hp` (4122) und `thermal_power_flow_sensor` (4126) müssen
+  **beide** antworten. Navigator 2.0 / IDM Terra SWM bleiben Navigator 2.0, da
+  sie diese Adressen mit Modbus Exception 2 ablehnen.
+
+### Changed
+
+- **Pumpenstatus-Register** (10 Stück) deklarieren explizit
+  `sentinel_values=(-32768, 65535, 255)`; `-1` bleibt gültiges „Aus".
+
+### Compatibility
+
+- Keine Änderung an Adressen, Datentypen, Batch-Reads, Schreibpfaden oder dem
+  Web-Client. `RegisterDef` erhält nur eine berechnete Eigenschaft; das Feld
+  `sentinel_values` ist unverändert. Live verifiziert an einem Navigator 10
+  (Firmware `NAV10_20.24-880-g265e09c4a`); Navigator 2.0 / Terra SWM über die
+  Unit-Test-Matrix abgesichert.
+
+
 ## [0.8.7] - 2026-07-26
 
 ### Added

@@ -162,6 +162,12 @@
       "hass_integration_version": "0.8.7",
       "status": "api-prepared",
       "notes": "Sentinel authority: adds RegisterDef.effective_sentinel_values and datatype-based default sentinels (FLOAT -1.0, UCHAR 255, UINT16 65535, INT16 -1/-32768), plus explicit pump-status opt-outs. Makes the integration's former numeric heuristic data-driven and device-specific (SENT-01). No address/type/write-path changes."
+    },
+    {
+      "api_version": "0.9.0",
+      "hass_integration_version": "0.9.0",
+      "status": "tested",
+      "notes": "First 0.9.x stable. Bundles 0.8.6 (Navigator 10 standby detection via 4122/4126) and 0.8.7 (sentinel authority). Additive and backward-compatible only. Verified live on Navigator 10 (firmware NAV10_20.24-880-g265e09c4a); Navigator 2.0 / Terra SWM covered by the unit-test matrix."
     }
   ]
 }
