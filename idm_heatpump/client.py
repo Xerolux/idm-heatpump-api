@@ -614,7 +614,14 @@ class IdmModbusClient:
             await self._connect_internal()
 
     async def _connect_internal(self) -> None:
-        """Internal connect that must be called while holding self._lock."""
+        """Internal connect that must be called while holding self._lock.
+
+        Skips the transport ``connect()`` when it already reports connected,
+        so the no-op-when-connected behaviour is consistent across the default
+        Pymodbus adapter and any injected transport.
+        """
+        if self._transport is not None and self._transport.connected:
+            return
         await self._transport.connect()
 
     async def disconnect(self) -> None:
