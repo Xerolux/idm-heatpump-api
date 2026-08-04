@@ -878,8 +878,8 @@ def _heat_sink_registers() -> dict[str, RegisterDef]:
         "heat_sink_charging_pump_signal": RegisterDef(
             address=1074,
             datatype=DataType.INT16,
-                name="heat_sink_charging_pump_signal",
-                sentinel_values=(-32768, 65535, 255),
+            name="heat_sink_charging_pump_signal",
+            sentinel_values=(-32768, 65535, 255),
             unit="%",
             state_class="measurement",
             # M73 - Ladepumpe Wärmesenke Steuersignal (WORD, -1 = off)
@@ -1050,8 +1050,8 @@ def _booster_registers() -> dict[str, RegisterDef]:
         "booster_a_source_pump": RegisterDef(
             address=4020,
             datatype=DataType.INT16,
-                name="booster_a_source_pump",
-                sentinel_values=(-32768, 65535, 255),
+            name="booster_a_source_pump",
+            sentinel_values=(-32768, 65535, 255),
             unit="%",
             state_class="measurement",
             # WORD per official doc, -1 = off
@@ -1059,8 +1059,8 @@ def _booster_registers() -> dict[str, RegisterDef]:
         "booster_a_charging_pump": RegisterDef(
             address=4021,
             datatype=DataType.INT16,
-                name="booster_a_charging_pump",
-                sentinel_values=(-32768, 65535, 255),
+            name="booster_a_charging_pump",
+            sentinel_values=(-32768, 65535, 255),
             unit="%",
             state_class="measurement",
             # WORD per official doc, -1 = off
@@ -1104,8 +1104,8 @@ def _booster_registers() -> dict[str, RegisterDef]:
         "booster_b_source_pump": RegisterDef(
             address=4050,
             datatype=DataType.INT16,
-                name="booster_b_source_pump",
-                sentinel_values=(-32768, 65535, 255),
+            name="booster_b_source_pump",
+            sentinel_values=(-32768, 65535, 255),
             unit="%",
             state_class="measurement",
             # WORD per official doc, -1 = off
@@ -1113,8 +1113,8 @@ def _booster_registers() -> dict[str, RegisterDef]:
         "booster_b_charging_pump": RegisterDef(
             address=4051,
             datatype=DataType.INT16,
-                name="booster_b_charging_pump",
-                sentinel_values=(-32768, 65535, 255),
+            name="booster_b_charging_pump",
+            sentinel_values=(-32768, 65535, 255),
             unit="%",
             state_class="measurement",
             # WORD per official doc, -1 = off
