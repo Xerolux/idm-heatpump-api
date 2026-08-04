@@ -1,0 +1,74 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-08-04T12:21:58.108Z",
+  "phase": "api-1.0-transport",
+  "phase_name": "Public transport injection and 1.0.0 release",
+  "phase_dir": ".planning",
+  "plan": 1,
+  "task": 1,
+  "total_tasks": 6,
+  "status": "paused",
+  "completed_tasks": [
+    {
+      "id": 1,
+      "name": "Audit transport architecture, compatibility and release mechanics",
+      "status": "in_progress",
+      "progress": "Audit and proposed public contract are complete; implementation was stopped before runtime files changed."
+    }
+  ],
+  "remaining_tasks": [
+    {
+      "id": 2,
+      "name": "Implement public transport Protocol and optional client injection",
+      "status": "not_started"
+    },
+    {
+      "id": 3,
+      "name": "Add API and cross-repository regression tests",
+      "status": "not_started"
+    },
+    {
+      "id": 4,
+      "name": "Prepare 1.0.0 version, docs, changelog and CI",
+      "status": "not_started"
+    },
+    {
+      "id": 5,
+      "name": "Merge and publish API 1.0.0",
+      "status": "not_started"
+    },
+    {
+      "id": 6,
+      "name": "Verify add-on 0.11.0-beta.2 against the published wheel",
+      "status": "not_started"
+    }
+  ],
+  "blockers": [
+    {
+      "description": "Old add-on tags have open-ended API requirements, so a stable 1.0.0 can be selected outside beta.2.",
+      "type": "technical",
+      "workaround": "Guarantee backward compatibility for the legacy constructor/default Pymodbus path; use an API prerelease instead only if strict resolver isolation is required."
+    },
+    {
+      "description": "Current main CI fails ruff format --check for idm_heatpump/registers.py.",
+      "type": "technical",
+      "workaround": "Include a formatter-only fix and rerun the complete matrix."
+    }
+  ],
+  "human_actions_pending": [],
+  "decisions": [
+    {
+      "decision": "Expose a public optional raw Modbus transport while keeping direct Pymodbus as the default.",
+      "rationale": "The add-on can stop overriding private internals without breaking standalone or old consumers.",
+      "phase": "api-1.0-transport"
+    },
+    {
+      "decision": "Keep modbus-connection and tmodbus out of API runtime dependencies.",
+      "rationale": "The API remains Home-Assistant-independent and backend-neutral.",
+      "phase": "api-1.0-transport"
+    }
+  ],
+  "uncommitted_files": [],
+  "next_action": "Implement the public IdmModbusTransport protocol and injected IdmModbusClient path on this branch, then run focused API tests before editing release metadata.",
+  "context_notes": "Branch Codex/api-1.0.0-transport is based on v0.9.1 at 377e0ce. No runtime, test, version or documentation implementation changes were made before pause."
+}
