@@ -72,6 +72,7 @@ from .registers import (
     get_register_registry,
     get_zone_module_registers,
 )
+from .transport import IdmModbusTransport
 from .web import (
     RECOMMENDED_WEB_SCAN_INTERVAL,
     WEB_VALUE_DESCRIPTIONS,
@@ -157,6 +158,7 @@ __all__ = [
     "IdmNavigator20WebClient",
     "IdmModelInfo",
     "IdmModbusClient",
+    "IdmModbusTransport",
     "IllegalAddressError",
     "ModbusCodec",
     "IdmWebAuthenticationError",
