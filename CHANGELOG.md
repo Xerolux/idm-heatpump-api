@@ -8,6 +8,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 
+## [1.0.0] - 2026-08-04
+
+Erste stabile 1.0.0 der API. Führt die öffentliche Transport-Injektion ein,
+damit die Home-Assistant-Integration rohe Modbus-I/O ohne Subclassing und
+ohne Override privater API-Mitglieder durch einen injizierbaren Transport
+routen kann. Direkter Pymodbus bleibt das Default-Verhalten und ist
+beobachtbar identisch zu 0.9.x — bestehende Konsumenten (auch solche mit
+offenen Requirements wie `>=0.3.x`) funktionieren weiterhin unverändert.
+
+### Added
+
+- **`IdmModbusTransport`** als `@runtime_checkable Protocol`: der stabile
+  1.0-Vertrag zwischen der geräteagnostischen IDM-Bibliothekslogik
+  (Register-Maps, Codecs, Batching, Retry, Quarantine, Model Detection,
+  Write Safety) und dem konkreten Byte-Transport. Umfasst Lifecycle
+  (`connect`/`close`/`connected`) sowie rohe Registerwörter (FC03/FC04
+  Reads, FC16 Writes). Transports besitzen keinen eigenen Retry, Lock,
+  Batching oder Write Safety.
+- **`IdmModbusClient(..., transport=None)`** als neuer keyword-only
+  Konstruktor-Parameter. `None` wählt den internen `_PymodbusTransport`
+  (Default, beobachtbar identisch zu 0.9.x); ein injiziertes Objekt muss
+  das `IdmModbusTransport`-Protocol erfüllen, sonst `TypeError`.
+- **`check_transport_response`**-Helper im Transport-Modul: zentralisiert
+  das Device-Response-Mapping (Code 2 → `IllegalAddressError` permanent;
+  andere Fehler → `ModbusException` transient), sodass Default- und
+  injizierte Transports identisch klassifizieren.
+- **Exception-Code-Taxonomie** offiziell fixiert: Code 2 (Illegal Data
+  Address) permanent; Codes 5/6/10/11 transient (Retry-in-Place, kein
+  Reconnect, keine Register-Quarantine); Connection/Timeout/Protocol-Fehler
+  Retry mit Reconnect.
+
+### Changed
+
+- `IdmModbusClient` routet Connection-Lifecycle und rohe Reads/Writes jetzt
+  über `self._transport`. `_lock`, `_max_retries`, `_connection_suspect`,
+  `_record_error_context`, `_retry_command`, Batching, Quarantine,
+  Model Detection und Write Safety bleiben API-eigen und unverändert.
+- `FakeModbusTransport` (Test-Double) gibt jetzt rohe `list[int]` zurück
+  und raiset Exceptions statt pymodbus-shaped Response-Objekte, um das
+  Protocol korrekt zu modellieren.
+
+### Compatibility
+
+- **Vollständig abwärtskompatibel.** Der legacy `IdmModbusClient(host)`
+  Pymodbus-Pfad bleibt beobachtbar identisch; `client._client = fake`
+  funktioniert weiterhin (Property-Alias auf `_transport`).
+- Keine Änderung an Adressen, Datentypen, Register-Maps, Web-Client,
+  EEPROM-Throttling, Model Detection oder Write Safety.
+- Keine neue API-Abhängigkeit (kein `modbus-connection`/`tmodbus`); die
+  API bleibt Home-Assistant-unabhängig.
+- `v0.10.1` und `v0.11.0-beta.1` (Add-on) bleiben auf dem exakten
+  API-0.9.1-Pin; nur das neue Add-on `0.11.0-beta.2` wird explizit auf
+  `idm-heatpump-api[web]==1.0.0` pinnen.
+
+
 ## [0.9.1] - 2026-07-26
 
 ### Added

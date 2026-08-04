@@ -1,0 +1,107 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-08-04T14:55:00.000Z",
+  "phase": "api-1.0-transport",
+  "phase_name": "API 1.0 transport contract and add-on beta 2",
+  "phase_dir": ".planning",
+  "plan": 1,
+  "task": 1,
+  "total_tasks": 6,
+  "status": "in_progress",
+  "completed_tasks": [
+    {
+      "id": 1,
+      "name": "Audit API and add-on transport/version contracts",
+      "status": "done",
+      "commit": "a423f8c"
+    },
+    {
+      "id": 2,
+      "name": "Design public API transport boundary and release sequence",
+      "status": "done",
+      "commit": "b49e0fa"
+    },
+    {
+      "id": 3,
+      "name": "Implement and test idm-heatpump-api 1.0.0 transport injection",
+      "status": "implemented",
+      "commits": ["438d60b", "ef34df1", "00720b5"],
+      "progress": "Protocol + _PymodbusTransport + client routing + 25 new tests implemented. 332 pytest pass (307 baseline + 25 new), ruff/format/mypy-strict green. Not yet run through full CI matrix or wheel build."
+    }
+  ],
+  "remaining_tasks": [
+    {
+      "id": 3b,
+      "name": "CI matrix + build/twine/wheel verification on the branch",
+      "status": "not_started"
+    },
+    {
+      "id": 3c,
+      "name": "Test compatibility with legacy open-pin add-on consumers",
+      "status": "not_started"
+    },
+    {
+      "id": 4,
+      "name": "Publish and verify API 1.0.0 (version bump, changelog, merge, tag, release, PyPI, clean install)",
+      "status": "not_started"
+    },
+    {
+      "id": 5,
+      "name": "Refactor add-on adapter and pin API 1.0.0 in 0.11.0-beta.2 (sibling repo)",
+      "status": "not_started"
+    },
+    {
+      "id": 6,
+      "name": "Publish and verify add-on 0.11.0-beta.2 (sibling repo)",
+      "status": "not_started"
+    }
+  ],
+  "blockers": [
+    {
+      "description": "Older add-on releases use open-ended API requirements and may resolve a stable API 1.0.0.",
+      "type": "technical",
+      "workaround": "Keep API 1.0.0 backward compatible with the legacy IdmModbusClient(host) Pymodbus path (implemented + tested); do not use a prerelease."
+    },
+    {
+      "description": "CodeQL Dependabot PRs #70 and #71 update the paired init/analyze actions separately and fail when applied independently.",
+      "type": "technical",
+      "workaround": "Treat them as a pair if included at all; do not merge one without the other."
+    }
+  ],
+  "human_actions_pending": [
+    "Approve CI matrix run (Python 3.12/3.13/3.14) before publish",
+    "Approve build/twine/wheel verification before publish",
+    "Approve version bump to 1.0.0 + changelog/README/classifier updates",
+    "Approve merge to main + tag v1.0.0 + GitHub Release + PyPI publish (per-step)"
+  ],
+  "decisions": [
+    {
+      "decision": "Keep v0.10.1 and v0.11.0-beta.1 unchanged on the exact API 0.9.1 pin.",
+      "rationale": "Released users must retain a reproducible dependency pair.",
+      "phase": "api-1.0-beta2"
+    },
+    {
+      "decision": "Only add-on 0.11.0-beta.2 will explicitly pin idm-heatpump-api[web]==1.0.0.",
+      "rationale": "The API and add-on must be promoted as one tested pair.",
+      "phase": "api-1.0-beta2"
+    },
+    {
+      "decision": "The API keeps direct Pymodbus as its backward-compatible default and accepts an optional public raw transport.",
+      "rationale": "Standalone and older consumers must keep working while the add-on stops overriding private API internals.",
+      "phase": "api-1.0-beta2"
+    },
+    {
+      "decision": "Stable 1.0.0 (not a prerelease) with backward compatibility as the release gate.",
+      "rationale": "User confirmed; strict beta-only resolver isolation is impossible given legacy open requirements.",
+      "phase": "api-1.0-beta2"
+    },
+    {
+      "decision": "Exception-code taxonomy: code 2 permanent; codes 5/6/10/11 transient (retry-in-place, no reconnect, no quarantine); connection/timeout/protocol failures retry with reconnect.",
+      "rationale": "Matches Modbus spec semantics and the handoff anti-patterns.",
+      "phase": "api-1.0-beta2"
+    }
+  ],
+  "uncommitted_files": [],
+  "next_action": "Run the full CI matrix (Python 3.12/3.13/3.14) and build/twine/wheel checks on Codex/api-1.0.0-transport, then test legacy-consumer compatibility. Only after both pass: bump to 1.0.0, update release metadata, merge, tag, publish, verify. Then hand off to add-on beta.2.",
+  "context_notes": "Implementation complete and locally green (332 tests). IdmModbusTransport protocol + _PymodbusTransport default adapter + IdmModbusClient transport= injection + 25 new tests. Legacy client._client property alias preserves the pre-1.0 test seam. No version bump, changelog, release metadata, merge, tag or publish done."
+}

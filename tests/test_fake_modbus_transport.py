@@ -514,3 +514,24 @@ def test_default_max_group_size_is_40() -> None:
 def test_max_group_size_rejects_zero() -> None:
     with pytest.raises(ValueError, match="max_group_size"):
         IdmModbusClient("127.0.0.1", max_group_size=0)
+
+
+def test_legacy_client_attribute_alias_routes_to_transport() -> None:
+    """The pre-1.0 ``client._client = fake`` seam must keep working after the
+    transport refactor. The ``_client`` property aliases ``_transport`` so
+    existing tests and consumers that assign the fake via ``_client`` route
+    reads and writes through it identically to constructor injection."""
+    client = IdmModbusClient("127.0.0.1", max_retries=1)
+    transport = FakeModbusTransport(input_registers={1000: 42, 1001: 43})
+
+    # Legacy assignment path.
+    client._client = transport  # type: ignore[assignment]
+
+    # The alias must expose the same object on both attribute names.
+    assert client._client is transport  # type: ignore[comparison-overlap]
+    assert client._transport is transport
+
+    # And reads must route through it, identical to constructor injection.
+    result = asyncio.run(client._read_registers(1000, 2, RegisterType.INPUT))
+    assert result == [42, 43]
+    assert transport.read_calls == [("input", 1000, 2)]

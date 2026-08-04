@@ -1,26 +1,37 @@
-"""Deterministic pymodbus-style test doubles."""
+"""Deterministic transport test double implementing the public protocol.
+
+The fake models a single connected Modbus TCP endpoint and returns raw 16-bit
+register words (``list[int]``) exactly as the :class:`IdmModbusTransport`
+protocol requires. Device-side failures are surfaced as exceptions, not as
+pymodbus-shaped response objects, so the fake honours the contract that
+real transports (Pymodbus adapter, ``modbus-connection``/``tmodbus``) must
+follow.
+
+Scenario hooks (all optional, keyword-only):
+
+* ``input_registers``/``holding_registers`` -- happy-path backing store.
+* ``illegal_reads`` -- addresses that raise ``IllegalAddressError`` (code 2).
+* ``error_reads`` -- addresses that raise a generic ``ModbusException``.
+* ``exception_reads`` -- addresses that raise a caller-supplied exception
+  instance (``ConnectionException``, ``ModbusIOException``, ``OSError`` ...).
+* ``short_reads`` -- addresses returning an arbitrary register list (used to
+  simulate under-length or corrupt/shifted batch payloads).
+* ``error_writes`` -- addresses whose write raises ``ModbusException``.
+* ``delay`` -- per-request await, used by the lock-serialisation test.
+"""
 
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
 from typing import Any
 
+from pymodbus.exceptions import ModbusException
 
-@dataclass
-class FakeModbusResponse:
-    registers: list[int] | None = None
-    error: bool = False
-    exception_code: int | None = None
-
-    def isError(self) -> bool:  # noqa: N802 - pymodbus compatibility
-        return self.error or self.exception_code is not None
+from idm_heatpump.client import IllegalAddressError
 
 
 class FakeModbusTransport:
-    """Small async transport double implementing the pymodbus methods we use."""
-
-    connected = True
+    """Small async transport double returning raw register words."""
 
     def __init__(
         self,
@@ -46,25 +57,30 @@ class FakeModbusTransport:
         self.write_calls: list[tuple[int, list[int]]] = []
         self.active_requests = 0
         self.max_active_requests = 0
+        self.connected = True
 
-    def close(self) -> None:
+    async def connect(self) -> None:
+        self.connected = True
+
+    async def close(self) -> None:
         self.connected = False
 
-    async def read_input_registers(self, *, address: int, count: int, **_: Any) -> Any:
+    async def read_input_registers(self, *, address: int, count: int, **_: Any) -> list[int]:
         return await self._read("input", self.input_registers, address, count)
 
-    async def read_holding_registers(self, *, address: int, count: int, **_: Any) -> Any:
+    async def read_holding_registers(self, *, address: int, count: int, **_: Any) -> list[int]:
         return await self._read("holding", self.holding_registers, address, count)
 
-    async def write_registers(self, *, address: int, values: list[int], **_: Any) -> Any:
+    async def write_registers(self, *, address: int, values: list[int], **_: Any) -> None:
         await self._enter_request()
         try:
             self.write_calls.append((address, list(values)))
             if address in self.error_writes:
-                return FakeModbusResponse(error=True)
+                raise ModbusException(  # type: ignore[no-untyped-call]
+                    f"Modbus error writing address {address}: error_writes stub"
+                )
             for offset, value in enumerate(values):
                 self.holding_registers[address + offset] = int(value)
-            return FakeModbusResponse()
         finally:
             self._exit_request()
 
@@ -74,7 +90,7 @@ class FakeModbusTransport:
         registers: dict[int, int],
         address: int,
         count: int,
-    ) -> FakeModbusResponse:
+    ) -> list[int]:
         await self._enter_request()
         try:
             key = (kind, address, count)
@@ -83,16 +99,18 @@ class FakeModbusTransport:
                 raise self.exception_reads[key]
             if key in self.illegal_reads:
                 # Simulate a real Modbus "Illegal Data Address" (exception
-                # code 2) device response: isError() is True and the response
-                # carries the exception_code the library inspects.
-                return FakeModbusResponse(exception_code=2)
+                # code 2) device response: the transport surfaces it as
+                # IllegalAddressError so the library retry loop can bail out.
+                raise IllegalAddressError(  # type: ignore[no-untyped-call]
+                    f"Illegal Data Address reading address {address}: illegal_reads stub"
+                )
             if key in self.error_reads:
-                return FakeModbusResponse(error=True)
+                raise ModbusException(  # type: ignore[no-untyped-call]
+                    f"Modbus error reading address {address}: error_reads stub"
+                )
             if key in self.short_reads:
-                return FakeModbusResponse(registers=self.short_reads[key])
-            return FakeModbusResponse(
-                registers=[registers.get(address + offset, 0) for offset in range(count)]
-            )
+                return list(self.short_reads[key])
+            return [registers.get(address + offset, 0) for offset in range(count)]
         finally:
             self._exit_request()
 

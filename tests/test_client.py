@@ -53,12 +53,14 @@ class ProbeOnlyClient(IdmModbusClient):
 
 
 class IncompleteResponseClient:
-    """Minimal connected pymodbus double returning a short response."""
+    """Minimal connected transport double returning a short response."""
 
     connected = True
 
-    async def read_input_registers(self, **kwargs: Any) -> Any:
-        return type("Response", (), {"isError": lambda self: False, "registers": [1]})()
+    async def read_input_registers(self, **kwargs: Any) -> list[int]:
+        # One register where two were requested; the client must reject this
+        # before value decoding rather than silently decoding the wrong data.
+        return [1]
 
 
 def test_detect_model_uses_shared_feature_constants() -> None:
@@ -580,7 +582,7 @@ def test_connect_internal_forwards_retries_and_reconnect_params(
         async def connect(self) -> bool:
             return True
 
-    monkeypatch.setattr("idm_heatpump.client.AsyncModbusTcpClient", StubClient)
+    monkeypatch.setattr("idm_heatpump.transport.AsyncModbusTcpClient", StubClient)
 
     client = IdmModbusClient("127.0.0.1", pymodbus_retries=0)
     asyncio.run(client._connect_internal())
@@ -605,7 +607,7 @@ def test_connect_internal_forwards_custom_pymodbus_retries(
         async def connect(self) -> bool:
             return True
 
-    monkeypatch.setattr("idm_heatpump.client.AsyncModbusTcpClient", StubClient)
+    monkeypatch.setattr("idm_heatpump.transport.AsyncModbusTcpClient", StubClient)
 
     client = IdmModbusClient("127.0.0.1", pymodbus_retries=3)
     asyncio.run(client._connect_internal())
@@ -711,7 +713,7 @@ def test_force_reconnect_closes_existing_client_and_reconnects(
         async def connect(self) -> bool:
             return True
 
-    monkeypatch.setattr("idm_heatpump.client.AsyncModbusTcpClient", StubClient)
+    monkeypatch.setattr("idm_heatpump.transport.AsyncModbusTcpClient", StubClient)
 
     client = IdmModbusClient("127.0.0.1")
     asyncio.run(client._connect_internal())  # establish first client
@@ -737,7 +739,7 @@ def test_force_reconnect_safe_when_no_existing_client(
         async def connect(self) -> bool:
             return True
 
-    monkeypatch.setattr("idm_heatpump.client.AsyncModbusTcpClient", StubClient)
+    monkeypatch.setattr("idm_heatpump.transport.AsyncModbusTcpClient", StubClient)
 
     client = IdmModbusClient("127.0.0.1")
     asyncio.run(client.force_reconnect())
@@ -763,21 +765,28 @@ def test_ensure_connected_forces_reconnect_when_suspect(
             self.connected = True
             return True
 
-    monkeypatch.setattr("idm_heatpump.client.AsyncModbusTcpClient", StubClient)
+    monkeypatch.setattr("idm_heatpump.transport.AsyncModbusTcpClient", StubClient)
 
     client = IdmModbusClient("127.0.0.1")
     asyncio.run(client._connect_internal())
-    original_client = client._client
-    assert original_client is not None
-    original_client.connected = True  # type: ignore[misc] # pymodbus still thinks it's connected
+    # The default transport wraps the pymodbus instance; reach the inner
+    # instance to simulate "pymodbus still thinks it's connected".
+    original_inner = client._transport._client  # type: ignore[attr-defined]
+    assert original_inner is not None
+    original_inner.connected = True  # type: ignore[misc]
+    instances_before = type(original_inner)
 
     client._connection_suspect = True  # simulate a prior IO failure
 
-    returned = asyncio.run(client._ensure_connected())
+    asyncio.run(client._ensure_connected())
 
-    assert original_client.closed is True  # type: ignore[attr-defined] # hard-closed despite .connected=True
+    assert original_inner.closed is True  # type: ignore[attr-defined] # hard-closed despite .connected=True
     assert client._connection_suspect is False  # flag cleared after reconnect
-    assert returned is not original_client  # brand-new client object
+    # A brand-new inner pymodbus instance was created on reconnect.
+    new_inner = client._transport._client  # type: ignore[attr-defined]
+    assert new_inner is not None
+    assert new_inner is not original_inner
+    assert type(new_inner) is instances_before
 
 
 def test_ensure_connected_reuses_healthy_client(
@@ -797,17 +806,19 @@ def test_ensure_connected_reuses_healthy_client(
         async def connect(self) -> bool:
             return True
 
-    monkeypatch.setattr("idm_heatpump.client.AsyncModbusTcpClient", StubClient)
+    monkeypatch.setattr("idm_heatpump.transport.AsyncModbusTcpClient", StubClient)
 
     client = IdmModbusClient("127.0.0.1")
     asyncio.run(client._connect_internal())
-    first = client._client
-    assert first is not None
+    first_transport = client._transport
+    first_inner = client._transport._client  # type: ignore[attr-defined]
+    assert first_inner is not None
 
     returned = asyncio.run(client._ensure_connected())
 
-    assert returned is first  # reused
-    assert first.closed is False  # type: ignore[attr-defined]
+    assert returned is first_transport  # transport reused
+    assert client._transport._client is first_inner  # type: ignore[attr-defined] # inner reused too
+    assert first_inner.closed is False  # type: ignore[attr-defined]
 
 
 def test_modbus_codec_centralizes_float_and_integer_encoding() -> None:
@@ -897,20 +908,20 @@ def test_poll_rate_limiter_tracks_remaining_interval() -> None:
 
 
 class TimeoutOnFirstReadClient:
-    """pymodbus double that raises TimeoutError on the first read attempt."""
+    """Transport double that raises TimeoutError on the first read attempt."""
 
     connected = True
 
     def __init__(self) -> None:
         self.attempts = 0
 
-    async def read_input_registers(self, **kwargs: Any) -> Any:
+    async def read_input_registers(self, **kwargs: Any) -> list[int]:
         self.attempts += 1
         if self.attempts == 1:
             raise TimeoutError("simulated timeout")
-        return type("Response", (), {"isError": lambda self: False, "registers": [0, 16968]})()
+        return [0, 16968]
 
-    def close(self) -> None:
+    async def close(self) -> None:
         self.connected = False
 
 

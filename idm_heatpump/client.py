@@ -36,6 +36,7 @@ from .const import (
     MODEL_UNKNOWN,
     RETRY_BACKOFF_BASE,
 )
+from .transport import IdmModbusTransport, _PymodbusTransport
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -476,6 +477,7 @@ class IdmModbusClient:
         *,
         pymodbus_retries: int = _PMODBUS_RETRIES_DEFAULT,
         max_group_size: int = _MAX_GROUP_SIZE,
+        transport: IdmModbusTransport | None = None,
     ) -> None:
         if not host:
             raise ValueError("Host must not be empty")
@@ -497,7 +499,21 @@ class IdmModbusClient:
         self._max_retries = int(max_retries)
         self._pymodbus_retries = int(pymodbus_retries)
         self._max_group_size = int(max_group_size)
-        self._client: AsyncModbusTcpClient | None = None
+        if transport is None:
+            # Default path: direct Pymodbus TCP, identical to pre-1.0 releases.
+            # Slave-parameter name (``slave`` vs ``device_id``) depends on the
+            # pymodbus version and is resolved once via the running client.
+            transport = _PymodbusTransport(
+                host=self._host,
+                port=self._port,
+                timeout=self._timeout,
+                retries=self._pymodbus_retries,
+                slave_id=self._slave_id,
+                slave_param=_PMODBUS_SLAVE_PARAM,
+            )
+        elif not isinstance(transport, IdmModbusTransport):
+            raise TypeError("transport must satisfy the IdmModbusTransport protocol")
+        self._transport: IdmModbusTransport = transport
         self._lock = asyncio.Lock()
         self._register_failures: dict[str, int] = {}
         self._permanently_failed_registers: set[str] = set()
@@ -522,8 +538,24 @@ class IdmModbusClient:
         # so rebuilding it repeatedly is wasteful.
         self._cached_register_map: dict[str, RegisterDef] | None = None
 
+    @property
+    def _client(self) -> IdmModbusTransport | None:
+        """Backward-compatible alias for ``self._transport``.
+
+        Pre-1.0 tests and consumers assign a fake transport via
+        ``client._client = fake``; the property preserves that seam so the
+        legacy test suite keeps working without touching private attribute
+        names. Reads return the active transport (or ``None`` before
+        assignment, mirroring the old ``AsyncModbusTcpClient | None`` shape).
+        """
+        return self._transport
+
+    @_client.setter
+    def _client(self, value: IdmModbusTransport | None) -> None:
+        self._transport = value  # type: ignore[assignment]
+
     def __repr__(self) -> str:
-        connected = self._client is not None and self._client.connected
+        connected = self._transport is not None and bool(self._transport.connected)
         return f"IdmModbusClient(host={self._host!r}, port={self._port}, slave_id={self._slave_id}, connected={connected})"
 
     @property
@@ -582,56 +614,48 @@ class IdmModbusClient:
             await self._connect_internal()
 
     async def _connect_internal(self) -> None:
-        """Internal connect that must be called while holding self._lock."""
-        if self._client is not None and self._client.connected:
+        """Internal connect that must be called while holding self._lock.
+
+        Skips the transport ``connect()`` when it already reports connected,
+        so the no-op-when-connected behaviour is consistent across the default
+        Pymodbus adapter and any injected transport.
+        """
+        if self._transport is not None and self._transport.connected:
             return
-        self._client = AsyncModbusTcpClient(
-            host=self._host,
-            port=self._port,
-            timeout=self._timeout,
-            retries=self._pymodbus_retries,
-            reconnect_delay=_PMODBUS_RECONNECT_DELAY,
-            reconnect_delay_max=_PMODBUS_RECONNECT_DELAY_MAX,
-        )
-        if not await self._client.connect():
-            self._client = None
-            raise ConnectionException(  # type: ignore[no-untyped-call]
-                f"Failed to connect to {self._host}:{self._port}"
-            )
-        _LOGGER.debug("Connected to %s:%s", self._host, self._port)
+        await self._transport.connect()
 
     async def disconnect(self) -> None:
         """Close the connection and release resources."""
         async with self._lock:
-            if self._client is not None:
-                self._client.close()
-                self._client = None
-                _LOGGER.debug("Disconnected from %s:%s", self._host, self._port)
+            await self._transport.close()
 
-    async def _ensure_connected(self) -> AsyncModbusTcpClient:
-        """Return a connected client, reconnecting if necessary.
+    async def _ensure_connected(self) -> IdmModbusTransport:
+        """Return a connected transport, reconnecting if necessary.
 
         If ``_connection_suspect`` is set (a prior IO failed) the current
-        pymodbus client is closed even when ``.connected`` is still True,
+        transport is closed even when ``.connected`` is still True,
         because pymodbus only detects a remotely-dropped TCP link on the
         next send. Closing proactively avoids the noisy
         ``Log.error("Cancel send, because not connected!")`` record that
         pymodbus otherwise emits before our retry loop can reconnect.
         """
-        if self._client is not None and self._client.connected and not self._connection_suspect:
-            return self._client
+        if (
+            self._transport is not None
+            and self._transport.connected
+            and not self._connection_suspect
+        ):
+            return self._transport
         async with self._lock:
-            if self._connection_suspect and self._client is not None:
+            if self._connection_suspect and self._transport is not None:
                 _LOGGER.debug(
-                    "Closing suspect pymodbus connection to %s:%s before reconnect",
+                    "Closing suspect transport connection to %s:%s before reconnect",
                     self._host,
                     self._port,
                 )
-                self._client.close()
-                self._client = None
+                await self._transport.close()
                 self._connection_suspect = False
             await self._connect_internal()
-            return self._client  # type: ignore[return-value]
+            return self._transport
 
     async def force_reconnect(self) -> None:
         """Hard-close the current TCP connection and open a fresh one.
@@ -642,19 +666,17 @@ class IdmModbusClient:
         exists yet. Always clears ``_connection_suspect``.
         """
         async with self._lock:
-            if self._client is not None:
-                self._client.close()
-                self._client = None
+            await self._transport.close()
             self._connection_suspect = False
             await self._connect_internal()
 
-    def _require_client(self) -> AsyncModbusTcpClient:
-        """Return the client or raise if not connected (call while holding lock)."""
-        if self._client is None or not self._client.connected:
+    def _require_client(self) -> IdmModbusTransport:
+        """Return the transport or raise if not connected (call while holding lock)."""
+        if self._transport is None or not self._transport.connected:
             raise ConnectionException(  # type: ignore[no-untyped-call]
                 f"Not connected to {self._host}:{self._port}"
             )
-        return self._client
+        return self._transport
 
     async def _retry_command(
         self,
@@ -775,38 +797,29 @@ class IdmModbusClient:
         """Read registers with retries and exponential backoff."""
 
         async def _command() -> list[int]:
-            client = self._require_client()
-            kwargs: Any = {_PMODBUS_SLAVE_PARAM: self._slave_id}
+            transport = self._require_client()
             if reg_type == RegisterType.HOLDING:
-                read_task = client.read_holding_registers(address=address, count=count, **kwargs)
+                read_task = transport.read_holding_registers(address=address, count=count)
             else:
-                read_task = client.read_input_registers(address=address, count=count, **kwargs)
+                read_task = transport.read_input_registers(address=address, count=count)
+            # ``asyncio.wait_for`` preserves the per-request timeout used for
+            # model detection; the transport itself is timeout-agnostic.
             result = (
                 await asyncio.wait_for(read_task, timeout=request_timeout)
                 if request_timeout is not None
                 else await read_task
             )
-            if result.isError():
-                # Pymodbus returns an ExceptionResponse for device-side errors.
-                # Exception code 2 (Illegal Data Address) is permanent for the
-                # given address: the register is simply not implemented on this
-                # device. Surface it as IllegalAddressError so the retry loop
-                # can bail out silently instead of retrying and logging a
-                # warning on every poll.
-                if getattr(result, "exception_code", None) == 2:
-                    raise IllegalAddressError(  # type: ignore[no-untyped-call]
-                        f"Illegal Data Address reading address {address}: {result}"
-                    )
-                raise ModbusException(  # type: ignore[no-untyped-call]
-                    f"Modbus error reading address {address}: {result}"
-                )
-            registers = list(result.registers)
-            if len(registers) != count:
+            # The transport contract guarantees raw register words, but the
+            # requested count is a client-side invariant that every transport
+            # (default and injected) must satisfy. Validate centrally so a
+            # short or shifted response is classified as a transient Modbus
+            # failure rather than silently decoding the wrong data.
+            if len(result) != count:
                 raise ModbusException(  # type: ignore[no-untyped-call]
                     f"Incomplete Modbus response at address {address}: "
-                    f"got {len(registers)} registers, expected {count}"
+                    f"got {len(result)} registers, expected {count}"
                 )
-            return registers
+            return result
 
         return await self._retry_command(
             "read",
@@ -819,11 +832,9 @@ class IdmModbusClient:
 
     async def _try_reconnect(self) -> None:
         """Attempt a single reconnect (must be called while holding self._lock)."""
-        if self._client is not None:
-            self._client.close()
-            self._client = None
         _LOGGER.debug("Attempting reconnect to %s:%s", self._host, self._port)
         try:
+            await self._transport.close()
             await self._connect_internal()
         except ConnectionException:
             # Leave _connection_suspect set so the next _ensure_connected()
@@ -839,17 +850,8 @@ class IdmModbusClient:
         """Write holding registers with retries and exponential backoff."""
 
         async def _command() -> None:
-            client = self._require_client()
-            kwargs: Any = {_PMODBUS_SLAVE_PARAM: self._slave_id}
-            result = await client.write_registers(
-                address=address,
-                values=[int(v) for v in values],
-                **kwargs,
-            )
-            if result.isError():
-                raise ModbusException(  # type: ignore[no-untyped-call]
-                    f"Modbus error writing address {address}: {result}"
-                )
+            transport = self._require_client()
+            await transport.write_registers(address=address, values=[int(v) for v in values])
 
         await self._retry_command(
             "write",
