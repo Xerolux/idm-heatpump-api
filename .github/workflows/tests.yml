@@ -95,10 +95,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: Xerolux/idm-heatpump-hass
-          # Temporary: contract tests are being adapted to the API 1.0
-          # transport protocol on this branch. Revert to `main` once both
-          # API 1.0 and the contract-test fix have landed on their mains.
-          ref: fix/contract-test-api-1.0-transport
+          ref: main
           path: integration-contract
 
       - name: Run Home Assistant integration contract tests
