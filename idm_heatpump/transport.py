@@ -208,10 +208,7 @@ class _PymodbusTransport:
             values=[int(v) for v in values],
             **kwargs,
         )
-        if result.isError():
-            raise ModbusException(  # type: ignore[no-untyped-call]
-                f"Modbus error writing address {address}: {result}"
-            )
+        check_transport_response(result, address, operation="writing")
 
     def _require_client(self) -> AsyncModbusTcpClient:
         if self._client is None or not self._client.connected:
