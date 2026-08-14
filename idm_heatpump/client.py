@@ -620,7 +620,9 @@ class IdmModbusClient:
         so the no-op-when-connected behaviour is consistent across the default
         Pymodbus adapter and any injected transport.
         """
-        if self._transport is not None and self._transport.connected:
+        if self._transport is None:
+            raise ConnectionException(f"No transport configured for {self._host}:{self._port}")
+        if self._transport.connected:
             return
         await self._transport.connect()
 

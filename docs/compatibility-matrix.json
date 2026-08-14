@@ -174,6 +174,18 @@
       "hass_integration_version": "0.9.1",
       "status": "tested",
       "notes": "Adds a public IdmModbusClient.eeprom_write_interval property (getter/setter) so the integration can expose the EEPROM write cooldown as an advanced option (default 60s, lowerable at the user's own risk). No address/type/write-path changes."
+    },
+    {
+      "api_version": "1.0.0",
+      "hass_integration_version": "pending",
+      "status": "api-prepared",
+      "notes": "First stable 1.0.0. Introduces the public IdmModbusTransport protocol and injectable transport so consumers can route raw Modbus I/O without subclassing. Default direct-Pymodbus behaviour is observably identical to 0.9.x."
+    },
+    {
+      "api_version": "1.0.1",
+      "hass_integration_version": "pending",
+      "status": "api-prepared",
+      "notes": "Patch release: _connect_internal now raises ConnectionException instead of AttributeError when the transport is explicitly None, and write_registers uses the shared check_transport_response mapping so exception code 2 is classified as IllegalAddressError like reads."
     }
   ]
 }

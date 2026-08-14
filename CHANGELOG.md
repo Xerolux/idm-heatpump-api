@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 
+## [1.0.1] - 2026-08-14
+
+Patch-Release: zwei aus dem 1.0.0-Code-Review behobene Fehler, keine
+Verhaltensänderung für konforme Nutzung.
+
+### Fixed
+
+- **`IdmModbusClient._connect_internal`** wirft jetzt eine `ConnectionException`
+  statt eines rohen `AttributeError`, wenn `client._client` explizit auf
+  `None` gesetzt wurde (z.B. durch Tests, die den pre-1.0-Reset-Pattern
+  nutzen) und danach `connect()`/`_ensure_connected()` aufgerufen wird.
+- **`_PymodbusTransport.write_registers`** nutzt jetzt den zentralen
+  `check_transport_response`-Helper statt einer eigenen, unvollständigen
+  Fehler-Zuordnung. Schreibfehler mit Exception-Code 2 werden dadurch wie
+  bei Reads korrekt als `IllegalAddressError` (permanent) statt als
+  transiente `ModbusException` klassifiziert.
+
 ## [1.0.0] - 2026-08-04
 
 Erste stabile 1.0.0 der API. Führt die öffentliche Transport-Injektion ein,
