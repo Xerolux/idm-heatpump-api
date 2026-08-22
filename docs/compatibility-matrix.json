@@ -192,6 +192,12 @@
       "hass_integration_version": "pending",
       "status": "hardware-verified",
       "notes": "Web client mapping expansion: adds heating-circuit room temperature sensors B61-B67 (room_temperature_HK_A through G) to SENSOR_NAME_MAP and WEB_VALUE_DESCRIPTIONS. Verified live on a Navigator 10 ALM 6-15 with heating circuits A and D (B64 = 21.8 °C)."
+    },
+    {
+      "api_version": "1.0.3",
+      "hass_integration_version": "pending",
+      "status": "api-prepared",
+      "notes": "Maintenance release with no library changes: only the CodeQL security workflow was updated (github/codeql-action init and analyze pinned to 4.37.7 / CodeQL bundle 2.26.3). Runtime behaviour and the public import surface are byte-identical to 1.0.2, so integration pins can move without retesting."
     }
   ]
 }

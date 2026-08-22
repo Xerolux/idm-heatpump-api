@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 
+## [1.0.3] - 2026-08-22
+
+Wartungs-Release: ausschließlich CI-/Security-Toolchain-Updates, keine
+Änderung an der Bibliothek. Das öffentliche API-Verhalten ist identisch zu
+1.0.2 – ein Update ist für Konsumenten optional.
+
+### Changed
+
+- **CodeQL-Analyse aktualisiert:** `github/codeql-action/init` und
+  `github/codeql-action/analyze` in `.github/workflows/security.yml` von
+  4.37.6 auf 4.37.7 angehoben (CodeQL-Bundle 2.26.3). Beide Actions bleiben
+  auf denselben Commit-Digest gepinnt.
+
+### Housekeeping
+
+- Alle offenen Pull Requests wurden nach `main` gemergt. Die verbliebenen
+  Feature-Branches (0.7.x-/0.8.2-Ära) enthalten keinen Code, der nicht
+  bereits in `main` ist, und wurden bewusst nicht gemergt, da sie `main` auf
+  einen älteren Stand zurücksetzen würden.
+
+
 ## [1.0.2] - 2026-08-22
 
 ### Added
