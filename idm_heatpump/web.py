@@ -111,7 +111,16 @@ SENSOR_NAME_MAP: dict[str, str] = {
     "B55": "flow_temp_HK_E",
     "B56": "flow_temp_HK_F",
     "B57": "flow_temp_HK_G",
+    # Heating-circuit room temperatures. Linear sequence B61+i for circuits A-G:
+    # B61=A, B62=B, B63=C, B64=D (verified live on a Navigator 10 ALM with
+    # circuits A+D), B65=E, B66=F, B67=G.
     "B61": "room_temperature_HK_A",
+    "B62": "room_temperature_HK_B",
+    "B63": "room_temperature_HK_C",
+    "B64": "room_temperature_HK_D",
+    "B65": "room_temperature_HK_E",
+    "B66": "room_temperature_HK_F",
+    "B67": "room_temperature_HK_G",
     "B71": "hotgas_temperature",
     "B78": "verdamper_pressure",
     "B78v": "evaporation_temperature",
@@ -407,6 +416,21 @@ WEB_VALUE_DESCRIPTIONS: dict[str, IdmWebValueDescription] = {
     "hotwater_circulation_heat_quantity": IdmWebValueDescription(
         "hotwater_circulation_heat_quantity", "kWh", device_class="energy", state_class="total"
     ),
+    **{
+        f"flow_temp_HK_{letter}": IdmWebValueDescription(
+            f"flow_temp_HK_{letter}", "°C", device_class="temperature", state_class="measurement"
+        )
+        for letter in ("A", "B", "C", "D", "E", "F", "G")
+    },
+    **{
+        f"room_temperature_HK_{letter}": IdmWebValueDescription(
+            f"room_temperature_HK_{letter}",
+            "°C",
+            device_class="temperature",
+            state_class="measurement",
+        )
+        for letter in ("A", "B", "C", "D", "E", "F", "G")
+    },
 }
 
 

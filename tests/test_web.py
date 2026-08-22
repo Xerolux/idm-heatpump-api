@@ -42,6 +42,8 @@ NAV10_SENSOR_HTML = """
 <tr><td>B5</td><td>Taupunktwächter Heizkreis A</td><td>1</td><td></td></tr>
 <tr><td>B51</td><td>Vorlauftemperatur HK A</td><td>27.6</td><td>°C</td></tr>
 <tr><td>B54</td><td>Vorlauftemperatur HK D</td><td>26.8</td><td>°C</td></tr>
+<tr><td>B61</td><td>Raumtemperatur HK A</td><td>22.5</td><td>°C</td></tr>
+<tr><td>B64</td><td>Raumtemperatur HK D</td><td>21.8</td><td>°C</td></tr>
 <tr><td>Modell</td><td></td><td>iDM ALM 6-15</td></tr>
 <tr><td>Laufzeit Stufe&nbsp;1</td><td>24.5h</td></tr>
 <tr><td>myIDMID</td><td>m123@example</td></tr>
@@ -76,6 +78,11 @@ def test_parse_idm_html_table_values_maps_known_values() -> None:
     assert values["flow_temp_HK_A"].unit == "°C"
     assert values["flow_temp_HK_D"].numeric_value == 26.8
     assert values["flow_temp_HK_D"].unit == "°C"
+    # Heating-circuit room temperatures (A+D, verified live Nav10 ALM).
+    assert values["room_temperature_HK_A"].numeric_value == 22.5
+    assert values["room_temperature_HK_A"].unit == "°C"
+    assert values["room_temperature_HK_D"].numeric_value == 21.8
+    assert values["room_temperature_HK_D"].unit == "°C"
 
 
 def test_web_data_helpers_return_defaults_and_numeric_values() -> None:

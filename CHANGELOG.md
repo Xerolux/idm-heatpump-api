@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 
+## [1.0.2] - 2026-08-22
+
+### Added
+
+- **`SENSOR_NAME_MAP` / `WEB_VALUE_DESCRIPTIONS` Erweiterung für Raumtemperaturen (B61–B67):**
+  Unterstützung für alle Heizkreis-Raumtemperatursensoren `B61` bis `B67` (`room_temperature_HK_A` bis `room_temperature_HK_G`) im lokalen Web-Client. Live-verifiziert an Navigator 10 ALM 6-15 (Heizkreise A und D, `B64 = 21.8 °C`).
+
+
+
 ## [1.0.1] - 2026-08-14
 
 Patch-Release: zwei aus dem 1.0.0-Code-Review behobene Fehler, keine
