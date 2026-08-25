@@ -69,6 +69,24 @@ differ here.
   `pip install idm-heatpump-api` resolves to the newest stable release and would
   silently skip the prerelease.
 
+### The tag push does not publish by itself
+
+`release.yml` pushes the tag with `GITHUB_TOKEN`. **GitHub does not start
+workflows for events created by that token** — a deliberate guard against
+recursive runs — so `publish.yml`, which triggers on `push: tags: v*`, never
+sees it. Every release therefore takes two dispatches:
+
+1. Run **Release** with `version_mode=custom` and the version. It validates,
+   builds, bumps `pyproject.toml`, tags and creates the GitHub release.
+2. Run **Publish** with `tag` set to that tag (`v2.0.0b1`). This is the step
+   that uploads to PyPI.
+
+Check PyPI before calling a release done: a GitHub release with assets attached
+does not mean the package is installable. Note also that the PyPI JSON API
+serves a new version a minute or two before the simple index pip reads, and pip
+caches the index — a fresh environment may need `--no-cache-dir` right after a
+publish.
+
 ## Rollback
 
 1. Avoid deleting tags after users may have installed them.

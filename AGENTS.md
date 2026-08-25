@@ -60,6 +60,11 @@ documented logical range overlaps at block boundaries.
 - **`release.yml` enforces the format** and refuses to auto-bump off a
   prerelease — only a maintainer knows whether the next one is `2.0.0b2` or
   `2.0.0`. Use `version_mode=custom` and name it.
+- **Releasing takes two dispatches.** `release.yml` tags with `GITHUB_TOKEN`,
+  and GitHub does not start workflows for events that token creates, so the
+  `push: tags` trigger in `publish.yml` never fires. Run **Release** first, then
+  **Publish** with the tag. A GitHub release with assets is not proof the
+  package is on PyPI — check PyPI itself.
 - **Every release carries the support links.** They are part of the release body
   in `release.yml`; keep them in step with `.github/FUNDING.yml`.
 - **Write in English** — changelog, release notes, docs, commit messages, pull

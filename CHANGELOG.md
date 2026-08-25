@@ -53,6 +53,14 @@ changelog is history. Everything from `2.0.0b1` on is English.
   `1.0.3`: `pip install "idm-heatpump-api[pymodbus]"` gives what `1.0.3` gave,
   and the only code change is `except ModbusException` becoming
   `except IdmModbusError`.
+- **Recorded that a release takes two dispatches.** `release.yml` tags with
+  `GITHUB_TOKEN`, and GitHub does not start workflows for events that token
+  creates, so the `push: tags` trigger in `publish.yml` never fires and the
+  package does not reach PyPI on its own. `AGENTS.md` and
+  `docs/RELEASE_PROCESS.md` now say to run **Release** and then **Publish**
+  with the tag, and to verify on PyPI rather than trusting a GitHub release
+  with assets attached. Also notes that the PyPI JSON API leads the simple
+  index pip reads, and that pip caches that index.
 
 
 
