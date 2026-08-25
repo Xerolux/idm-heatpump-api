@@ -48,6 +48,60 @@ jobs:
           pip install mypy
           mypy idm_heatpump
 
+  no-pymodbus:
+    # Since 2.0.0 pymodbus is an optional extra (#85). This job installs the
+    # package without it and proves the property that makes that true: the
+    # package imports, the public API is usable, and no pymodbus module is
+    # loaded. The main matrix cannot cover this - most tests construct a client
+    # without injecting a transport, which deliberately requires the extra.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.14"
+          cache: pip
+
+      - name: Install without the pymodbus extra
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pytest pytest-asyncio
+
+      - name: Assert no Modbus stack was pulled in
+        run: |
+          python - <<'PY'
+          import importlib.metadata as md
+
+          for name in ("pymodbus", "modbus-connection", "tmodbus"):
+              try:
+                  md.distribution(name)
+              except md.PackageNotFoundError:
+                  continue
+              raise SystemExit(f"{name} must not be installed by the base package")
+          print("base package pulled in no Modbus stack")
+          PY
+
+      - name: Import and use the public API without pymodbus
+        run: |
+          python - <<'PY'
+          import sys
+
+          import idm_heatpump
+          from idm_heatpump import IdmDeviceError, IdmModbusError, IllegalAddressError, build_register_map
+
+          assert "pymodbus" not in sys.modules, sorted(m for m in sys.modules if m.startswith("pymodbus"))
+          assert issubclass(IllegalAddressError, IdmModbusError)
+          assert IdmDeviceError("refused", exception_code=4).exception_code == 4
+          assert build_register_map()
+          print("public API works with no Modbus stack installed")
+          PY
+
+      - name: Run the contract tests that pin this
+        run: pytest tests/test_exceptions.py -v --tb=short
+
       - name: Check typed package metadata
         run: |
           python - <<'PY'
