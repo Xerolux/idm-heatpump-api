@@ -12,6 +12,17 @@ changelog is history. Everything from `2.0.0b1` on is English.
 
 ## [Unreleased]
 
+### Changed
+
+- **The contract tests point at the integration's `main` again.** They were
+  aimed at `claude/idm-heatpump-0.16.0` while both sides of the pymodbus break
+  were in flight, because the integration's `main` still spoke pymodbus and
+  could not pass against `2.0.0` — CI would have reported an expected break as
+  a regression. [Xerolux/idm-heatpump-hass#255](https://github.com/Xerolux/idm-heatpump-hass/pull/255)
+  is merged, so `main` is the migrated consumer now and the temporary pin is
+  gone.
+
+
 ### Fixed
 
 - **Neither release workflow could ship a `2.x` wheel.** Its smoke check installed
