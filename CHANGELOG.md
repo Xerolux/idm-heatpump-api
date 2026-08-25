@@ -26,6 +26,21 @@ changelog is history. Everything from `2.0.0b1` on is English.
   because the build normalises that version to `2.0.0b1`. The check is PEP 440
   now, like `release.yml`, and the error names the accepted forms.
 
+### Documentation
+
+- **The install instructions pointed at a package that cannot run the examples
+  next to them.** `README.md`, `docs/Home.md` and
+  `docs/Installation-and-Setup.md` all showed `pip install idm-heatpump-api`
+  followed by an `IdmModbusClient` example, which since `2.0.0` raises an
+  `ImportError`. They now name the three install forms — `[pymodbus]` for
+  standalone use, `[web,pymodbus]` with the web supplement, and the plain
+  package for consumers injecting their own transport — and the release body
+  does the same.
+- **`README.md` gained an "Upgrading from `1.x`" section.** Nobody has to stay on
+  `1.0.3`: `pip install "idm-heatpump-api[pymodbus]"` gives what `1.0.3` gave,
+  and the only code change is `except ModbusException` becoming
+  `except IdmModbusError`.
+
 
 
 ## [2.0.0b1] - 2026-08-25
