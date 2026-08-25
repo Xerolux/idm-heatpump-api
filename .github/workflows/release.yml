@@ -222,18 +222,46 @@ jobs:
 
       - name: Inspect built package
         run: |
+          # Two stages on purpose. Since 2.0.0 the plain wheel installs no
+          # Modbus stack, so constructing IdmModbusClient() without the extra
+          # raises the ImportError that names it -- that is the contract, not a
+          # packaging fault. Assert what the plain wheel must do first, then add
+          # the extra and assert the built-in transport works.
           python -m venv /tmp/idm_heatpump_api_release
           /tmp/idm_heatpump_api_release/bin/python -m pip install --upgrade pip
           /tmp/idm_heatpump_api_release/bin/python -m pip install dist/*.whl
           /tmp/idm_heatpump_api_release/bin/python - <<'PY'
+          import importlib.util
           from pathlib import Path
 
           import idm_heatpump
           from idm_heatpump import IdmModbusClient, build_register_map
 
           assert Path(idm_heatpump.__file__).with_name("py.typed").is_file()
-          assert IdmModbusClient("127.0.0.1").host == "127.0.0.1"
           assert "outdoor_temp" in build_register_map(circuits=["A"])
+
+          assert importlib.util.find_spec("pymodbus") is None, (
+              "the plain wheel must not drag in pymodbus"
+          )
+
+          try:
+              IdmModbusClient("127.0.0.1")
+          except ImportError as err:
+              assert "idm-heatpump-api[pymodbus]" in str(err), err
+          else:
+              raise AssertionError(
+                  "the built-in transport must refuse to build without pymodbus"
+              )
+          print("plain wheel: OK")
+          PY
+
+          WHEEL="$(ls dist/*.whl)"
+          /tmp/idm_heatpump_api_release/bin/python -m pip install "${WHEEL}[pymodbus]"
+          /tmp/idm_heatpump_api_release/bin/python - <<'PY'
+          from idm_heatpump import IdmModbusClient
+
+          assert IdmModbusClient("127.0.0.1").host == "127.0.0.1"
+          print("with [pymodbus] extra: OK")
           PY
 
       - name: Commit and tag
@@ -285,10 +313,16 @@ jobs:
 
             ### Installation
             ```bash
+            # Using the built-in Modbus TCP transport (standalone use)
+            pip install "idm-heatpump-api[pymodbus]==${{ steps.version.outputs.version }}"
+
+            # Bringing your own transport (how the Home Assistant integration installs it)
             pip install idm-heatpump-api==${{ steps.version.outputs.version }}
             ```
-            `pip install idm-heatpump-api` resolves to the newest stable release;
-            a prerelease has to be named explicitly, as above.
+            Since `2.0.0` the plain package installs no Modbus stack, so
+            `IdmModbusClient` needs the `pymodbus` extra. A bare
+            `pip install idm-heatpump-api` also resolves to the newest stable
+            release; a prerelease has to be named explicitly, as above.
 
             ---
 

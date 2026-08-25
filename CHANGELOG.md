@@ -12,6 +12,38 @@ changelog is history. Everything from `2.0.0b1` on is English.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Neither release workflow could ship a `2.x` wheel.** Its smoke check installed
+  the plain wheel and then built an `IdmModbusClient`, which since `2.0.0`
+  raises the `ImportError` naming the `[pymodbus]` extra — by design. This
+  failed the `2.0.0b1` release run at *Inspect built package*, before the tag
+  and the upload, so nothing was published. `publish.yml` carried the identical
+  check and would have failed the same way. Both now assert what the plain wheel
+  must do (imports, `py.typed`, register map, no pymodbus present, and the
+  built-in transport refusing to build with an actionable message), then install
+  the extra and assert the transport works.
+- **The release-tag glob accepted a tag that can never publish.** It ended in
+  `*`, so `v2.0.0-beta.1` passed and then failed the `pyproject.toml` match,
+  because the build normalises that version to `2.0.0b1`. The check is PEP 440
+  now, like `release.yml`, and the error names the accepted forms.
+
+### Documentation
+
+- **The install instructions pointed at a package that cannot run the examples
+  next to them.** `README.md`, `docs/Home.md` and
+  `docs/Installation-and-Setup.md` all showed `pip install idm-heatpump-api`
+  followed by an `IdmModbusClient` example, which since `2.0.0` raises an
+  `ImportError`. They now name the three install forms — `[pymodbus]` for
+  standalone use, `[web,pymodbus]` with the web supplement, and the plain
+  package for consumers injecting their own transport — and the release body
+  does the same.
+- **`README.md` gained an "Upgrading from `1.x`" section.** Nobody has to stay on
+  `1.0.3`: `pip install "idm-heatpump-api[pymodbus]"` gives what `1.0.3` gave,
+  and the only code change is `except ModbusException` becoming
+  `except IdmModbusError`.
+
+
 
 ## [2.0.0b1] - 2026-08-25
 

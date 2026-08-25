@@ -16,8 +16,13 @@ IDM heat pump.
 ## Quick Start
 
 ```bash
-pip install idm-heatpump-api
+pip install "idm-heatpump-api[pymodbus]"
 ```
+
+The `pymodbus` extra carries the built-in Modbus TCP transport the example below
+uses. Since `2.0.0` the plain `pip install idm-heatpump-api` installs no Modbus
+stack — that form is for consumers that inject their own transport, such as the
+Home Assistant integration.
 
 ```python
 import asyncio

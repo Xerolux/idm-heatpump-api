@@ -55,15 +55,42 @@ This library is primarily designed to power the unofficial [IDM Heatpump Home As
 
 ## Installation
 
+**Since `2.0.0` the plain package installs no Modbus stack.** Pick the line that
+matches what you are building:
+
 ```bash
+# Talking to a heat pump with the built-in Modbus TCP transport.
+# This is what you want if you are using the library on its own.
+pip install "idm-heatpump-api[pymodbus]"
+
+# The same, plus the local-web supplement
+# (Navigator 10 WebSocket / Navigator 2.0 HTTP).
+pip install "idm-heatpump-api[web,pymodbus]"
+
+# Register maps, codecs and batching only -- you bring your own transport.
+# This is how the Home Assistant integration uses the library.
 pip install idm-heatpump-api
 ```
 
-For the optional local-web supplement (Navigator 10 WebSocket / Navigator 2.0 HTTP):
+Without the `pymodbus` extra, `IdmModbusClient(host=...)` raises an `ImportError`
+naming the extra: the built-in transport is still there, it just is not a
+required dependency any more. Everything else — register definitions, decoding,
+model detection, write safety — works with no extra at all.
 
-```bash
-pip install "idm-heatpump-api[web]"
-```
+### Upgrading from `1.x`
+
+You do **not** need to stay on `1.0.3`. `pip install "idm-heatpump-api[pymodbus]"`
+gives you what `1.0.3` gave you. Two things change:
+
+| `1.x` | `2.x` |
+|---|---|
+| `pip install idm-heatpump-api` | `pip install "idm-heatpump-api[pymodbus]"` |
+| `except ModbusException` | `except IdmModbusError` |
+
+`IdmModbusError` is the base of the library's own hierarchy
+(`IdmConnectionError`, `IdmTransportError`, `IdmDeviceError`,
+`IllegalAddressError`), so a `pymodbus` import disappears from your code
+entirely. Register addresses, datatypes and the wire protocol are unchanged.
 
 ## Basic Usage
 

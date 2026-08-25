@@ -45,18 +45,46 @@ jobs:
 
       - name: Inspect built package
         run: |
+          # Two stages on purpose. Since 2.0.0 the plain wheel installs no
+          # Modbus stack, so constructing IdmModbusClient() without the extra
+          # raises the ImportError that names it -- that is the contract, not a
+          # packaging fault. Assert what the plain wheel must do first, then add
+          # the extra and assert the built-in transport works.
           python -m venv /tmp/idm_release_check
           /tmp/idm_release_check/bin/python -m pip install --upgrade pip
           /tmp/idm_release_check/bin/python -m pip install dist/*.whl
           /tmp/idm_release_check/bin/python - <<'PY'
+          import importlib.util
           from pathlib import Path
 
           import idm_heatpump
           from idm_heatpump import IdmModbusClient, build_register_map
 
           assert Path(idm_heatpump.__file__).with_name("py.typed").is_file()
-          assert IdmModbusClient("127.0.0.1").host == "127.0.0.1"
           assert "outdoor_temp" in build_register_map(circuits=["A"])
+
+          assert importlib.util.find_spec("pymodbus") is None, (
+              "the plain wheel must not drag in pymodbus"
+          )
+
+          try:
+              IdmModbusClient("127.0.0.1")
+          except ImportError as err:
+              assert "idm-heatpump-api[pymodbus]" in str(err), err
+          else:
+              raise AssertionError(
+                  "the built-in transport must refuse to build without pymodbus"
+              )
+          print("plain wheel: OK")
+          PY
+
+          WHEEL="$(ls dist/*.whl)"
+          /tmp/idm_release_check/bin/python -m pip install "${WHEEL}[pymodbus]"
+          /tmp/idm_release_check/bin/python - <<'PY'
+          from idm_heatpump import IdmModbusClient
+
+          assert IdmModbusClient("127.0.0.1").host == "127.0.0.1"
+          print("with [pymodbus] extra: OK")
           PY
 
       - name: Validate release tag
@@ -67,13 +95,14 @@ jobs:
             REF="${GITHUB_REF_NAME}"
           fi
 
-          case "$REF" in
-            v[0-9]*.[0-9]*.[0-9]*) ;;
-            *)
-              echo "Release tag must look like v1.2.3, got: $REF" >&2
-              exit 1
-              ;;
-          esac
+          # PEP 440, matching release.yml: v1.2.3, or a prerelease such as
+          # v2.0.0b1.  The old glob ended in "*", so it also accepted
+          # v2.0.0-beta.1 -- a tag that can never match pyproject.toml, because
+          # the build normalises that version to 2.0.0b1.
+          if ! printf '%s' "$REF" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+((a|b|rc)[0-9]+)?$'; then
+            echo "Release tag must be PEP 440: v1.2.3, or a prerelease such as v2.0.0b1 / v2.0.0a1 / v2.0.0rc1. Got: $REF" >&2
+            exit 1
+          fi
 
           VERSION="${REF#v}"
           if ! grep -q "^version = \"${VERSION}\"$" pyproject.toml; then

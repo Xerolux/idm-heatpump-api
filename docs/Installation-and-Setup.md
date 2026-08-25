@@ -36,18 +36,31 @@ The library defaults match the IDM defaults:
 
 ## Install from PyPI
 
-Core library (Modbus only):
+Talking to a heat pump with the built-in Modbus TCP transport — this is what
+you want when using the library on its own:
 
 ```bash
-pip install idm-heatpump-api
+pip install "idm-heatpump-api[pymodbus]"
 ```
 
 With the optional local-web supplement (Navigator 10 WebSocket /
 Navigator 2.0 HTTP, requires `aiohttp`):
 
 ```bash
-pip install "idm-heatpump-api[web]"
+pip install "idm-heatpump-api[web,pymodbus]"
 ```
+
+Register maps, codecs and batching only, bringing your own transport — this is
+how the Home Assistant integration uses the library:
+
+```bash
+pip install idm-heatpump-api
+```
+
+Since `2.0.0` the plain package installs no Modbus stack, so `IdmModbusClient`
+raises an `ImportError` naming the `pymodbus` extra when it is missing. The
+built-in transport is still there; it just is not a required dependency any
+more.
 
 ## Minimal Program
 
