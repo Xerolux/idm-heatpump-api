@@ -48,6 +48,75 @@ jobs:
           pip install mypy
           mypy idm_heatpump
 
+      - name: Check typed package metadata
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          import idm_heatpump
+
+          marker = Path(idm_heatpump.__file__).with_name("py.typed")
+          assert marker.is_file(), f"Missing typed package marker: {marker}"
+          PY
+
+          cat > /tmp/idm_type_consumer.py <<'PY'
+          from idm_heatpump import IdmModbusClient, build_register_map
+
+          client: IdmModbusClient = IdmModbusClient("127.0.0.1")
+          registers = build_register_map()
+
+          reveal_type(client)
+          reveal_type(registers)
+          PY
+
+          mypy /tmp/idm_type_consumer.py
+
+      - name: Build and inspect package artifacts
+        run: |
+          pip install build twine
+          python -m build
+          twine check dist/*
+
+          python -m venv /tmp/idm_heatpump_api_import
+          /tmp/idm_heatpump_api_import/bin/python -m pip install --upgrade pip
+
+          # Plain wheel first: since 2.0.0 the base package must be usable with
+          # no Modbus stack installed (#85).
+          /tmp/idm_heatpump_api_import/bin/python -m pip install dist/*.whl
+          /tmp/idm_heatpump_api_import/bin/python - <<'PY'
+          from pathlib import Path
+
+          import idm_heatpump
+          from idm_heatpump import IdmModbusError, IllegalAddressError, build_register_map
+
+          assert Path(idm_heatpump.__file__).with_name("py.typed").is_file()
+          assert issubclass(IllegalAddressError, IdmModbusError)
+          assert "outdoor_temp" in build_register_map(circuits=["A"])
+          PY
+
+          # Then the extra, which is what the built-in transport needs: a client
+          # constructed without transport= builds it, so this covers that path.
+          /tmp/idm_heatpump_api_import/bin/python -m pip install "$(echo dist/*.whl)[pymodbus]"
+          /tmp/idm_heatpump_api_import/bin/python - <<'PY'
+          from idm_heatpump import IdmModbusClient
+
+          assert IdmModbusClient("127.0.0.1").host == "127.0.0.1"
+          PY
+
+      - name: Check out Home Assistant integration contract tests
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: Xerolux/idm-heatpump-hass
+          ref: main
+          path: integration-contract
+
+      - name: Run Home Assistant integration contract tests
+        run: |
+          PYTHONPATH="$PWD:$PWD/integration-contract" pytest \
+            integration-contract/tests/test_library_client.py \
+            integration-contract/tests/test_adapter_helpers.py \
+            -q
+
   no-pymodbus:
     # Since 2.0.0 pymodbus is an optional extra (#85). This job installs the
     # package without it and proves the property that makes that true: the
@@ -101,60 +170,3 @@ jobs:
 
       - name: Run the contract tests that pin this
         run: pytest tests/test_exceptions.py -v --tb=short
-
-      - name: Check typed package metadata
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          import idm_heatpump
-
-          marker = Path(idm_heatpump.__file__).with_name("py.typed")
-          assert marker.is_file(), f"Missing typed package marker: {marker}"
-          PY
-
-          cat > /tmp/idm_type_consumer.py <<'PY'
-          from idm_heatpump import IdmModbusClient, build_register_map
-
-          client: IdmModbusClient = IdmModbusClient("127.0.0.1")
-          registers = build_register_map()
-
-          reveal_type(client)
-          reveal_type(registers)
-          PY
-
-          mypy /tmp/idm_type_consumer.py
-
-      - name: Build and inspect package artifacts
-        run: |
-          pip install build twine
-          python -m build
-          twine check dist/*
-
-          python -m venv /tmp/idm_heatpump_api_import
-          /tmp/idm_heatpump_api_import/bin/python -m pip install --upgrade pip
-          /tmp/idm_heatpump_api_import/bin/python -m pip install dist/*.whl
-          /tmp/idm_heatpump_api_import/bin/python - <<'PY'
-          from pathlib import Path
-
-          import idm_heatpump
-          from idm_heatpump import IdmModbusClient, build_register_map
-
-          assert Path(idm_heatpump.__file__).with_name("py.typed").is_file()
-          assert IdmModbusClient("127.0.0.1").host == "127.0.0.1"
-          assert "outdoor_temp" in build_register_map(circuits=["A"])
-          PY
-
-      - name: Check out Home Assistant integration contract tests
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: Xerolux/idm-heatpump-hass
-          ref: main
-          path: integration-contract
-
-      - name: Run Home Assistant integration contract tests
-        run: |
-          PYTHONPATH="$PWD:$PWD/integration-contract" pytest \
-            integration-contract/tests/test_library_client.py \
-            integration-contract/tests/test_adapter_helpers.py \
-            -q
