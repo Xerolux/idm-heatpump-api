@@ -19,24 +19,58 @@ The transport owns **only** connection lifecycle and raw register words. It
 must surface device-side Modbus exception code 2 (Illegal Data Address) by
 raising :class:`IllegalAddressError` so the library retry loop can short-
 circuit it as a permanent condition for the affected address. All other
-device-side failures should be raised as :class:`ModbusException`,
-:class:`ConnectionException`, :class:`ModbusIOException`, :class:`OSError` or
+device-side failures should be raised as :class:`IdmDeviceError`
+(the device refused), :class:`IdmConnectionError` (link down),
+:class:`IdmTransportError` (no usable answer), :class:`OSError` or
 :class:`TimeoutError`; transient codes 5/6/10/11 belong to the retry-in-place
 path and must never be classified as an unsupported individual register.
+
+Until 2.0.0 the library types also inherit from their pymodbus counterparts, so
+a transport still raising ``ModbusException``/``ConnectionException`` keeps
+working. New transports should raise the library types (see issue #85).
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from pymodbus.client import AsyncModbusTcpClient
-from pymodbus.exceptions import ConnectionException, ModbusException
+from .exceptions import (
+    IdmConnectionError,
+    IdmDeviceError,
+    IdmTransportError,
+    IllegalAddressError,
+)
+
+if TYPE_CHECKING:  # pragma: no cover - typing only, never imported at runtime
+    from pymodbus.client import AsyncModbusTcpClient
 
 __all__ = [
     "IdmModbusTransport",
     "check_transport_response",
+    "create_pymodbus_transport",
+    "quiet_pymodbus_logging",
+    "resolve_slave_param",
 ]
+
+
+def _require_pymodbus() -> Any:
+    """Return ``AsyncModbusTcpClient``, or explain how to get it.
+
+    pymodbus is an optional extra since 2.0.0: a consumer that injects its own
+    transport must not have to install a Modbus stack it never calls (#85).
+    """
+    try:
+        from pymodbus.client import AsyncModbusTcpClient
+    except ImportError as err:  # pragma: no cover - depends on the install extras
+        raise ImportError(
+            "The built-in Modbus TCP transport requires pymodbus, which is an "
+            "optional extra since idm-heatpump-api 2.0.0. Install it with "
+            "'pip install idm-heatpump-api[pymodbus]', or pass your own "
+            "transport= to IdmModbusClient."
+        ) from err
+    return AsyncModbusTcpClient
+
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -58,7 +92,7 @@ class IdmModbusTransport(Protocol):
 
     Required coroutine semantics:
 
-    * :meth:`connect` opens the socket; it must raise :class:`ConnectionException`
+    * :meth:`connect` opens the socket; it must raise :class:`IdmConnectionError`
       on failure rather than returning a truthy/falsy value.
     * :meth:`close` releases the socket and any background tasks; idempotent.
     * :attr:`connected` reflects the live socket state.
@@ -66,7 +100,7 @@ class IdmModbusTransport(Protocol):
     The three register methods return raw 16-bit register words and must map
     device-side exception responses through :func:`check_transport_response`
     (or raise the equivalent exceptions directly). Incomplete responses
-    (fewer registers than requested) must raise :class:`ModbusException`.
+    (fewer registers than requested) must raise :class:`IdmTransportError`.
     """
 
     __slots__ = ()
@@ -77,7 +111,7 @@ class IdmModbusTransport(Protocol):
         ...
 
     async def connect(self) -> None:
-        """Open the connection; raise :class:`ConnectionException` on failure."""
+        """Open the connection; raise :class:`IdmConnectionError` on failure."""
         ...
 
     async def close(self) -> None:
@@ -98,37 +132,107 @@ class IdmModbusTransport(Protocol):
 
 
 def check_transport_response(result: Any, address: int, *, operation: str) -> list[int]:
-    """Validate a pymodbus-style response and return its register words.
+    """Validate a pymodbus-shaped response and return its register words.
 
     Centralises the device-response mapping so the default Pymodbus adapter
     and any pymodbus-shaped injected transport classify responses identically:
 
     * ``isError()`` with ``exception_code == 2`` -> :class:`IllegalAddressError`
       (permanent for the address; the library retry loop short-circuits it).
-    * Any other ``isError()`` response -> :class:`ModbusException` (transient,
-      retried in place; never treated as an unsupported register).
-    * A response with fewer registers than requested -> :class:`ModbusException`.
+    * Any other ``isError()`` response -> :class:`IdmDeviceError` carrying the
+      device's ``exception_code`` (transient, retried in place; never treated
+      as an unsupported register).
+    * A response with fewer registers than requested -> :class:`IdmTransportError`.
 
     ``operation`` is one of ``"read"``/``"write"`` and only flavours the error
     message. Transports that already raise the correct exceptions directly do
     not need to call this helper.
     """
     if result.isError():
-        if getattr(result, "exception_code", None) == 2:
-            # Lazy import: ``IllegalAddressError`` is defined in ``client`` to
-            # preserve the pre-1.0 public surface; importing it eagerly here
-            # would create a load-time cycle with ``client``.
-            from .client import IllegalAddressError
-
-            raise IllegalAddressError(  # type: ignore[no-untyped-call]
+        exception_code = getattr(result, "exception_code", None)
+        code = int(exception_code) if isinstance(exception_code, int) else None
+        if code == 2:
+            raise IllegalAddressError(
                 f"Illegal Data Address {operation} address {address}: {result}"
             )
-        raise ModbusException(  # type: ignore[no-untyped-call]
-            f"Modbus error {operation} address {address}: {result}"
+        raise IdmDeviceError(
+            f"Modbus error {operation} address {address}: {result}",
+            exception_code=code,
         )
     registers_obj = getattr(result, "registers", None)
     registers = list(registers_obj) if registers_obj is not None else []
     return registers
+
+
+def quiet_pymodbus_logging(level: str | int = "WARNING") -> None:
+    """Reduce pymodbus frame-logging noise (``>>>>> send/recv`` lines).
+
+    Only relevant when the built-in transport is in use. pymodbus logs every
+    raw Modbus frame at DEBUG level via the ``pymodbus.logging`` logger, and
+    logs transport failures such as ``Cancel send, because not connected!`` at
+    ERROR level; on unstable TCP links that floods the consumer's log.
+
+    Safe to call when pymodbus is not installed: adjusting a logger does not
+    import it, and the call is then simply inert.
+    """
+    if isinstance(level, str):
+        numeric = logging.getLevelName(level.upper())
+        if not isinstance(numeric, int):
+            raise ValueError(f"Unknown log level: {level}")
+        level = numeric
+    logging.getLogger("pymodbus").setLevel(level)
+
+
+def resolve_slave_param() -> str:
+    """Return the unit-id keyword the installed pymodbus release expects.
+
+    pymodbus renamed ``slave`` to ``device_id`` in 3.10. Resolved by signature
+    inspection, with a version-string fallback.
+    """
+    import inspect
+
+    client_cls = _require_pymodbus()
+    try:
+        params = inspect.signature(client_cls.read_input_registers).parameters
+        if "device_id" in params:
+            return "device_id"
+        return "slave"
+    except Exception:  # noqa: BLE001
+        # Signature inspection failed (an unusual client class, or a stub in a
+        # consumer's tests). Fall back to the version string, and to the older
+        # parameter name if even that is unavailable - never let this raise.
+        try:
+            import pymodbus
+
+            major_str, minor_str, *_ = pymodbus.__version__.split(".")
+            if int(major_str) > 3 or (int(major_str) == 3 and int(minor_str) >= 10):
+                return "device_id"
+        except (ImportError, AttributeError, ValueError):
+            pass
+        return "slave"
+
+
+def create_pymodbus_transport(
+    *,
+    host: str,
+    port: int,
+    timeout: float,
+    retries: int,
+    slave_id: int,
+) -> IdmModbusTransport:
+    """Build the built-in Modbus TCP transport.
+
+    Requires the ``[pymodbus]`` extra. Raises :class:`ImportError` with an
+    actionable message when it is missing.
+    """
+    return _PymodbusTransport(
+        host=host,
+        port=port,
+        timeout=timeout,
+        retries=retries,
+        slave_id=slave_id,
+        slave_param=resolve_slave_param(),
+    )
 
 
 class _PymodbusTransport:
@@ -141,8 +245,8 @@ class _PymodbusTransport:
     transport contract.
 
     The pymodbus unit-id parameter name differs across pymodbus releases
-    (``slave`` vs ``device_id``); ``slave_param`` is resolved once by the
-    library and passed in so this adapter stays pymodbus-version-agnostic.
+    (``slave`` vs ``device_id``); :func:`resolve_slave_param` resolves it once,
+    and :func:`create_pymodbus_transport` wires it in.
     """
 
     __slots__ = ("_host", "_port", "_timeout", "_retries", "_slave_id", "_slave_param", "_client")
@@ -163,17 +267,18 @@ class _PymodbusTransport:
         self._retries = retries
         self._slave_id = slave_id
         self._slave_param = slave_param
-        self._client: AsyncModbusTcpClient | None = None
+        self._client: "AsyncModbusTcpClient | None" = None
 
     @property
     def connected(self) -> bool:
         return self._client is not None and bool(self._client.connected)
 
     async def connect(self) -> None:
-        """Open the Pymodbus TCP connection or raise :class:`ConnectionException`."""
+        """Open the Pymodbus TCP connection or raise :class:`IdmConnectionError`."""
         if self._client is not None and self._client.connected:
             return
-        self._client = AsyncModbusTcpClient(
+        client_cls = _require_pymodbus()
+        self._client = client_cls(
             host=self._host,
             port=self._port,
             timeout=self._timeout,
@@ -183,9 +288,7 @@ class _PymodbusTransport:
         )
         if not await self._client.connect():
             self._client = None
-            raise ConnectionException(  # type: ignore[no-untyped-call]
-                f"Failed to connect to {self._host}:{self._port}"
-            )
+            raise IdmConnectionError(f"Failed to connect to {self._host}:{self._port}")
         _LOGGER.debug("Connected to %s:%s", self._host, self._port)
 
     async def close(self) -> None:
@@ -210,11 +313,9 @@ class _PymodbusTransport:
         )
         check_transport_response(result, address, operation="writing")
 
-    def _require_client(self) -> AsyncModbusTcpClient:
+    def _require_client(self) -> "AsyncModbusTcpClient":
         if self._client is None or not self._client.connected:
-            raise ConnectionException(  # type: ignore[no-untyped-call]
-                f"Not connected to {self._host}:{self._port}"
-            )
+            raise IdmConnectionError(f"Not connected to {self._host}:{self._port}")
         return self._client
 
     async def _read(self, address: int, count: int, *, holding: bool) -> list[int]:
@@ -226,7 +327,7 @@ class _PymodbusTransport:
             result = await client.read_input_registers(address=address, count=count, **kwargs)
         registers = check_transport_response(result, address, operation="reading")
         if len(registers) != count:
-            raise ModbusException(  # type: ignore[no-untyped-call]
+            raise IdmTransportError(
                 f"Incomplete Modbus response at address {address}: "
                 f"got {len(registers)} registers, expected {count}"
             )

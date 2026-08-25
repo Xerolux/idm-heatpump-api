@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import inspect
 import logging
 import math
 import struct
@@ -11,10 +10,6 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Awaitable, Callable, ClassVar, TypeVar
-
-import pymodbus
-from pymodbus.client import AsyncModbusTcpClient
-from pymodbus.exceptions import ConnectionException, ModbusException, ModbusIOException
 
 from .const import (
     DEFAULT_TIMEOUT,
@@ -36,7 +31,14 @@ from .const import (
     MODEL_UNKNOWN,
     RETRY_BACKOFF_BASE,
 )
-from .transport import IdmModbusTransport, _PymodbusTransport
+from .exceptions import (
+    IdmConnectionError,
+    IdmDeviceError,
+    IdmModbusError,
+    IdmTransportError,
+    IllegalAddressError,
+)
+from .transport import IdmModbusTransport, create_pymodbus_transport
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -61,7 +63,7 @@ DEFAULT_CYCLIC_WRITE_TTL = 300.0
 _PMODBUS_RETRIES_DEFAULT = 0
 _PMODBUS_RECONNECT_DELAY = 0.5
 _PMODBUS_RECONNECT_DELAY_MAX = 10.0
-_TRANSPORT_ERRORS = (ConnectionException, ModbusIOException, OSError, TimeoutError)
+_TRANSPORT_ERRORS = (IdmConnectionError, IdmTransportError, OSError, TimeoutError)
 
 _DETECT_HC_FLOW_BASE = 1350
 _DETECT_HC_STEP = 2
@@ -87,70 +89,6 @@ DEFAULT_REGISTER_SOURCE = "official_idm_modbus"
 DEFAULT_REGISTER_SOURCE_VERSION = (
     "MODBUS TCP NAVIGATOR 10 2025-06-18 plus Navigator 2.0/Pro legacy docs"
 )
-
-
-def _get_slave_param() -> str:
-    """Return the pymodbus slave parameter name for the installed version."""
-    try:
-        params = inspect.signature(AsyncModbusTcpClient.read_input_registers).parameters
-        if "device_id" in params:
-            return "device_id"
-        return "slave"
-    except Exception:  # noqa: BLE001
-        parts = pymodbus.__version__.split(".")
-        try:
-            major = int(parts[0])
-            minor = int(parts[1])
-            if major > 3 or (major == 3 and minor >= 10):
-                return "device_id"
-        except (ValueError, IndexError):
-            pass
-        return "slave"
-
-
-_PMODBUS_SLAVE_PARAM = _get_slave_param()
-
-
-def quiet_pymodbus_logging(level: str | int = "WARNING") -> None:
-    """Reduce pymodbus frame-logging noise (``>>>>> send/recv`` lines).
-
-    pymodbus logs every raw Modbus frame at DEBUG level via the
-    ``pymodbus.logging`` logger, and logs transport failures such as
-    ``Cancel send, because not connected!`` at ERROR level. On unstable TCP
-    links this floods the Home Assistant log.
-
-    Consumers can opt in to quieter pymodbus logging by calling this helper
-    once during setup, e.g.::
-
-        from idm_heatpump import quiet_pymodbus_logging
-        quiet_pymodbus_logging("WARNING")
-
-    This only adjusts the ``pymodbus`` logger tree and is safe to call even
-    if the consumer later raises the level again.
-    """
-    if isinstance(level, str):
-        numeric = logging.getLevelName(level.upper())
-        if not isinstance(numeric, int):
-            raise ValueError(f"Unknown log level: {level}")
-        level = numeric
-    logging.getLogger("pymodbus").setLevel(level)
-
-
-class IllegalAddressError(ModbusException):
-    """Modbus ``Illegal Data Address`` (exception code 2).
-
-    Raised when the device reports that a register address does not exist.
-    Unlike a generic :class:`ModbusException`, this is a permanent condition
-    for the address in question: retrying is pointless and only produces noisy
-    log lines. Callers that detect this marker (via ``isinstance`` or the
-    ``is_illegal_address`` attribute) can short-circuit retries and suppress
-    the repeated "failed after N attempts" warnings that otherwise flood the
-    log when optional registers are probed on devices that do not implement
-    them (e.g. Navigator-10-only blocks read against a Navigator 2.0).
-    """
-
-    #: Sentinel attribute checked by the retry loop to bail out silently.
-    is_illegal_address: bool = True
 
 
 def _is_illegal_address_exception(err: BaseException) -> bool:
@@ -500,16 +438,15 @@ class IdmModbusClient:
         self._pymodbus_retries = int(pymodbus_retries)
         self._max_group_size = int(max_group_size)
         if transport is None:
-            # Default path: direct Pymodbus TCP, identical to pre-1.0 releases.
-            # Slave-parameter name (``slave`` vs ``device_id``) depends on the
-            # pymodbus version and is resolved once via the running client.
-            transport = _PymodbusTransport(
+            # Built-in path: direct Modbus TCP via pymodbus. Since 2.0.0 that
+            # is an optional extra, so the transport is constructed lazily and
+            # raises an actionable ImportError when it is not installed (#85).
+            transport = create_pymodbus_transport(
                 host=self._host,
                 port=self._port,
                 timeout=self._timeout,
                 retries=self._pymodbus_retries,
                 slave_id=self._slave_id,
-                slave_param=_PMODBUS_SLAVE_PARAM,
             )
         elif not isinstance(transport, IdmModbusTransport):
             raise TypeError("transport must satisfy the IdmModbusTransport protocol")
@@ -621,7 +558,7 @@ class IdmModbusClient:
         Pymodbus adapter and any injected transport.
         """
         if self._transport is None:
-            raise ConnectionException(f"No transport configured for {self._host}:{self._port}")
+            raise IdmConnectionError(f"No transport configured for {self._host}:{self._port}")
         if self._transport.connected:
             return
         await self._transport.connect()
@@ -675,9 +612,7 @@ class IdmModbusClient:
     def _require_client(self) -> IdmModbusTransport:
         """Return the transport or raise if not connected (call while holding lock)."""
         if self._transport is None or not self._transport.connected:
-            raise ConnectionException(  # type: ignore[no-untyped-call]
-                f"Not connected to {self._host}:{self._port}"
-            )
+            raise IdmConnectionError(f"Not connected to {self._host}:{self._port}")
         return self._transport
 
     async def _retry_command(
@@ -758,7 +693,7 @@ class IdmModbusClient:
                         address,
                     )
                     raise
-                except ModbusException as err:
+                except IdmDeviceError as err:
                     self._record_error_context(
                         operation,
                         address,
@@ -817,7 +752,13 @@ class IdmModbusClient:
             # short or shifted response is classified as a transient Modbus
             # failure rather than silently decoding the wrong data.
             if len(result) != count:
-                raise ModbusException(  # type: ignore[no-untyped-call]
+                # Deliberately IdmDeviceError, not IdmTransportError: this
+                # count mismatch is answered by the batch reader falling back
+                # to individual reads, which isolates the offending register.
+                # Classifying it as a transport failure would instead re-raise
+                # and reconnect, silently removing that per-register isolation
+                # - a resilience change this release does not intend to make.
+                raise IdmDeviceError(
                     f"Incomplete Modbus response at address {address}: "
                     f"got {len(result)} registers, expected {count}"
                 )
@@ -838,7 +779,7 @@ class IdmModbusClient:
         try:
             await self._transport.close()
             await self._connect_internal()
-        except ConnectionException:
+        except IdmConnectionError:
             # Leave _connection_suspect set so the next _ensure_connected()
             # outside the retry loop will try a fresh connect rather than
             # trusting a stale .connected flag.
@@ -908,7 +849,7 @@ class IdmModbusClient:
                 max_retries=max_retries,
                 request_timeout=timeout,
             )
-        except (ModbusException, ConnectionException, OSError):
+        except (IdmModbusError, OSError):
             return None
 
     async def _probe_model_register(self, address: int, count: int = 1) -> list[int] | None:
@@ -1088,7 +1029,7 @@ class IdmModbusClient:
         pl_regs: list[int] | None = None
         try:
             pl_regs = await self._probe_model_register(4108, 2)
-        except (ModbusException, ConnectionException, OSError):
+        except (IdmModbusError, OSError):
             pl_regs = None
 
         if pl_regs is not None:
@@ -1113,7 +1054,7 @@ class IdmModbusClient:
                     and (booster_regs[0] & 0xFF) != _DETECT_BOOSTER_FAULT_UNAVAILABLE
                 ):
                     has_navigator_10_indicators = True
-            except (ModbusException, ConnectionException, OSError):
+            except (IdmModbusError, OSError):
                 pass
 
         if not has_navigator_10_indicators:
@@ -1132,7 +1073,7 @@ class IdmModbusClient:
             for nav10_addr in (4122, 4126):
                 try:
                     nav10_regs = await self._probe_model_register(nav10_addr, 2)
-                except (ModbusException, ConnectionException, OSError):
+                except (IdmModbusError, OSError):
                     nav10_regs = None
                 if nav10_regs is None or len(nav10_regs) != 2:
                     nav10_block_present = False
@@ -1602,7 +1543,7 @@ class IdmModbusClient:
         except _TRANSPORT_ERRORS:
             _LOGGER.debug("Transport failed while reading group at address %d", start)
             raise
-        except ModbusException as err:
+        except IdmDeviceError as err:
             _LOGGER.debug(
                 "Group read at address %d failed: %s. Falling back to individual reads.",
                 start,
@@ -1719,7 +1660,7 @@ class IdmModbusClient:
                     reg.name,
                     reg.address,
                 )
-            except ModbusException as err:
+            except IdmDeviceError as err:
                 failures = self._register_failures.get(reg.name, 0) + 1
                 self._register_failures[reg.name] = failures
                 if failures >= _PERMANENT_FAILURE_THRESHOLD:
