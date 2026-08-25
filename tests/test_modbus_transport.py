@@ -18,9 +18,9 @@ import asyncio
 from typing import Any
 
 import pytest
-from pymodbus.exceptions import ConnectionException, ModbusException, ModbusIOException
 
 from idm_heatpump.client import IdmModbusClient, IllegalAddressError, RegisterType
+from idm_heatpump.exceptions import IdmConnectionError, IdmDeviceError, IdmTransportError
 from idm_heatpump.transport import IdmModbusTransport, _PymodbusTransport, check_transport_response
 
 from .fake_modbus import FakeModbusTransport
@@ -216,12 +216,12 @@ def test_code_6_busy_is_transient_not_permanent() -> None:
     permanently failed or unsupported, unlike code 2 (Illegal Address)."""
     transport = FakeModbusTransport(
         exception_reads={
-            ("input", 1000, 1): ModbusException("Exception code 6 - Slave Device Busy"),
+            ("input", 1000, 1): IdmDeviceError("Exception code 6 - Slave Device Busy"),
         }
     )
     client = IdmModbusClient("127.0.0.1", max_retries=1, transport=transport)
 
-    with pytest.raises(ModbusException):
+    with pytest.raises(IdmDeviceError):
         asyncio.run(client._read_registers(1000, 1, RegisterType.INPUT))
 
     # The register must NOT be classified as permanently failed/unsupported:
@@ -237,12 +237,12 @@ def test_codes_5_10_11_do_not_quarantine_registers() -> None:
     for code_name in ("Acknowledge", "Gateway Path Unavailable", "Gateway Target No Response"):
         transport = FakeModbusTransport(
             exception_reads={
-                ("input", 2000, 1): ModbusException(f"Exception code - {code_name}"),
+                ("input", 2000, 1): IdmDeviceError(f"Exception code - {code_name}"),
             }
         )
         client = IdmModbusClient("127.0.0.1", max_retries=1, transport=transport)
 
-        with pytest.raises(ModbusException):
+        with pytest.raises(IdmDeviceError):
             asyncio.run(client._read_registers(2000, 1, RegisterType.INPUT))
 
         assert client._batch_unsafe_registers == set()
@@ -261,15 +261,15 @@ def test_code_2_illegal_address_still_marks_unsupported() -> None:
 
     # read_batch's individual fallback is what marks unsupported; a raw
     # _read_registers call just surfaces IllegalAddressError. Verify the
-    # exception type is the permanent marker, not a generic ModbusException.
+    # exception type is the permanent marker, not a generic IdmDeviceError.
     assert not isinstance(
-        IllegalAddressError("x"),  # marker class still distinct from ModbusException-only
+        IllegalAddressError("x"),  # marker class still distinct from IdmDeviceError-only
         type(None),
     )
 
 
 def test_code_6_busy_is_retried_in_place_without_reconnect() -> None:
-    """A code-6 failure (generic ModbusException) must use the retry-in-place
+    """A code-6 failure (generic IdmDeviceError) must use the retry-in-place
     path, not the hard-reconnect path reserved for transport errors."""
 
     class BusyThenSuccess(FakeModbusTransport):
@@ -283,7 +283,7 @@ def test_code_6_busy_is_retried_in_place_without_reconnect() -> None:
         ) -> list[int]:
             self.read_attempts += 1
             if self.read_attempts == 1:
-                raise ModbusException("Slave Device Busy")
+                raise IdmDeviceError("Slave Device Busy")
             return await super()._read(kind, registers, address, count)
 
         async def close(self) -> None:
@@ -298,7 +298,7 @@ def test_code_6_busy_is_retried_in_place_without_reconnect() -> None:
     assert result == [11]
     assert transport.read_attempts == 2
     # Retry-in-place must not hard-close the transport (that path is for
-    # ConnectionException/ModbusIOException/OSError/TimeoutError only).
+    # IdmConnectionError/IdmTransportError/OSError/TimeoutError only).
     assert transport.close_calls == 0
 
 
@@ -315,7 +315,7 @@ def test_check_transport_response_maps_code_2_to_illegal_address() -> None:
 
 def test_check_transport_response_maps_other_errors_to_modbus_exception() -> None:
     response = type("R", (), {"isError": lambda self: True, "exception_code": 6})()
-    with pytest.raises(ModbusException):
+    with pytest.raises(IdmDeviceError):
         check_transport_response(response, 1000, operation="reading")
 
 
@@ -338,12 +338,12 @@ def test_default_transport_connection_exception_triggers_reconnect(
 
     failing = FakeModbusTransport(
         input_registers={1000: 99},
-        exception_reads={("input", 1000, 1): ConnectionException("down")},
+        exception_reads={("input", 1000, 1): IdmConnectionError("down")},
     )
     working = FakeModbusTransport(input_registers={1000: 99})
     failing.connected = True
 
-    # First read fails with ConnectionException, reconnect swaps to the working fake.
+    # First read fails with IdmConnectionError, reconnect swaps to the working fake.
     client._transport = failing  # type: ignore[assignment]
     monkeypatch.setattr(client, "_connect_internal", _swap_transport_factory(client, working))
 
@@ -354,10 +354,10 @@ def test_default_transport_connection_exception_triggers_reconnect(
 
 
 def test_default_transport_modbus_io_exception_hard_closes() -> None:
-    """ModbusIOException must hard-close the transport before retry (stale socket)."""
+    """IdmTransportError must hard-close the transport before retry (stale socket)."""
     failing = FakeModbusTransport(
         input_registers={1000: 7},
-        exception_reads={("input", 1000, 1): ModbusIOException("no response")},
+        exception_reads={("input", 1000, 1): IdmTransportError("no response")},
     )
     working = FakeModbusTransport(input_registers={1000: 7})
 

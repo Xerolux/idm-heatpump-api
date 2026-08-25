@@ -11,12 +11,12 @@ Scenario hooks (all optional, keyword-only):
 
 * ``input_registers``/``holding_registers`` -- happy-path backing store.
 * ``illegal_reads`` -- addresses that raise ``IllegalAddressError`` (code 2).
-* ``error_reads`` -- addresses that raise a generic ``ModbusException``.
+* ``error_reads`` -- addresses that raise a generic ``IdmDeviceError``.
 * ``exception_reads`` -- addresses that raise a caller-supplied exception
-  instance (``ConnectionException``, ``ModbusIOException``, ``OSError`` ...).
+  instance (``IdmConnectionError``, ``IdmTransportError``, ``OSError`` ...).
 * ``short_reads`` -- addresses returning an arbitrary register list (used to
   simulate under-length or corrupt/shifted batch payloads).
-* ``error_writes`` -- addresses whose write raises ``ModbusException``.
+* ``error_writes`` -- addresses whose write raises ``IdmDeviceError``.
 * ``delay`` -- per-request await, used by the lock-serialisation test.
 """
 
@@ -25,9 +25,8 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from pymodbus.exceptions import ModbusException
-
 from idm_heatpump.client import IllegalAddressError
+from idm_heatpump.exceptions import IdmDeviceError
 
 
 class FakeModbusTransport:
@@ -76,9 +75,7 @@ class FakeModbusTransport:
         try:
             self.write_calls.append((address, list(values)))
             if address in self.error_writes:
-                raise ModbusException(  # type: ignore[no-untyped-call]
-                    f"Modbus error writing address {address}: error_writes stub"
-                )
+                raise IdmDeviceError(f"Modbus error writing address {address}: error_writes stub")
             for offset, value in enumerate(values):
                 self.holding_registers[address + offset] = int(value)
         finally:
@@ -105,9 +102,7 @@ class FakeModbusTransport:
                     f"Illegal Data Address reading address {address}: illegal_reads stub"
                 )
             if key in self.error_reads:
-                raise ModbusException(  # type: ignore[no-untyped-call]
-                    f"Modbus error reading address {address}: error_reads stub"
-                )
+                raise IdmDeviceError(f"Modbus error reading address {address}: error_reads stub")
             if key in self.short_reads:
                 return list(self.short_reads[key])
             return [registers.get(address + offset, 0) for offset in range(count)]

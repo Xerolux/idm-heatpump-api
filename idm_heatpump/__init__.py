@@ -14,7 +14,6 @@ from .client import (
     IdmClientDiagnostics,
     IdmModbusClient,
     IdmModelInfo,
-    IllegalAddressError,
     ModbusCodec,
     ModbusErrorContext,
     PollRateLimiter,
@@ -22,7 +21,6 @@ from .client import (
     RegisterType,
     WriteClass,
     WriteSafetyResult,
-    quiet_pymodbus_logging,
 )
 from .const import (
     ACTIVE_HC_MODE_OPTIONS,
@@ -61,6 +59,13 @@ from .const import (
     VARIABLE_INPUT_OPTIONS,
     ZONE_MODULE_MODE_OPTIONS,
 )
+from .exceptions import (
+    IdmConnectionError,
+    IdmDeviceError,
+    IdmModbusError,
+    IdmTransportError,
+    IllegalAddressError,
+)
 from .registers import (
     CORE_REGISTERS,
     RegisterRegistry,
@@ -72,7 +77,7 @@ from .registers import (
     get_register_registry,
     get_zone_module_registers,
 )
-from .transport import IdmModbusTransport
+from .transport import IdmModbusTransport, quiet_pymodbus_logging
 from .web import (
     RECOMMENDED_WEB_SCAN_INTERVAL,
     WEB_VALUE_DESCRIPTIONS,
@@ -159,6 +164,10 @@ __all__ = [
     "IdmModelInfo",
     "IdmModbusClient",
     "IdmModbusTransport",
+    "IdmConnectionError",
+    "IdmDeviceError",
+    "IdmModbusError",
+    "IdmTransportError",
     "IllegalAddressError",
     "ModbusCodec",
     "IdmWebAuthenticationError",

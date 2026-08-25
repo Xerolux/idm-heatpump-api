@@ -8,6 +8,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 
+## [2.0.0] - 2026-08-25
+
+**Breaking Release.** pymodbus ist nicht mehr Teil des öffentlichen Vertrags.
+Die Bibliothek besitzt ihre eigene Fehlerhierarchie, und der eingebaute
+Modbus-TCP-Transport ist ein optionales Extra. Konsumenten, die einen eigenen
+Transport injizieren — der seit 1.0 dokumentierte Weg —, installieren damit
+keine Modbus-Bibliothek mehr und fangen keine fremden Exception-Typen.
+
+Siehe [#85](https://github.com/Xerolux/idm-heatpump-api/issues/85).
+
+### Breaking
+
+- **Eigene Fehlerhierarchie ohne pymodbus-Basis.** Neu sind
+  `IdmModbusError` (Basis), `IdmConnectionError` (Verbindung steht nicht oder
+  ist abgerissen), `IdmTransportError` (keine verwertbare Antwort: Timeout,
+  zu kurze oder verschobene Antwort) und `IdmDeviceError` (das Gerät hat
+  geantwortet und abgelehnt). `IllegalAddressError` erbt jetzt von
+  `IdmDeviceError` statt von `pymodbus.exceptions.ModbusException`.
+
+  `except ModbusException` fängt nichts mehr, was diese Bibliothek wirft.
+  Konsumenten fangen künftig `IdmModbusError` oder eine der Unterklassen.
+
+- **pymodbus ist ein optionales Extra.** Das Basispaket hat keine
+  Runtime-Abhängigkeit mehr. Der eingebaute Transport benötigt
+  `pip install idm-heatpump-api[pymodbus]` und meldet andernfalls einen
+  `ImportError`, der genau das sagt.
+
+- **`quiet_pymodbus_logging()` liegt jetzt in `idm_heatpump.transport`.** Der
+  Re-Export aus `idm_heatpump` bleibt bestehen; der Import aus
+  `idm_heatpump.client` entfällt.
+
+### Added
+
+- **`IdmDeviceError.exception_code`** trägt den numerischen
+  Modbus-Exception-Code als Attribut. Konsumenten mussten ihn bisher per
+  Regex aus dem gerenderten Fehlertext zurückgewinnen, um ihn in einer
+  Nutzermeldung zu benennen.
+
+- **`create_pymodbus_transport()`** und **`resolve_slave_param()`** in
+  `idm_heatpump.transport` bauen den eingebauten Transport und lösen den
+  `slave`/`device_id`-Parameternamen der installierten pymodbus-Version auf.
+
+### Changed
+
+- `get_last_error_context().error_type` meldet den präziseren Bibliothekstyp
+  (`IdmTransportError`, `IdmDeviceError`) statt `ModbusException`.
+
+### Migration
+
+```python
+# vorher
+from pymodbus.exceptions import ModbusException
+
+try:
+    await client.read_batch(registers)
+except ModbusException:
+    ...
+
+# nachher
+from idm_heatpump import IdmModbusError
+
+try:
+    await client.read_batch(registers)
+except IdmModbusError:
+    ...
+```
+
+Wer den eingebauten Transport nutzt, ergänzt das Extra:
+`pip install "idm-heatpump-api[web,pymodbus]"`.
+
+
 ## [1.0.3] - 2026-08-22
 
 Wartungs-Release: ausschließlich CI-/Security-Toolchain-Updates, keine

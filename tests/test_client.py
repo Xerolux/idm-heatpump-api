@@ -5,7 +5,6 @@ import logging
 from typing import Any
 
 import pytest
-from pymodbus.exceptions import ModbusException
 
 from idm_heatpump.client import (
     DataType,
@@ -16,7 +15,6 @@ from idm_heatpump.client import (
     PollRateLimiter,
     RegisterDef,
     RegisterType,
-    quiet_pymodbus_logging,
 )
 from idm_heatpump.const import (
     FEATURE_CASCADE,
@@ -29,6 +27,8 @@ from idm_heatpump.const import (
     MODEL_NAVIGATOR_20,
     MODEL_UNKNOWN,
 )
+from idm_heatpump.exceptions import IdmTransportError
+from idm_heatpump.transport import quiet_pymodbus_logging
 
 
 class ProbeOnlyClient(IdmModbusClient):
@@ -509,7 +509,7 @@ def test_read_registers_rejects_incomplete_modbus_response() -> None:
     client = IdmModbusClient("127.0.0.1", max_retries=1)
     client._client = IncompleteResponseClient()  # type: ignore[assignment]
 
-    with pytest.raises(ModbusException, match="got 1 registers, expected 2"):
+    with pytest.raises(IdmTransportError, match="got 1 registers, expected 2"):
         asyncio.run(client._read_registers(1000, 2))
 
 
@@ -582,7 +582,7 @@ def test_connect_internal_forwards_retries_and_reconnect_params(
         async def connect(self) -> bool:
             return True
 
-    monkeypatch.setattr("idm_heatpump.transport.AsyncModbusTcpClient", StubClient)
+    monkeypatch.setattr("idm_heatpump.transport._require_pymodbus", lambda: StubClient)
 
     client = IdmModbusClient("127.0.0.1", pymodbus_retries=0)
     asyncio.run(client._connect_internal())
@@ -607,7 +607,7 @@ def test_connect_internal_forwards_custom_pymodbus_retries(
         async def connect(self) -> bool:
             return True
 
-    monkeypatch.setattr("idm_heatpump.transport.AsyncModbusTcpClient", StubClient)
+    monkeypatch.setattr("idm_heatpump.transport._require_pymodbus", lambda: StubClient)
 
     client = IdmModbusClient("127.0.0.1", pymodbus_retries=3)
     asyncio.run(client._connect_internal())
@@ -713,7 +713,7 @@ def test_force_reconnect_closes_existing_client_and_reconnects(
         async def connect(self) -> bool:
             return True
 
-    monkeypatch.setattr("idm_heatpump.transport.AsyncModbusTcpClient", StubClient)
+    monkeypatch.setattr("idm_heatpump.transport._require_pymodbus", lambda: StubClient)
 
     client = IdmModbusClient("127.0.0.1")
     asyncio.run(client._connect_internal())  # establish first client
@@ -739,7 +739,7 @@ def test_force_reconnect_safe_when_no_existing_client(
         async def connect(self) -> bool:
             return True
 
-    monkeypatch.setattr("idm_heatpump.transport.AsyncModbusTcpClient", StubClient)
+    monkeypatch.setattr("idm_heatpump.transport._require_pymodbus", lambda: StubClient)
 
     client = IdmModbusClient("127.0.0.1")
     asyncio.run(client.force_reconnect())
@@ -765,7 +765,7 @@ def test_ensure_connected_forces_reconnect_when_suspect(
             self.connected = True
             return True
 
-    monkeypatch.setattr("idm_heatpump.transport.AsyncModbusTcpClient", StubClient)
+    monkeypatch.setattr("idm_heatpump.transport._require_pymodbus", lambda: StubClient)
 
     client = IdmModbusClient("127.0.0.1")
     asyncio.run(client._connect_internal())
@@ -806,7 +806,7 @@ def test_ensure_connected_reuses_healthy_client(
         async def connect(self) -> bool:
             return True
 
-    monkeypatch.setattr("idm_heatpump.transport.AsyncModbusTcpClient", StubClient)
+    monkeypatch.setattr("idm_heatpump.transport._require_pymodbus", lambda: StubClient)
 
     client = IdmModbusClient("127.0.0.1")
     asyncio.run(client._connect_internal())

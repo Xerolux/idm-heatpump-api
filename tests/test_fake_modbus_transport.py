@@ -7,10 +7,10 @@ import math
 import struct
 
 import pytest
-from pymodbus.exceptions import ConnectionException, ModbusException, ModbusIOException
 
 from idm_heatpump.client import DataType, IdmModbusClient, IdmModelInfo, RegisterDef, RegisterType
 from idm_heatpump.const import MODEL_NAVIGATOR_10
+from idm_heatpump.exceptions import IdmConnectionError, IdmDeviceError, IdmTransportError
 
 from .fake_modbus import FakeModbusTransport
 
@@ -24,7 +24,7 @@ class ReconnectingClient(IdmModbusClient):
         if self._client is not None and self._client.connected:
             return
         if not self._transports:
-            raise ConnectionException("no fake transports left")  # type: ignore[no-untyped-call]
+            raise IdmConnectionError("no fake transports left")
         self._client = self._transports.pop(0)  # type: ignore[assignment]
 
 
@@ -115,7 +115,7 @@ def test_group_transport_failure_is_not_misclassified_as_register_failure() -> N
     client = IdmModbusClient("127.0.0.1", max_retries=1)
     transport = FakeModbusTransport(
         input_registers={1000: 7, 1001: 8},
-        exception_reads={("input", 1000, 2): ModbusIOException("No response received")},
+        exception_reads={("input", 1000, 2): IdmTransportError("No response received")},
     )
     client._client = transport  # type: ignore[assignment]
     registers = [
@@ -123,7 +123,7 @@ def test_group_transport_failure_is_not_misclassified_as_register_failure() -> N
         RegisterDef(1001, DataType.UCHAR, "second"),
     ]
 
-    with pytest.raises(ModbusIOException, match="No response received"):
+    with pytest.raises(IdmTransportError, match="No response received"):
         asyncio.run(client._read_group(registers))
 
     assert transport.read_calls == [("input", 1000, 2)]
@@ -134,22 +134,22 @@ def test_group_transport_failure_is_not_misclassified_as_register_failure() -> N
 def test_individual_transport_failure_does_not_disable_register() -> None:
     client = IdmModbusClient("127.0.0.1", max_retries=1)
     client._client = FakeModbusTransport(  # type: ignore[assignment]
-        exception_reads={("input", 1000, 1): ModbusIOException("No response received")}
+        exception_reads={("input", 1000, 1): IdmTransportError("No response received")}
     )
     register = RegisterDef(1000, DataType.UCHAR, "valid_register")
 
-    with pytest.raises(ModbusIOException, match="No response received"):
+    with pytest.raises(IdmTransportError, match="No response received"):
         asyncio.run(client._read_individual_fallback([register]))
 
     assert client._register_failures == {}
     assert client._permanently_failed_registers == set()
 
 
-def test_incomplete_fake_response_raises_modbus_exception() -> None:
+def test_incomplete_fake_response_raises_transport_error() -> None:
     client = IdmModbusClient("127.0.0.1", max_retries=1)
     client._client = FakeModbusTransport(short_reads={("input", 1000, 2): [1]})  # type: ignore[assignment]
 
-    with pytest.raises(ModbusException, match="got 1 registers, expected 2"):
+    with pytest.raises(IdmTransportError, match="got 1 registers, expected 2"):
         asyncio.run(client._read_registers(1000, 2))
 
     error = client.get_last_error_context()
@@ -158,7 +158,10 @@ def test_incomplete_fake_response_raises_modbus_exception() -> None:
     assert error.address == 1000
     assert error.count == 2
     assert error.register_type == "input"
-    assert error.error_type == "ModbusException"
+    # A short response is a transport-level failure and is now reported as
+    # the precise library type; it still inherits from IdmDeviceError
+    # during the 1.x line (#85).
+    assert error.error_type == "IdmTransportError"
     assert "127.0.0.1" not in error.message
 
     client.clear_last_error_context()
@@ -203,7 +206,7 @@ def test_permanently_failed_registers_can_be_reset() -> None:
 
 def test_connection_exception_triggers_reconnect() -> None:
     disconnected = FakeModbusTransport(
-        exception_reads={("input", 1000, 1): ConnectionException("fake abort")}  # type: ignore[no-untyped-call]
+        exception_reads={("input", 1000, 1): IdmConnectionError("fake abort")}
     )
     working = FakeModbusTransport(input_registers={1000: 7})
     client = ReconnectingClient([working])
@@ -225,7 +228,7 @@ def test_modbus_io_exception_triggers_hard_reconnect() -> None:
     """A pymodbus no-response error must not retry on the stale socket."""
     failing = FakeModbusTransport(
         exception_reads={
-            ("input", 1000, 1): ModbusIOException("No response received after 0 retries")
+            ("input", 1000, 1): IdmTransportError("No response received after 0 retries")
         }
     )
     working = FakeModbusTransport(input_registers={1000: 7})
@@ -241,7 +244,7 @@ def test_write_error_context_is_redacted_and_omits_written_values() -> None:
     client = IdmModbusClient("127.0.0.1", max_retries=1)
     client._client = FakeModbusTransport(error_writes={1200})  # type: ignore[assignment]
 
-    with pytest.raises(ModbusException, match="Modbus error writing address 1200"):
+    with pytest.raises(IdmDeviceError, match="Modbus error writing address 1200"):
         asyncio.run(client._write_registers(1200, [123]))
 
     error = client.get_last_error_context()
@@ -251,7 +254,10 @@ def test_write_error_context_is_redacted_and_omits_written_values() -> None:
     assert error.address == 1200
     assert error.count == 1
     assert error.register_type == "holding"
-    assert error.error_type == "ModbusException"
+    # This fake raises pymodbus's IdmDeviceError directly rather than going
+    # through check_transport_response, so it pins the 1.x back-compatibility
+    # path: an injected transport raising the old types still classifies (#85).
+    assert error.error_type == "IdmDeviceError"
     assert "127.0.0.1" not in error.message
     assert "123" not in error.message
 

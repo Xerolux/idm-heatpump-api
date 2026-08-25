@@ -12,7 +12,7 @@ idm_heatpump = ["py.typed"]
 
 [project]
 name = "idm-heatpump-api"
-version = "1.0.3"
+version = "2.0.0"
 authors = [
   { name="Basti (Xerolux)", email="git@xerolux.de" },
 ]
@@ -34,21 +34,29 @@ classifiers = [
 ]
 
 keywords = ["idm", "heatpump", "modbus", "navigator", "home-assistant", "hass", "heating", "modbus-tcp"]
-dependencies = [
-    "pymodbus>=3.12.1,<4.0",
-]
+# No required runtime dependency: the library owns its exception hierarchy
+# and takes an injected transport. pymodbus is only needed for the
+# built-in Modbus TCP transport, see the [pymodbus] extra (#85).
+dependencies = []
 
 [project.optional-dependencies]
 web = [
     "aiohttp>=3.9,<4.0",
+]
+# Only the built-in Modbus TCP transport needs pymodbus. A consumer that
+# injects its own transport installs nothing (#85).
+pymodbus = [
+    "pymodbus>=3.12.1,<4.0",
 ]
 test = [
     "pytest>=9.1.1",
     "pytest-asyncio>=0.24",
     "pytest-cov>=7.1.0",
     "aiohttp>=3.9,<4.0",
+    "pymodbus>=3.12.1,<4.0",
 ]
 dev = [
+    "pymodbus>=3.12.1,<4.0",
     "build>=1.2.0",
     "twine>=6.2.0",
     "ruff>=0.15.20",
