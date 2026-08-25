@@ -13,7 +13,7 @@ on:
           - custom
         default: auto-patch
       custom_version:
-        description: "Custom version (e.g. 1.2.3)"
+        description: "Custom version, PEP 440 (1.2.3, or a prerelease: 2.0.0b1 / 2.0.0a1 / 2.0.0rc1)"
         required: false
         type: string
         default: ""
