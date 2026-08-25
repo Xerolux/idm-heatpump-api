@@ -198,15 +198,16 @@ def resolve_slave_param() -> str:
             return "device_id"
         return "slave"
     except Exception:  # noqa: BLE001
-        import pymodbus
-
-        parts = pymodbus.__version__.split(".")
+        # Signature inspection failed (an unusual client class, or a stub in a
+        # consumer's tests). Fall back to the version string, and to the older
+        # parameter name if even that is unavailable - never let this raise.
         try:
-            major = int(parts[0])
-            minor = int(parts[1])
-            if major > 3 or (major == 3 and minor >= 10):
+            import pymodbus
+
+            major_str, minor_str, *_ = pymodbus.__version__.split(".")
+            if int(major_str) > 3 or (int(major_str) == 3 and int(minor_str) >= 10):
                 return "device_id"
-        except (ValueError, IndexError):
+        except (ImportError, AttributeError, ValueError):
             pass
         return "slave"
 

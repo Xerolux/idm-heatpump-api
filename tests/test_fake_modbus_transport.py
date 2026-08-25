@@ -145,11 +145,11 @@ def test_individual_transport_failure_does_not_disable_register() -> None:
     assert client._permanently_failed_registers == set()
 
 
-def test_incomplete_fake_response_raises_transport_error() -> None:
+def test_incomplete_fake_response_raises_device_error() -> None:
     client = IdmModbusClient("127.0.0.1", max_retries=1)
     client._client = FakeModbusTransport(short_reads={("input", 1000, 2): [1]})  # type: ignore[assignment]
 
-    with pytest.raises(IdmTransportError, match="got 1 registers, expected 2"):
+    with pytest.raises(IdmDeviceError, match="got 1 registers, expected 2"):
         asyncio.run(client._read_registers(1000, 2))
 
     error = client.get_last_error_context()
@@ -161,7 +161,9 @@ def test_incomplete_fake_response_raises_transport_error() -> None:
     # A short response is a transport-level failure and is now reported as
     # the precise library type; it still inherits from IdmDeviceError
     # during the 1.x line (#85).
-    assert error.error_type == "IdmTransportError"
+    # A short response stays on the batch-fallback path (see the guard in
+    # client._read_registers), so it is reported as a device-level error.
+    assert error.error_type == "IdmDeviceError"
     assert "127.0.0.1" not in error.message
 
     client.clear_last_error_context()

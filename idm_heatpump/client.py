@@ -752,9 +752,13 @@ class IdmModbusClient:
             # short or shifted response is classified as a transient Modbus
             # failure rather than silently decoding the wrong data.
             if len(result) != count:
-                # A short or shifted answer is a transport-level failure, not a
-                # device refusal: the session may be stale and wants a reconnect.
-                raise IdmTransportError(
+                # Deliberately IdmDeviceError, not IdmTransportError: this
+                # count mismatch is answered by the batch reader falling back
+                # to individual reads, which isolates the offending register.
+                # Classifying it as a transport failure would instead re-raise
+                # and reconnect, silently removing that per-register isolation
+                # - a resilience change this release does not intend to make.
+                raise IdmDeviceError(
                     f"Incomplete Modbus response at address {address}: "
                     f"got {len(result)} registers, expected {count}"
                 )

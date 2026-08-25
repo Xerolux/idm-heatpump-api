@@ -27,7 +27,7 @@ from idm_heatpump.const import (
     MODEL_NAVIGATOR_20,
     MODEL_UNKNOWN,
 )
-from idm_heatpump.exceptions import IdmTransportError
+from idm_heatpump.exceptions import IdmDeviceError
 from idm_heatpump.transport import quiet_pymodbus_logging
 
 
@@ -509,7 +509,7 @@ def test_read_registers_rejects_incomplete_modbus_response() -> None:
     client = IdmModbusClient("127.0.0.1", max_retries=1)
     client._client = IncompleteResponseClient()  # type: ignore[assignment]
 
-    with pytest.raises(IdmTransportError, match="got 1 registers, expected 2"):
+    with pytest.raises(IdmDeviceError, match="got 1 registers, expected 2"):
         asyncio.run(client._read_registers(1000, 2))
 
 

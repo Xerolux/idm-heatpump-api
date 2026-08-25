@@ -107,7 +107,12 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: Xerolux/idm-heatpump-hass
-          ref: main
+          # TEMPORARY: the 0.16.0 branch is the consumer migrated to this
+          # release's exception hierarchy. main still speaks pymodbus and
+          # cannot pass against 2.0.0 - pointing at it here would report a
+          # break that is expected rather than a regression. Flip back to
+          # `main` once Xerolux/idm-heatpump-hass#254 is merged.
+          ref: claude/idm-heatpump-0.16.0
           path: integration-contract
 
       - name: Run Home Assistant integration contract tests
