@@ -200,10 +200,10 @@
       "notes": "Maintenance release with no library changes: only the CodeQL security workflow was updated (github/codeql-action init and analyze pinned to 4.37.7 / CodeQL bundle 2.26.3). Runtime behaviour and the public import surface are byte-identical to 1.0.2, so integration pins can move without retesting."
     },
     {
-      "api_version": "2.0.0",
-      "hass_integration_version": "pending",
+      "api_version": "2.0.0b1",
+      "hass_integration_version": "0.16.0-beta.1",
       "status": "api-prepared",
-      "notes": "Breaking: library-owned exception hierarchy (IdmModbusError and subclasses), pymodbus moved to the optional [pymodbus] extra, IdmDeviceError.exception_code added. Targets the 0.16.0 integration line; 0.15.1 stays pinned to 1.0.3."
+      "notes": "Breaking: library-owned exception hierarchy (IdmModbusError and subclasses), pymodbus moved to the optional [pymodbus] extra, IdmDeviceError.exception_code added. First beta of the 2.0.0 line, pinned by integration 0.16.0-beta.1 as idm-heatpump-api[web]==2.0.0b1; 0.15.1 stays pinned to 1.0.3. The API version is PEP 440 (2.0.0b1) and the integration version is SemVer (0.16.0-beta.1) on purpose: pip resolves the former, HACS reads the latter."
     }
   ]
 }

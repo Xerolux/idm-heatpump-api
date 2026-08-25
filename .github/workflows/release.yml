@@ -73,30 +73,49 @@ jobs:
           mode = "${{ github.event.inputs.version_mode }}"
           custom = "${{ github.event.inputs.custom_version }}".strip()
 
+          # PEP 440, not SemVer: this is a PyPI package, so a prerelease is
+          # "2.0.0b1", never "2.0.0-beta.1". pip and PyPI normalise the latter
+          # to the former anyway, and a consumer pin has to spell the
+          # normalised form - so that is the only form allowed here, and the
+          # tag matches it exactly. See docs/RELEASE_PROCESS.md.
+          VERSION_PATTERN = r"(\d+)\.(\d+)\.(\d+)((?:a|b|rc)\d+)?"
+
           with open("pyproject.toml") as f:
               content = f.read()
-          m = re.search(r'version\s*=\s*"(\d+)\.(\d+)\.(\d+)"', content)
+          m = re.search(rf'version\s*=\s*"{VERSION_PATTERN}"', content)
           if not m:
               print("ERROR: cannot parse version from pyproject.toml")
               sys.exit(1)
 
           major, minor, patch = int(m.group(1)), int(m.group(2)), int(m.group(3))
+          prerelease = m.group(4)
 
           if mode == "custom":
               if not custom:
                   print("ERROR: custom_version is empty")
                   sys.exit(1)
-              if not re.match(r"^\d+\.\d+\.\d+$", custom):
+              if not re.fullmatch(VERSION_PATTERN, custom):
                   print(f"ERROR: invalid version format: {custom}")
+                  print("Expected PEP 440: 1.2.3, or a prerelease such as 2.0.0b1 / 2.0.0a1 / 2.0.0rc1")
                   sys.exit(1)
               new_version = custom
+          elif prerelease:
+              # Never auto-bump off a prerelease: the next version could be the
+              # next beta or the stable it leads to, and only a maintainer knows
+              # which. Ask for it explicitly.
+              print(f"ERROR: current version {major}.{minor}.{patch}{prerelease} is a prerelease.")
+              print("Use version_mode=custom and name the next version explicitly.")
+              sys.exit(1)
           elif mode == "auto-minor":
               new_version = f"{major}.{minor + 1}.0"
           else:
               new_version = f"{major}.{minor}.{patch + 1}"
 
+          is_prerelease = bool(re.fullmatch(VERSION_PATTERN, new_version).group(4))
+
           with open(os.environ["GITHUB_OUTPUT"], "a") as out:
               print(f"version={new_version}", file=out)
+              print(f"is_prerelease={str(is_prerelease).lower()}", file=out)
         shell: python {0}
 
       - name: Bump version in pyproject.toml
@@ -150,7 +169,15 @@ jobs:
         id: commits
         run: |
           NEW="${{ steps.version.outputs.version }}"
-          PREV_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | grep -v "v${NEW}" | head -1)
+          # A prerelease compares against the newest tag of any kind; a stable
+          # release compares against the previous stable, so its notes are not
+          # a diff against its own beta.
+          if printf '%s' "${NEW}" | grep -qE '(a|b|rc)[0-9]+$'; then
+            TAG_PATTERN='^v[0-9]+\.[0-9]+\.[0-9]+((a|b|rc)[0-9]+)?$'
+          else
+            TAG_PATTERN='^v[0-9]+\.[0-9]+\.[0-9]+$'
+          fi
+          PREV_TAG=$(git tag --sort=-version:refname | grep -E "$TAG_PATTERN" | grep -v "v${NEW}" | head -1)
 
           if [ -z "$PREV_TAG" ]; then
             COMMITS=$(git log --oneline --pretty=format:"- %s (%h)" | head -30)
@@ -232,6 +259,10 @@ jobs:
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228
         with:
           tag_name: "v${{ steps.version.outputs.version }}"
+          # A prerelease must not become the repository's latest release, or
+          # everyone landing on the releases page is pointed at a beta.
+          prerelease: ${{ steps.version.outputs.is_prerelease }}
+          make_latest: ${{ steps.version.outputs.is_prerelease == 'true' && 'false' || 'true' }}
           body: |
             ## v${{ steps.version.outputs.version }} — IDM Heatpump API
 
@@ -254,8 +285,10 @@ jobs:
 
             ### Installation
             ```bash
-            pip install idm-heatpump-api
+            pip install idm-heatpump-api==${{ steps.version.outputs.version }}
             ```
+            `pip install idm-heatpump-api` resolves to the newest stable release;
+            a prerelease has to be named explicitly, as above.
 
             ---
 

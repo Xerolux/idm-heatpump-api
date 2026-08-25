@@ -47,3 +47,23 @@ Any register change must include all of the following:
 
 Do not add a no-overlap invariant. The official Navigator 2.0/10 map contains
 documented logical range overlaps at block boundaries.
+
+## Versioning and releases
+
+- **Versions are PEP 440.** A prerelease is `2.0.0b1`, `2.0.0a1`, `2.0.0rc1` —
+  no hyphen, no dot before the number. pip and PyPI normalise `2.0.0-beta.1` to
+  `2.0.0b1` anyway, and the Home Assistant manifest has to pin the normalised
+  form, so writing it everywhere keeps `pyproject.toml`, the tag, the PyPI
+  filename and the consumer pin identical. The tag is `v` plus the version
+  (`v2.0.0b1`). The integration repository keeps SemVer tags
+  (`v0.16.0-beta.1`) for HACS; the two repositories differ here on purpose.
+- **`release.yml` enforces the format** and refuses to auto-bump off a
+  prerelease — only a maintainer knows whether the next one is `2.0.0b2` or
+  `2.0.0`. Use `version_mode=custom` and name it.
+- **Every release carries the support links.** They are part of the release body
+  in `release.yml`; keep them in step with `.github/FUNDING.yml`.
+- **Write in English** — changelog, release notes, docs, commit messages, pull
+  request text, comments and docstrings, including the prose baked into
+  workflows and scripts.
+
+See `docs/RELEASE_PROCESS.md` for the full procedure.
