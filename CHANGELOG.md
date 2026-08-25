@@ -12,6 +12,21 @@ changelog is history. Everything from `2.0.0b1` on is English.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`publish.yml` could not publish a `2.x` wheel.** Its smoke check installed
+  the plain wheel and then built an `IdmModbusClient`, which since `2.0.0`
+  raises the `ImportError` naming the `[pymodbus]` extra — by design. The same
+  fault was already fixed in `release.yml`; `publish.yml` kept it. The check now
+  asserts what the plain wheel must do (imports, register map, no pymodbus
+  present, and the built-in transport refusing to build) and then installs the
+  extra and asserts the transport works.
+- **The release-tag glob accepted a tag that can never publish.** It ended in
+  `*`, so `v2.0.0-beta.1` passed and then failed the `pyproject.toml` match,
+  because the build normalises that version to `2.0.0b1`. The check is PEP 440
+  now, like `release.yml`, and the error names the accepted forms.
+
+
 
 ## [2.0.0b1] - 2026-08-25
 
