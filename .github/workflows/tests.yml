@@ -111,7 +111,7 @@ jobs:
           # release's exception hierarchy. main still speaks pymodbus and
           # cannot pass against 2.0.0 - pointing at it here would report a
           # break that is expected rather than a regression. Flip back to
-          # `main` once Xerolux/idm-heatpump-hass#254 is merged.
+          # `main` once Xerolux/idm-heatpump-hass#255 is merged.
           ref: claude/idm-heatpump-0.16.0
           path: integration-contract
 
