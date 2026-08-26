@@ -12,6 +12,12 @@ changelog is history. Everything from `2.0.0b1` on is English.
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-08-26
+
+Stable release of the `2.0` line after validation of `2.0.0b1` with Home
+Assistant integration `0.16.0-beta.1`. There are no register-map, encoding,
+write-safety or wire-protocol changes from the beta.
+
 ### Changed
 
 - **The contract tests point at the integration's `main` again.** They were
@@ -41,6 +47,11 @@ changelog is history. Everything from `2.0.0b1` on is English.
 
 ### Documentation
 
+- **The retry and transport documentation now consistently uses the public
+  `2.0` exception hierarchy.** Caller-supplied transports raise
+  `IdmConnectionError`, `IdmTransportError`, `IdmDeviceError` or
+  `IllegalAddressError`; only the optional built-in transport deals with
+  pymodbus exceptions internally.
 - **The install instructions pointed at a package that cannot run the examples
   next to them.** `README.md`, `docs/Home.md` and
   `docs/Installation-and-Setup.md` all showed `pip install idm-heatpump-api`

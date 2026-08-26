@@ -69,10 +69,10 @@ working register.
 - `TimeoutError` (including `asyncio.TimeoutError`) is treated as a retryable
   transport error — a slow or unresponsive controller no longer bypasses the
   retry loop.
-- pymodbus `ModbusIOException` no-response failures are treated as connection
-  failures: the potentially stale TCP socket is closed, a reconnect is
-  attempted, and the interrupted request is retried instead of reusing a dead
-  session.
+- `IdmConnectionError` and no-response `IdmTransportError` failures mark the
+  connection as suspect: the potentially stale TCP socket is closed, a
+  reconnect is attempted, and the interrupted request is retried instead of
+  reusing a dead session.
 - Exhausted transport and no-response failures from grouped and individual
   fallback reads are propagated rather than treated as register-specific
   errors, so valid registers are not disabled.
