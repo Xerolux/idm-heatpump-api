@@ -462,8 +462,8 @@ class IdmModbusClient:
         self._last_error_context: ModbusErrorContext | None = None
         self._eeprom_write_interval = DEFAULT_EEPROM_WRITE_INTERVAL
         self._time = time.monotonic
-        # Set to True after any IO failure (ConnectionException,
-        # ModbusIOException, or OSError). The
+        # Set to True after any connection/transport failure
+        # (IdmConnectionError, IdmTransportError, OSError, or TimeoutError). The
         # next _ensure_connected() then closes the (possibly half-open) socket
         # and reconnects hard, instead of trusting pymodbus's .connected flag
         # which stays True after the remote end silently drops the TCP link.
@@ -638,11 +638,10 @@ class IdmModbusClient:
                     self._connection_suspect = False
                     return result
                 except _TRANSPORT_ERRORS as err:
-                    # ``ModbusIOException`` is pymodbus's timeout/no-response
-                    # exception. Although it derives from ModbusException, it
-                    # means the TCP session may be stale just like a socket
-                    # reset, so it must use the hard-reconnect path rather
-                    # than retrying on the same connection.
+                    # A connection or no-response transport failure means the
+                    # TCP session may be stale just like a socket reset, so it
+                    # must use the hard-reconnect path rather than retrying on
+                    # the same connection.
                     self._connection_suspect = True
                     self._record_error_context(
                         operation,

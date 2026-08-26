@@ -25,9 +25,9 @@ device-side failures should be raised as :class:`IdmDeviceError`
 :class:`TimeoutError`; transient codes 5/6/10/11 belong to the retry-in-place
 path and must never be classified as an unsupported individual register.
 
-Until 2.0.0 the library types also inherit from their pymodbus counterparts, so
-a transport still raising ``ModbusException``/``ConnectionException`` keeps
-working. New transports should raise the library types (see issue #85).
+Since 2.0.0 the library exception hierarchy is independent from pymodbus.
+Caller-supplied transports must raise the library types above; the built-in
+pymodbus adapter translates backend failures at this boundary (see issue #85).
 """
 
 from __future__ import annotations

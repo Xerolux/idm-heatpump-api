@@ -66,9 +66,9 @@ connection, trigger a fresh one immediately:
 await client.force_reconnect()
 ```
 
-The library also sets `connection_suspect=True` on dead sessions (no-response
-`ModbusIOException`) and automatically closes/reopens the socket on the next
-retry.
+The library also sets `connection_suspect=True` after `IdmConnectionError` or a
+no-response `IdmTransportError` and automatically closes/reopens the socket on
+the next retry.
 
 ---
 
