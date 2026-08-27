@@ -204,6 +204,12 @@
       "hass_integration_version": "0.16.0-beta.1",
       "status": "api-prepared",
       "notes": "Breaking: library-owned exception hierarchy (IdmModbusError and subclasses), pymodbus moved to the optional [pymodbus] extra, IdmDeviceError.exception_code added. First beta of the 2.0.0 line, pinned by integration 0.16.0-beta.1 as idm-heatpump-api[web]==2.0.0b1; 0.15.1 stays pinned to 1.0.3. The API version is PEP 440 (2.0.0b1) and the integration version is SemVer (0.16.0-beta.1) on purpose: pip resolves the former, HACS reads the latter."
+    },
+    {
+      "api_version": "2.0.0",
+      "hass_integration_version": "0.16.0-rc.1",
+      "status": "api-prepared",
+      "notes": "Stable release of the 2.0 line after validation of 2.0.0b1 with integration 0.16.0-beta.1. No register-map, encoding, write-safety or wire-protocol changes from the beta: the release fixed the workflow smoke check that stopped either release workflow from shipping a 2.x wheel, and pointed the contract tests back at the integration's main. First pinned by integration 0.16.0-rc.1 as idm-heatpump-api[web]==2.0.0."
     }
   ]
 }
