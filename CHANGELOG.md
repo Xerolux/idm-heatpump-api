@@ -14,6 +14,24 @@ changelog is history. Everything from `2.0.0b1` on is English.
 
 ### Fixed
 
+- **`supported_models` claimed Navigator 2.0 / Pro support for the 33
+  Navigator-10-only registers.** `build_register_map` withholds the heat-sink,
+  groundwater, additional-fault, external-pump-demand, power-limit and booster
+  blocks from every model but Navigator 10 (the others answer Illegal Data
+  Address), yet each of those registers kept the all-models default, so
+  `to_schema()` and `tests/fixtures/register_schema_v1.json` exported
+  metadata that contradicted the map they came from. They declare
+  `("Navigator 10",)` now; the snapshot is regenerated. No address, datatype,
+  size, function code or gate changed.
+- **`compressor_status_3` / `_4` had no binary metadata.** 1100-1103 are
+  documented identically and all four are `binary=True`, but only 1 and 2 were
+  listed, so `get_binary_register_metadata()` returned `None` for 3 and 4 and
+  a consumer fell back to name heuristics. All four map to `running`.
+- **`docs/Modbus-Register.md` documented humidity 1392 as `UCHAR`.** The
+  official tables, `docs/Register-Map-Invariants.md` and the code all say
+  `FLOAT` (two registers, range 0..100, overlapping `hc_a_mode` at 1393 by
+  design). The row is corrected and a test now checks every base-table row's
+  datatype and range against the code, not only the heating-circuit rows.
 - **Navigator 10 web: `timeout` did not bound the WebSocket connect.** The
   float passed to `ws_connect(timeout=...)` is aiohttp's *close* timeout
   (3.10+ spells it `ClientWSTimeout(ws_close=...)` and warned on every

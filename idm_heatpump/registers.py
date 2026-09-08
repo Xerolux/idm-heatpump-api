@@ -18,7 +18,7 @@ FLOAT encoding: IEEE 754, 32-bit, 2 registers, Low word first (Reg_L then Reg_H)
 from __future__ import annotations
 
 import functools
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from .client import DataType, IdmModelInfo, RegisterDef
@@ -1598,6 +1598,19 @@ def get_detection_registers() -> list[RegisterDef]:
     return regs
 
 
+def _navigator_10_only(registers: dict[str, RegisterDef]) -> dict[str, RegisterDef]:
+    """Stamp a block that ``build_register_map`` includes for Navigator 10 only.
+
+    The builder excludes these blocks for every other detected model because
+    those controllers answer the addresses with Illegal Data Address, so the
+    per-register ``supported_models`` metadata has to say the same thing
+    instead of the all-models default.
+    """
+    return {
+        key: replace(reg, supported_models=(MODEL_NAVIGATOR_10,)) for key, reg in registers.items()
+    }
+
+
 def _build_register_map_impl(
     model_info: IdmModelInfo | None,
     circuits: list[str] | None,
@@ -1629,12 +1642,12 @@ def _build_register_map_impl(
     # older controllers: they respond with Modbus "Illegal Data Address".
     include_navigator_10 = model_info is None or model_info.model_name == MODEL_NAVIGATOR_10
     if include_navigator_10:
-        all_regs.update(_heat_sink_registers())
-        all_regs.update(_groundwater_registers())
-        all_regs.update(_additional_fault_registers())
-        all_regs.update(_external_pump_demand_registers())
-        all_regs.update(_power_limit_registers())
-        all_regs.update(_booster_registers())
+        all_regs.update(_navigator_10_only(_heat_sink_registers()))
+        all_regs.update(_navigator_10_only(_groundwater_registers()))
+        all_regs.update(_navigator_10_only(_additional_fault_registers()))
+        all_regs.update(_navigator_10_only(_external_pump_demand_registers()))
+        all_regs.update(_navigator_10_only(_power_limit_registers()))
+        all_regs.update(_navigator_10_only(_booster_registers()))
 
     active_circuits: list[str]
     num_zones: int

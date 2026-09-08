@@ -68,3 +68,10 @@ def test_custom_active_low_and_bitmask_metadata() -> None:
     assert metadata.bitmask == 4
     assert metadata.inverted is True
     assert metadata.device_class == "lock"
+
+
+@pytest.mark.parametrize("name", ["compressor_status_3", "compressor_status_4"])
+def test_all_four_compressor_status_registers_share_metadata(name: str) -> None:
+    """1100-1103 are documented identically; 3 and 4 had no explicit semantics."""
+    assert _metadata(name).device_class == "running"
+    assert _metadata(name) == _metadata("compressor_status_1")

@@ -128,7 +128,7 @@ documentation (as of 2025-06-18, software NAV10_20.23-903.iup / T_NAV10_20.23-13
 | 1386 | `hc_e_setpoint_flow_temp` | FLOAT | RO | °C |  |  |
 | 1388 | `hc_f_setpoint_flow_temp` | FLOAT | RO | °C |  |  |
 | 1390 | `hc_g_setpoint_flow_temp` | FLOAT | RO | °C |  |  |
-| 1392 | `humidity_sensor` | UCHAR | RO | % |  |  |
+| 1392 | `humidity_sensor` | FLOAT | RO | % | 0..100 | 2 registers (1392–1393); overlaps `hc_a_mode` at 1393 by design, read as `1392/count=2` |
 | 1393 | `hc_a_mode` | UCHAR | RW | - | 0..5 | EEPROM, 0=Off; 1=Time Program; 2=Normal; 3=Eco; 4=Manual Heat; 5=Manual Cool; 255=Not configured / Unavailable |
 | 1394 | `hc_b_mode` | UCHAR | RW | - | 0..5 | EEPROM, 0=Off; 1=Time Program; 2=Normal; 3=Eco; 4=Manual Heat; 5=Manual Cool; 255=Not configured / Unavailable |
 | 1395 | `hc_c_mode` | UCHAR | RW | - | 0..5 | EEPROM, 0=Off; 1=Time Program; 2=Normal; 3=Eco; 4=Manual Heat; 5=Manual Cool; 255=Not configured / Unavailable |

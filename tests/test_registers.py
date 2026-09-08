@@ -661,3 +661,37 @@ def test_register_registry_provides_key_address_and_schema_lookups() -> None:
     system_mode_schema = next(item for item in schema if item["key"] == "system_mode")
     assert system_mode_schema["datatype"] == "UCHAR"
     assert system_mode_schema["writable"] is True
+
+
+def test_navigator_10_only_blocks_declare_only_navigator_10() -> None:
+    """Blocks the builder withholds from other models must say so in their metadata.
+
+    ``supported_models`` defaulted to all three models even for the registers
+    that ``build_register_map`` drops for Navigator 2.0 / Pro because those
+    controllers reject the addresses, so the exported schema contradicted the
+    map it was exported from.
+    """
+    common = dict(
+        active_heating_circuits=list("ABCDEFG"),
+        zone_modules=0,
+        has_solar=True,
+        has_isc=True,
+        has_pv=True,
+        has_cascade=True,
+    )
+    nav10 = build_register_map(model_info=IdmModelInfo(model_name=MODEL_NAVIGATOR_10, **common))
+    nav20 = build_register_map(model_info=IdmModelInfo(model_name=MODEL_NAVIGATOR_20, **common))
+
+    navigator_10_only = set(nav10) - set(nav20)
+    assert navigator_10_only, "expected Navigator-10-only blocks in the map"
+    assert {"power_limit_hp", "booster_fault", "heat_sink_flow_rate"} <= navigator_10_only
+
+    for name in navigator_10_only:
+        assert nav10[name].supported_models == (MODEL_NAVIGATOR_10,), name
+    for name, reg in nav20.items():
+        assert MODEL_NAVIGATOR_20 in reg.supported_models, name
+
+    # The default map (no detection data) carries the same stamps.
+    default = build_register_map()
+    for name in navigator_10_only:
+        assert default[name].supported_models == (MODEL_NAVIGATOR_10,), name
