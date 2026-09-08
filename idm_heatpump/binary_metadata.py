@@ -51,6 +51,8 @@ BINARY_REGISTER_METADATA: dict[str, BinaryRegisterMetadata] = {
     "hp_sum_alarm": _metadata("problem"),
     "compressor_status_1": _metadata("running"),
     "compressor_status_2": _metadata("running"),
+    "compressor_status_3": _metadata("running"),
+    "compressor_status_4": _metadata("running"),
 }
 
 _ZONE_ROOM_RELAY = re.compile(r"^zm\d+_room\d+_relay$")

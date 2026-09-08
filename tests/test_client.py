@@ -27,8 +27,10 @@ from idm_heatpump.const import (
     MODEL_NAVIGATOR_20,
     MODEL_UNKNOWN,
 )
-from idm_heatpump.exceptions import IdmDeviceError
+from idm_heatpump.exceptions import IdmConnectionError, IdmDeviceError
 from idm_heatpump.transport import quiet_pymodbus_logging
+
+from .fake_modbus import FakeModbusTransport
 
 
 class ProbeOnlyClient(IdmModbusClient):
@@ -1079,3 +1081,34 @@ def test_reset_failed_registers_clears_unsupported_set() -> None:
     client.reset_failed_registers()
 
     assert client.get_unsupported_registers() == ()
+
+
+class _DyingTransport(FakeModbusTransport):
+    """Answers the first probe, then behaves like a link that went away."""
+
+    def __init__(self) -> None:
+        super().__init__(input_registers={1350: 0, 1351: 16968})
+        self.successful_reads = 0
+
+    async def _read(self, kind: str, registers: dict[int, int], address: int, count: int) -> Any:
+        if self.successful_reads >= 1:
+            self.read_calls.append((kind, address, count))
+            raise IdmConnectionError("link lost")
+        self.successful_reads += 1
+        return await super()._read(kind, registers, address, count)
+
+
+def test_detect_model_raises_when_the_link_dies_mid_detection() -> None:
+    """A link that dies after the first probe must not yield a confident, wrong model.
+
+    Every probe turns a transport failure into "register not implemented", so
+    without this guard a Navigator 10 with several circuits was reported as a
+    bare Navigator 2.0 with circuit A only.
+    """
+    transport = _DyingTransport()
+    client = IdmModbusClient("127.0.0.1", max_retries=1, transport=transport)
+
+    with pytest.raises(IdmConnectionError, match="model detection"):
+        asyncio.run(client.detect_model())
+
+    assert client.model_info is None

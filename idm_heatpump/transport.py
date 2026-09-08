@@ -38,6 +38,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from .exceptions import (
     IdmConnectionError,
     IdmDeviceError,
+    IdmModbusError,
     IdmTransportError,
     IllegalAddressError,
 )
@@ -235,6 +236,35 @@ def create_pymodbus_transport(
     )
 
 
+def _translate_pymodbus_error(
+    err: BaseException, *, operation: str, address: int | None
+) -> IdmModbusError | None:
+    """Map an exception *raised* by pymodbus onto the library hierarchy.
+
+    :func:`check_transport_response` covers failures pymodbus reports as a
+    response object. pymodbus raises for the rest: ``ModbusIOException`` for
+    a request that got no answer (timeout, cancelled request, short frame)
+    and ``ConnectionException`` for a link that is not up any more. Both
+    inherit from ``ModbusException`` only, so without this translation they
+    escape the client's retry and reconnect loop, ``probe_register`` and
+    ``detect_model`` as foreign exception types. Returns ``None`` for any
+    exception that is not a pymodbus one, so the caller can re-raise it.
+    """
+    try:
+        from pymodbus.exceptions import ConnectionException, ModbusException, ModbusIOException
+    except ImportError:  # pragma: no cover - the adapter only runs with pymodbus
+        return None
+
+    where = f" at address {address}" if address is not None else ""
+    if isinstance(err, ConnectionException):
+        return IdmConnectionError(f"Connection lost while {operation}{where}: {err}")
+    if isinstance(err, ModbusIOException):
+        return IdmTransportError(f"No usable Modbus response while {operation}{where}: {err}")
+    if isinstance(err, ModbusException):
+        return IdmTransportError(f"Modbus {operation} failed{where}: {err}")
+    return None
+
+
 class _PymodbusTransport:
     """Default :class:`IdmModbusTransport` backed by Pymodbus TCP.
 
@@ -277,6 +307,12 @@ class _PymodbusTransport:
         """Open the Pymodbus TCP connection or raise :class:`IdmConnectionError`."""
         if self._client is not None and self._client.connected:
             return
+        if self._client is not None:
+            # A client that lost its link keeps a reconnect task of its own
+            # (``reconnect_delay`` above). Releasing it without ``close()``
+            # leaves that task running: it would re-open a second TCP session
+            # to the controller that nothing owns and ``close()`` never ends.
+            self._close_client()
         client_cls = _require_pymodbus()
         self._client = client_cls(
             host=self._host,
@@ -286,16 +322,35 @@ class _PymodbusTransport:
             reconnect_delay=_PMODBUS_RECONNECT_DELAY,
             reconnect_delay_max=_PMODBUS_RECONNECT_DELAY_MAX,
         )
-        if not await self._client.connect():
-            self._client = None
+        try:
+            connected = await self._client.connect()
+        except Exception as err:
+            translated = _translate_pymodbus_error(err, operation="connecting", address=None)
+            if translated is None:
+                raise
+            self._close_client()
+            raise IdmConnectionError(
+                f"Failed to connect to {self._host}:{self._port}: {err}"
+            ) from err
+        if not connected:
+            self._close_client()
             raise IdmConnectionError(f"Failed to connect to {self._host}:{self._port}")
         _LOGGER.debug("Connected to %s:%s", self._host, self._port)
 
     async def close(self) -> None:
         if self._client is not None:
-            self._client.close()
-            self._client = None
+            self._close_client()
             _LOGGER.debug("Disconnected from %s:%s", self._host, self._port)
+
+    def _close_client(self) -> None:
+        """Close and drop the pymodbus client, tolerating a client already gone."""
+        client, self._client = self._client, None
+        if client is None:
+            return
+        try:
+            client.close()
+        except Exception:  # noqa: BLE001 - the client is discarded either way
+            _LOGGER.debug("Ignoring error while closing pymodbus client", exc_info=True)
 
     async def read_input_registers(self, *, address: int, count: int) -> list[int]:
         return await self._read(address, count, holding=False)
@@ -306,11 +361,17 @@ class _PymodbusTransport:
     async def write_registers(self, *, address: int, values: list[int]) -> None:
         client = self._require_client()
         kwargs: Any = {self._slave_param: self._slave_id}
-        result = await client.write_registers(
-            address=address,
-            values=[int(v) for v in values],
-            **kwargs,
-        )
+        try:
+            result = await client.write_registers(
+                address=address,
+                values=[int(v) for v in values],
+                **kwargs,
+            )
+        except Exception as err:
+            translated = _translate_pymodbus_error(err, operation="writing", address=address)
+            if translated is None:
+                raise
+            raise translated from err
         check_transport_response(result, address, operation="writing")
 
     def _require_client(self) -> "AsyncModbusTcpClient":
@@ -321,14 +382,20 @@ class _PymodbusTransport:
     async def _read(self, address: int, count: int, *, holding: bool) -> list[int]:
         client = self._require_client()
         kwargs: Any = {self._slave_param: self._slave_id}
-        if holding:
-            result = await client.read_holding_registers(address=address, count=count, **kwargs)
-        else:
-            result = await client.read_input_registers(address=address, count=count, **kwargs)
-        registers = check_transport_response(result, address, operation="reading")
-        if len(registers) != count:
-            raise IdmTransportError(
-                f"Incomplete Modbus response at address {address}: "
-                f"got {len(registers)} registers, expected {count}"
-            )
-        return registers
+        try:
+            if holding:
+                result = await client.read_holding_registers(address=address, count=count, **kwargs)
+            else:
+                result = await client.read_input_registers(address=address, count=count, **kwargs)
+        except Exception as err:
+            translated = _translate_pymodbus_error(err, operation="reading", address=address)
+            if translated is None:
+                raise
+            raise translated from err
+        # The requested count is validated by the client (``_read_registers``)
+        # for every transport alike, and as a device error on purpose: a short
+        # or shifted batch answer makes the batch reader fall back to single
+        # reads, which isolates the register the firmware mishandles. Checking
+        # it here as a transport error pre-empted that fallback with a
+        # reconnect and failed the whole poll instead.
+        return check_transport_response(result, address, operation="reading")

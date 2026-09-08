@@ -28,12 +28,17 @@ try:
     _AIOHTTP_WS_ERROR: Any = aiohttp.WSMsgType.ERROR
     _AIOHTTP_CLIENT_ERROR: tuple[type[BaseException], ...] = (aiohttp.ClientError,)
     _AIOHTTP_CLIENT_ERROR_CLS: type[BaseException] | None = aiohttp.ClientError
+    # ``ws_connect(timeout=<float>)`` is the *close* timeout in every aiohttp
+    # release (3.10+ spells it ``ClientWSTimeout(ws_close=...)`` and warns on
+    # the float form). Neither bounds the TCP connect or the HTTP upgrade.
+    _AIOHTTP_WS_TIMEOUT_CLS: Any = getattr(aiohttp, "ClientWSTimeout", None)
 except ModuleNotFoundError:
     _AIOHTTP_WS_TEXT = None
     _AIOHTTP_WS_CLOSED = None
     _AIOHTTP_WS_ERROR = None
     _AIOHTTP_CLIENT_ERROR = ()
     _AIOHTTP_CLIENT_ERROR_CLS = None
+    _AIOHTTP_WS_TIMEOUT_CLS = None
 
 DEFAULT_NAVIGATOR10_PORT = 61220
 DEFAULT_NAVIGATOR10_REQUEST_DELAY = 0.05
@@ -338,6 +343,10 @@ ConnectionError = IdmWebConnectionError
 TimeoutError = IdmWebTimeoutError
 WebSocketError = IdmWebWebSocketError
 ProtocolError = IdmWebProtocolError
+
+# Raised by the HTTP stack itself (as opposed to a response the device sent);
+# _request_text translates these into the IdmWebError tree.
+_NAV2_TRANSPORT_ERRORS: tuple[type[BaseException], ...] = (OSError, *_AIOHTTP_CLIENT_ERROR)
 
 _NAV2_REQUEST_ERRORS: tuple[type[BaseException], ...] = (
     IdmWebError,
@@ -762,6 +771,8 @@ def parse_navigator_setting_response(raw_response: str) -> dict[str, IdmWebValue
     except json.JSONDecodeError as exc:
         raise IdmWebResponseError("Navigator 10 setting response is not valid JSON") from exc
 
+    if not isinstance(payload, dict):
+        raise IdmWebResponseError("Navigator 10 setting response is not a JSON object")
     detail = payload.get("settingDetail")
     if not isinstance(detail, dict):
         raise IdmWebResponseError("Navigator 10 response does not contain settingDetail")
@@ -786,6 +797,8 @@ def parse_navigator_statistic_response(
     except json.JSONDecodeError as exc:
         raise IdmWebResponseError("Navigator 10 statistic response is not valid JSON") from exc
 
+    if not isinstance(payload, dict):
+        raise IdmWebResponseError("Navigator 10 statistic response is not a JSON object")
     detail = payload.get("statisticDetail")
     if not isinstance(detail, dict):
         raise IdmWebResponseError("Navigator 10 response does not contain statisticDetail")
@@ -824,6 +837,8 @@ def parse_navigator_notifications_response(
     except json.JSONDecodeError as exc:
         raise IdmWebResponseError("Navigator 10 notification response is not valid JSON") from exc
 
+    if not isinstance(payload, dict):
+        raise IdmWebResponseError("Navigator 10 notification response is not a JSON object")
     notification = payload.get("notification")
     if not isinstance(notification, dict):
         raise IdmWebResponseError("Navigator 10 response does not contain notification")
@@ -925,6 +940,7 @@ class IdmNavigator10WebClient:
         self._last_reconnect_monotonic: float | None = None
         self._reconnect_attempts = 0
         self._cached_data: IdmWebData | None = None
+        self._closed = False
         self._lock = asyncio.Lock()
 
     @property
@@ -949,9 +965,14 @@ class IdmNavigator10WebClient:
 
     async def connect(self) -> None:
         async with self._lock:
+            # An explicit connect() re-opens a client that was closed; only
+            # the reconnect loop must refuse to run after close().
+            self._closed = False
             await self._connect_unlocked()
 
     async def _connect_unlocked(self) -> None:
+        if self._closed:
+            raise IdmWebConnectionError("Navigator 10 web client is closed")
         if self._ws is not None:
             if not self._websocket_closed(self._ws):
                 return
@@ -963,24 +984,40 @@ class IdmNavigator10WebClient:
 
         encoded_pin = quote(self._pin, safe="")
         url = f"ws://{self._url_host}:{self._port}/?auth_code={encoded_pin}"
+        ws_timeout: Any = (
+            _AIOHTTP_WS_TIMEOUT_CLS(ws_close=self._timeout)
+            if _AIOHTTP_WS_TIMEOUT_CLS is not None
+            else self._timeout
+        )
         try:
-            self._ws = await self._session.ws_connect(url, timeout=self._timeout)
-            auth = await self._receive_text()
+            # ``asyncio.timeout`` is what actually bounds the TCP connect, the
+            # HTTP upgrade and the authorization frame; the aiohttp timeout
+            # only governs the close handshake.
+            async with asyncio.timeout(self._timeout):
+                self._ws = await self._session.ws_connect(url, timeout=ws_timeout)
+                auth = await self._receive_text()
         except builtins.TimeoutError as exc:
             self._last_error = "Navigator 10 websocket connection timed out"
-            await self.close()
+            await self._close_unlocked()
             raise IdmWebTimeoutError(self._last_error) from exc
         except OSError as exc:
             self._last_error = f"Navigator 10 websocket connection failed: {type(exc).__name__}"
-            await self.close()
+            await self._close_unlocked()
+            raise IdmWebConnectionError(self._last_error) from exc
+        except _AIOHTTP_CLIENT_ERROR as exc:
+            # WSServerHandshakeError (no 101: wrong port, HTTP frontend, a
+            # firmware answering the auth_code with a status) and
+            # ServerDisconnectedError are ClientError but not OSError.
+            self._last_error = f"Navigator 10 websocket handshake failed: {type(exc).__name__}"
+            await self._close_unlocked()
             raise IdmWebConnectionError(self._last_error) from exc
         except Exception:
             self._last_error = "Navigator 10 websocket connection failed"
-            await self.close()
+            await self._close_unlocked()
             raise
         has_key, authorized = _parse_auth_response(auth)
         if not (has_key and authorized is True):
-            await self.close()
+            await self._close_unlocked()
             if has_key and authorized is False:
                 self._last_error = "Navigator 10 rejected the PIN"
                 raise IdmWebPinRejectedError(self._last_error)
@@ -990,6 +1027,13 @@ class IdmNavigator10WebClient:
         self._last_error = None
 
     async def close(self) -> None:
+        # Set before touching the websocket: closing it fails the request that
+        # may be in flight under the lock, and that request must not reconnect
+        # (which would leave a websocket and an owned session nobody closes).
+        self._closed = True
+        await self._close_unlocked()
+
+    async def _close_unlocked(self) -> None:
         if self._ws is not None:
             try:
                 await self._ws.close()
@@ -1086,14 +1130,22 @@ class IdmNavigator10WebClient:
             except IdmWebAuthenticationError:
                 raise
             except _NAV10_RECOVERABLE_ERRORS as exc:
+                if self._closed:
+                    raise IdmWebWebSocketError(
+                        "Navigator 10 web client was closed during the request"
+                    ) from exc
                 self._last_error = f"Navigator 10 websocket request failed: {type(exc).__name__}"
             delay = self._reconnect_base_delay
             last_exc: BaseException | None = None
             for attempt in range(1, self._max_reconnect_attempts + 1):
+                if self._closed:
+                    raise IdmWebWebSocketError(
+                        "Navigator 10 web client was closed during the request"
+                    ) from last_exc
                 self._reconnect_attempts = attempt
                 self._last_reconnect_monotonic = time.monotonic()
                 try:
-                    await self.close()
+                    await self._close_unlocked()
                     if delay:
                         await asyncio.sleep(min(delay, self._reconnect_max_delay))
                         delay = min(delay * 2, self._reconnect_max_delay)
@@ -1102,7 +1154,7 @@ class IdmNavigator10WebClient:
                     self._reconnect_attempts = 0
                     return result
                 except IdmWebAuthenticationError:
-                    await self.close()
+                    await self._close_unlocked()
                     raise
                 except _NAV10_RECONNECT_ERRORS as exc:
                     last_exc = exc
@@ -1187,6 +1239,7 @@ class IdmNavigator20WebClient:
         self._data_paths: tuple[str, ...] = ()
         self._probe_responses: dict[str, str] = {}
         self._login_form_returned = False
+        self._auth_error: IdmWebAuthenticationError | None = None
         self._last_success_monotonic: float | None = None
         self._last_error: str | None = None
         self._cached_data: IdmWebData | None = None
@@ -1238,6 +1291,12 @@ class IdmNavigator20WebClient:
                 self._probe_responses.clear()
                 paths = await self._probe_data_endpoints(DEFAULT_NAVIGATOR20_PATHS)
                 if not paths:
+                    if self._auth_error is not None:
+                        # A firmware that answers with HTTP 401/403 already
+                        # named the cause; do not downgrade it to "detection
+                        # failed" or to the generic login-form message.
+                        self._last_error = str(self._auth_error)
+                        raise self._auth_error
                     if self._login_form_returned:
                         raise IdmWebAuthenticationError(
                             "NAV2 web login failed: PIN rejected or login form returned again"
@@ -1259,6 +1318,7 @@ class IdmNavigator20WebClient:
         self._data_paths = ()
         self._probe_responses.clear()
         self._login_form_returned = False
+        self._auth_error = None
         if self._own_session and self._session is not None:
             try:
                 await self._session.close()
@@ -1286,36 +1346,56 @@ class IdmNavigator20WebClient:
         values: dict[str, IdmWebValue] = {}
         raw_responses: dict[str, str] = {}
         csrf_retried = False
+        auth_retried = False
         # Caller may pass a subset of paths; intersect with the endpoints that
         # were confirmed during login. Fall back to all confirmed endpoints when
         # the caller's subset does not overlap the detected paths.
         selected_paths = tuple(p for p in paths if p in self._data_paths) or self._data_paths
         try:
             for path in selected_paths:
-                try:
-                    text = self._probe_responses.pop(path, None) if use_probe_responses else None
-                    if text is None:
-                        text = await self._request_text("GET", path)
-                except IdmWebCsrfError:
-                    if csrf_retried:
-                        raise
-                    _LOGGER.debug(
-                        "NAV2 CSRF token rejected while reading %s, attempting one re-login", path
-                    )
-                    self._csrf_token = None
-                    await self.login()
-                    csrf_retried = True
-                    use_probe_responses = True
-                    text = self._probe_responses.pop(path, None)
-                    if text is None:
-                        text = await self._request_text("GET", path)
-                if "invalid csrf token" in text.lower():
-                    self._csrf_token = None
-                    raise IdmWebCsrfError("Navigator 2.0 CSRF token was rejected")
-                if _looks_like_auth_failure(text) or _looks_like_login_page(text):
-                    raise IdmWebAuthenticationError(
-                        f"NAV2 endpoint {path} returned an authentication response instead of data"
-                    )
+                while True:
+                    try:
+                        text = (
+                            self._probe_responses.pop(path, None) if use_probe_responses else None
+                        )
+                        if text is None:
+                            text = await self._request_text("GET", path)
+                    except IdmWebCsrfError:
+                        if csrf_retried:
+                            raise
+                        _LOGGER.debug(
+                            "NAV2 CSRF token rejected while reading %s, attempting one re-login",
+                            path,
+                        )
+                        self._csrf_token = None
+                        await self.login()
+                        csrf_retried = True
+                        use_probe_responses = True
+                        continue
+                    if "invalid csrf token" in text.lower():
+                        self._csrf_token = None
+                        raise IdmWebCsrfError("Navigator 2.0 CSRF token was rejected")
+                    if _looks_like_auth_failure(text) or _looks_like_login_page(text):
+                        if auth_retried:
+                            raise IdmWebAuthenticationError(
+                                f"NAV2 endpoint {path} returned an authentication response "
+                                "instead of data"
+                            )
+                        # The session cookie expired or the controller rebooted:
+                        # the endpoint serves its login page again. Log in once
+                        # more instead of reporting a rejected PIN on every poll
+                        # until the consumer restarts.
+                        _LOGGER.debug(
+                            "NAV2 endpoint %s returned the login page, attempting one re-login",
+                            path,
+                        )
+                        self._data_paths = ()
+                        self._csrf_token = None
+                        await self.login()
+                        auth_retried = True
+                        use_probe_responses = True
+                        continue
+                    break
                 if include_raw:
                     raw_responses[path] = text
                 values.update(parse_idm_html_table_values(text))
@@ -1378,6 +1458,7 @@ class IdmNavigator20WebClient:
     async def _try_login(self) -> None:
         fields = ("pin", "PIN", "password", "pass")
         self._login_form_returned = False
+        self._auth_error = None
         _LOGGER.debug(
             "NAV2 starting login handshake for %s (csrf_token present: %s)",
             self._host,
@@ -1393,6 +1474,18 @@ class IdmNavigator20WebClient:
                     text = await self._request_text(
                         "POST", path, data=data, require_ok=False, include_csrf=False
                     )
+                except IdmWebAuthenticationError as exc:
+                    # HTTP 401/403: the device named the cause. Remember it so
+                    # login() can raise it instead of a generic detection error.
+                    _LOGGER.debug(
+                        "NAV2 login variant %s with field %s was rejected: %s",
+                        path,
+                        field_name,
+                        type(exc).__name__,
+                    )
+                    self._login_form_returned = True
+                    self._auth_error = exc
+                    continue
                 except _NAV2_REQUEST_ERRORS as exc:
                     _LOGGER.debug(
                         "NAV2 login variant %s with field %s failed: %s",
@@ -1429,6 +1522,11 @@ class IdmNavigator20WebClient:
         for path in paths:
             try:
                 text = await self._request_text("GET", path, require_ok=False)
+            except IdmWebAuthenticationError as exc:
+                _LOGGER.debug("NAV2 endpoint %s rejected the session: %s", path, type(exc).__name__)
+                self._login_form_returned = True
+                self._auth_error = exc
+                continue
             except _NAV2_REQUEST_ERRORS:
                 _LOGGER.debug("NAV2 endpoint %s is not reachable", path)
                 continue
@@ -1463,18 +1561,29 @@ class IdmNavigator20WebClient:
             headers["X-CSRF-Token"] = self._csrf_token
             headers["X-CSRFToken"] = self._csrf_token
         url = f"http://{self._url_host}{path}"
-        async with self._session.request(
-            method,
-            url,
-            data=data,
-            headers=headers,
-            timeout=self._timeout,
-        ) as response:
-            text = str(await response.text())
-            if response.status in (401, 403):
-                raise IdmWebPinRejectedError("Navigator 2.0 rejected the PIN or session")
-            if "invalid csrf token" in text.lower():
-                raise IdmWebCsrfError("Navigator 2.0 CSRF token was rejected")
-            if require_ok and response.status != 200:
-                raise IdmWebResponseError(f"Navigator 2.0 {path} returned HTTP {response.status}")
-            return text
+        try:
+            async with self._session.request(
+                method,
+                url,
+                data=data,
+                headers=headers,
+                timeout=self._timeout,
+            ) as response:
+                text = str(await response.text())
+                if response.status in (401, 403):
+                    raise IdmWebPinRejectedError("Navigator 2.0 rejected the PIN or session")
+                if "invalid csrf token" in text.lower():
+                    raise IdmWebCsrfError("Navigator 2.0 CSRF token was rejected")
+                if require_ok and response.status != 200:
+                    raise IdmWebResponseError(
+                        f"Navigator 2.0 {path} returned HTTP {response.status}"
+                    )
+                return text
+        except builtins.TimeoutError as exc:
+            # Only login() wrapped these before; a poll after login let the raw
+            # aiohttp / OS error through although the docs promise IdmWebError.
+            self._last_error = f"Navigator 2.0 request {path} timed out"
+            raise IdmWebTimeoutError(self._last_error) from exc
+        except _NAV2_TRANSPORT_ERRORS as exc:
+            self._last_error = f"Navigator 2.0 request {path} failed: {type(exc).__name__}"
+            raise IdmWebConnectionError(self._last_error) from exc

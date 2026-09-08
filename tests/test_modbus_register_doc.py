@@ -124,3 +124,42 @@ def test_patterns_table_base_addresses_match_code() -> None:
             failures.append(f"hc_X_{suffix}: docs step {documented_step}, code step {code_step}")
 
     assert not failures, "patterns table base/step drift:\n  " + "\n  ".join(sorted(failures))
+
+
+_BASE_ROW = re.compile(
+    r"^\| (\d+) \| `([a-z0-9_]+)` \| ([A-Z0-9]+) \| [^|]* \| [^|]* \| ([^|]*) \|"
+)
+
+
+def _documented_base_rows() -> list[tuple[int, str, str, str]]:
+    text = DOCS.read_text(encoding="utf-8")
+    start = text.index("## Base Registers")
+    end = text.index("## Heating Circuits")
+    rows = []
+    for line in text[start:end].splitlines():
+        match = _BASE_ROW.match(line)
+        if match:
+            address, name, datatype, value_range = match.groups()
+            rows.append((int(address), name, datatype, value_range.strip()))
+    assert len(rows) > 200
+    return rows
+
+
+def test_base_table_types_and_ranges_match_code() -> None:
+    """Every documented base register carries the datatype and range the code uses.
+
+    The humidity row (1392) documented ``UCHAR`` while the official tables, the
+    invariants document and the code all say ``FLOAT``: exactly the kind of
+    datatype drift the invariants exist to prevent.
+    """
+    registers = _build_full_map()
+
+    for address, name, datatype, value_range in _documented_base_rows():
+        reg = registers.get(name)
+        assert reg is not None, f"documented register {name} is not in the map"
+        assert reg.address == address, name  # type: ignore[attr-defined]
+        assert reg.datatype.value == datatype, name  # type: ignore[attr-defined]
+        if ".." in value_range:
+            low, high = value_range.split("..", 1)
+            assert reg.min_val == float(low), name  # type: ignore[attr-defined]
+            assert reg.max_val == float(high), name  # type: ignore[attr-defined]

@@ -1095,6 +1095,18 @@ class IdmModbusClient:
             if val is not None:
                 firmware_version = round(val, 2)
 
+        if self._connection_suspect:
+            # Every probe reports a failed read as "register not implemented"
+            # (``probe_register`` returns None for transport errors too), so a
+            # link that died half-way through would otherwise yield a confident
+            # and wrong result: fewer circuits, no features, the older model.
+            # ``_connection_suspect`` is still set when the last transport
+            # failure was not followed by a successful read.
+            raise IdmConnectionError(
+                "Connection lost during model detection; the result would treat "
+                "every unanswered probe as an unsupported register"
+            )
+
         info = IdmModelInfo(
             model_name=model_name,
             active_heating_circuits=active_circuits,

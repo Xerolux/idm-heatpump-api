@@ -391,3 +391,214 @@ def _swap_transport_factory(client: IdmModbusClient, new_transport: FakeModbusTr
         new_transport.connected = True
 
     return fake_connect
+
+
+# ---------------------------------------------------------------------------
+# Built-in pymodbus adapter: raised backend errors and client lifecycle
+# ---------------------------------------------------------------------------
+
+
+class _StubPymodbusClient:
+    """Stand-in for ``AsyncModbusTcpClient`` that raises or answers on demand."""
+
+    def __init__(
+        self,
+        *,
+        raise_on_read: BaseException | None = None,
+        raise_on_write: BaseException | None = None,
+        registers: list[int] | None = None,
+        connect_result: bool = True,
+        **_: Any,
+    ) -> None:
+        self.connected = False
+        self.connect_result = connect_result
+        self.raise_on_read = raise_on_read
+        self.raise_on_write = raise_on_write
+        self.registers = registers if registers is not None else []
+        self.close_calls = 0
+        self.read_calls: list[tuple[int, int]] = []
+
+    async def connect(self) -> bool:
+        self.connected = self.connect_result
+        return self.connect_result
+
+    def close(self) -> None:
+        self.connected = False
+        self.close_calls += 1
+
+    async def read_input_registers(self, *, address: int, count: int, **_: Any) -> Any:
+        self.read_calls.append((address, count))
+        if self.raise_on_read is not None:
+            raise self.raise_on_read
+        return _StubResponse(self.registers)
+
+    async def read_holding_registers(self, *, address: int, count: int, **_: Any) -> Any:
+        return await self.read_input_registers(address=address, count=count)
+
+    async def write_registers(self, *, address: int, values: list[int], **_: Any) -> Any:
+        if self.raise_on_write is not None:
+            raise self.raise_on_write
+        return _StubResponse([])
+
+
+class _StubResponse:
+    def __init__(self, registers: list[int]) -> None:
+        self.registers = registers
+
+    def isError(self) -> bool:  # noqa: N802 - pymodbus API name
+        return False
+
+
+def _pymodbus_transport_with(client: Any) -> _PymodbusTransport:
+    transport = _PymodbusTransport(
+        host="127.0.0.1", port=502, timeout=1.0, retries=0, slave_id=1, slave_param="slave"
+    )
+    transport._client = client
+    return transport
+
+
+@pytest.mark.parametrize(
+    ("raised", "expected"),
+    [
+        ("ModbusIOException", IdmTransportError),
+        ("ConnectionException", IdmConnectionError),
+        ("ModbusException", IdmTransportError),
+    ],
+)
+def test_pymodbus_transport_translates_raised_read_errors(raised: str, expected: type) -> None:
+    """A timeout or dropped link is *raised* by pymodbus, not returned as a response.
+
+    Without translation the raw ``pymodbus.exceptions`` type escaped the
+    library's retry/reconnect loop, ``probe_register`` and ``detect_model``.
+    """
+    pymodbus_exceptions = pytest.importorskip("pymodbus.exceptions")
+    err = getattr(pymodbus_exceptions, raised)("no response")
+    stub = _StubPymodbusClient(raise_on_read=err)
+    stub.connected = True
+    transport = _pymodbus_transport_with(stub)
+
+    with pytest.raises(expected) as info:
+        asyncio.run(transport.read_input_registers(address=1000, count=2))
+
+    assert info.value.__cause__ is err
+    assert "1000" in str(info.value)
+
+
+def test_pymodbus_transport_translates_raised_write_errors() -> None:
+    pymodbus_exceptions = pytest.importorskip("pymodbus.exceptions")
+    err = pymodbus_exceptions.ModbusIOException("no response")
+    stub = _StubPymodbusClient(raise_on_write=err)
+    stub.connected = True
+    transport = _pymodbus_transport_with(stub)
+
+    with pytest.raises(IdmTransportError) as info:
+        asyncio.run(transport.write_registers(address=1710, values=[1]))
+
+    assert info.value.__cause__ is err
+
+
+def test_pymodbus_transport_leaves_foreign_exceptions_alone() -> None:
+    """Only pymodbus types are translated; anything else stays as-is."""
+    stub = _StubPymodbusClient(raise_on_read=RuntimeError("boom"))
+    stub.connected = True
+    transport = _pymodbus_transport_with(stub)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        asyncio.run(transport.read_input_registers(address=1000, count=1))
+
+
+def test_pymodbus_raised_timeout_goes_through_client_retry_and_reconnect() -> None:
+    """End to end: the raised pymodbus timeout is retried like any transport failure."""
+    pymodbus_exceptions = pytest.importorskip("pymodbus.exceptions")
+    failing = _StubPymodbusClient(
+        raise_on_read=pymodbus_exceptions.ModbusIOException("No response received")
+    )
+    failing.connected = True
+    transport = _pymodbus_transport_with(failing)
+    working = FakeModbusTransport(input_registers={1000: 7})
+    client = IdmModbusClient("127.0.0.1", max_retries=2)
+    client._transport = transport  # type: ignore[assignment]
+    client._connect_internal = _swap_transport_factory(client, working)  # type: ignore[method-assign]
+
+    result = asyncio.run(client._read_registers(1000, 1, RegisterType.INPUT))
+
+    assert result == [7]
+    context = client.get_last_error_context()
+    assert context is not None
+    assert context.error_type == "IdmTransportError"
+    # The hard-reconnect path closed the stale pymodbus client before retrying.
+    assert failing.close_calls == 1
+    assert working.read_calls == [("input", 1000, 1)]
+
+
+def test_pymodbus_transport_closes_stale_client_before_reconnecting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A dropped pymodbus client owns a reconnect task; it must be closed, not orphaned."""
+    created: list[_StubPymodbusClient] = []
+
+    def factory(**kwargs: Any) -> _StubPymodbusClient:
+        stub = _StubPymodbusClient(**kwargs)
+        created.append(stub)
+        return stub
+
+    monkeypatch.setattr("idm_heatpump.transport._require_pymodbus", lambda: factory)
+    transport = _PymodbusTransport(
+        host="127.0.0.1", port=502, timeout=1.0, retries=0, slave_id=1, slave_param="slave"
+    )
+
+    asyncio.run(transport.connect())
+    stale = created[0]
+    stale.connected = False  # the controller dropped the link
+
+    asyncio.run(transport.connect())
+
+    assert len(created) == 2
+    assert stale.close_calls == 1
+    assert transport._client is created[1]
+
+
+def test_pymodbus_transport_closes_client_when_connect_returns_false(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def factory(**kwargs: Any) -> _StubPymodbusClient:
+        return _StubPymodbusClient(connect_result=False, **kwargs)
+
+    monkeypatch.setattr("idm_heatpump.transport._require_pymodbus", lambda: factory)
+    transport = _PymodbusTransport(
+        host="127.0.0.1", port=502, timeout=1.0, retries=0, slave_id=1, slave_param="slave"
+    )
+
+    with pytest.raises(IdmConnectionError):
+        asyncio.run(transport.connect())
+
+    assert transport._client is None
+
+
+def test_pymodbus_transport_short_response_reaches_per_register_fallback() -> None:
+    """A short batch answer is the client's device-error case, not a transport failure.
+
+    The batch reader answers it by falling back to single reads, which isolates
+    the register the firmware mishandles. A transport-level length check
+    pre-empted that with a reconnect and failed the whole poll.
+    """
+
+    class ShortBatchClient(_StubPymodbusClient):
+        async def read_input_registers(self, *, address: int, count: int, **_: Any) -> Any:
+            self.read_calls.append((address, count))
+            if count == 4:
+                return _StubResponse([0, 16968, 0])
+            return _StubResponse([0, 16968][:count])
+
+    stub = ShortBatchClient()
+    stub.connected = True
+    transport = _pymodbus_transport_with(stub)
+
+    # The transport passes the short answer through; the client classifies it.
+    assert asyncio.run(transport.read_input_registers(address=1000, count=4)) == [0, 16968, 0]
+
+    client = IdmModbusClient("127.0.0.1", max_retries=1)
+    client._transport = transport  # type: ignore[assignment]
+    with pytest.raises(IdmDeviceError, match="Incomplete Modbus response"):
+        asyncio.run(client._read_registers(1000, 4, RegisterType.INPUT))
+    assert client._connection_suspect is False

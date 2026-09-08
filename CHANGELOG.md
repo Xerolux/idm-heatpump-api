@@ -12,6 +12,104 @@ changelog is history. Everything from `2.0.0b1` on is English.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`supported_models` claimed Navigator 2.0 / Pro support for the 33
+  Navigator-10-only registers.** `build_register_map` withholds the heat-sink,
+  groundwater, additional-fault, external-pump-demand, power-limit and booster
+  blocks from every model but Navigator 10 (the others answer Illegal Data
+  Address), yet each of those registers kept the all-models default, so
+  `to_schema()` and `tests/fixtures/register_schema_v1.json` exported
+  metadata that contradicted the map they came from. They declare
+  `("Navigator 10",)` now; the snapshot is regenerated. No address, datatype,
+  size, function code or gate changed.
+- **`compressor_status_3` / `_4` had no binary metadata.** 1100-1103 are
+  documented identically and all four are `binary=True`, but only 1 and 2 were
+  listed, so `get_binary_register_metadata()` returned `None` for 3 and 4 and
+  a consumer fell back to name heuristics. All four map to `running`.
+- **`docs/Modbus-Register.md` documented humidity 1392 as `UCHAR`.** The
+  official tables, `docs/Register-Map-Invariants.md` and the code all say
+  `FLOAT` (two registers, range 0..100, overlapping `hc_a_mode` at 1393 by
+  design). The row is corrected and a test now checks every base-table row's
+  datatype and range against the code, not only the heating-circuit rows.
+- **Navigator 10 web: `timeout` did not bound the WebSocket connect.** The
+  float passed to `ws_connect(timeout=...)` is aiohttp's *close* timeout
+  (3.10+ spells it `ClientWSTimeout(ws_close=...)` and warned on every
+  connect). A controller that accepted TCP but never answered the upgrade
+  held `connect()` for aiohttp's session default of 300 s instead of the
+  documented 8 s. The connect, the upgrade and the authorization frame now run
+  under `asyncio.timeout(timeout)`, and the close timeout is passed the way
+  aiohttp wants it.
+- **Navigator 10 web: `close()` during a request re-opened the connection.**
+  Closing the websocket fails the request in flight with the CLOSED frame,
+  which the reconnect loop took for a device-side drop: it opened a new
+  websocket and, on the owned-session path, a new `ClientSession` after
+  `close()` had returned, and nothing ever closed them (a Home Assistant
+  reload while a poll runs). The request now fails with
+  `IdmWebWebSocketError` and does not reconnect; an explicit `connect()`
+  still re-opens the client.
+- **Navigator 10 web: handshake failures escaped as raw aiohttp errors.**
+  `WSServerHandshakeError` (no 101: wrong port, an HTTP frontend, a firmware
+  answering the `auth_code` with a status) and `ServerDisconnectedError` are
+  `ClientError` but not `OSError`, so `connect()` raised them unwrapped where
+  the docs promise `IdmWebError`. They are `IdmWebConnectionError` now.
+- **Navigator 10 web: a non-object JSON reply raised `AttributeError`.** The
+  setting, statistic and notification parsers called `.get()` on whatever
+  `json.loads` returned; `null`, `[]`, a number or a string reached the caller
+  as `AttributeError`. They raise `IdmWebResponseError`.
+- **Navigator 2.0 web: polls after login leaked raw transport errors.** Only
+  the login path translated aiohttp and OS errors; every later `read_data()`
+  raised `ClientConnectorError`, `ServerDisconnectedError`, `OSError` or the
+  bare `TimeoutError`. `IdmWebTimeoutError` was never raised by this client
+  at all. `_request_text` now maps them to `IdmWebTimeoutError` and
+  `IdmWebConnectionError`.
+- **Navigator 2.0 web: HTTP 401/403 on login was reported as a detection
+  failure.** The status mapping to `IdmWebPinRejectedError` existed but every
+  caller reached during `login()` swallowed it, so the consumer got
+  `IdmWebResponseError("NAV2 web detection failed ...")` for a wrong PIN.
+  The authentication error is kept and raised.
+- **Navigator 2.0 web: no recovery after the session expired.** When a data
+  endpoint served the login page again (cookie expired, controller rebooted),
+  `read_data()` raised `IdmWebAuthenticationError` on every poll and never
+  logged in again, so a valid PIN looked permanently rejected until the
+  consumer restarted. It now re-logs in once, mirroring the CSRF retry, and
+  raises only if the endpoint still serves the form.
+- **Errors *raised* by pymodbus escaped the library as pymodbus types.**
+  `check_transport_response` only covered failures pymodbus reports as a
+  response object. A request that got no answer (`ModbusIOException`: timeout,
+  cancelled request, short frame) and a dropped link (`ConnectionException`)
+  are raised instead, and inherit from `ModbusException` only, so they bypassed
+  the retry and reconnect loop, `probe_register()` (documented to return
+  `None`) and `detect_model()`, and reached consumers that catch
+  `IdmModbusError` as foreign exceptions. The built-in transport now
+  translates them: `ConnectionException` to `IdmConnectionError`, every other
+  `ModbusException` to `IdmTransportError`, with the original as `__cause__`.
+- **A dropped pymodbus client was orphaned, not closed, on reconnect.** When
+  the controller closed the idle socket, `connect()` built a second
+  `AsyncModbusTcpClient` and let go of the first without `close()`. The first
+  still owned pymodbus's own reconnect task (`reconnect_delay=0.5`), so it
+  re-opened a TCP session that nothing owned and `disconnect()` never closed:
+  two live connections to the heat pump. The stale client is closed first now.
+- **A short batch answer reconnected instead of isolating the register.** The
+  built-in transport raised `IdmTransportError` for a response shorter than
+  requested, pre-empting the client's central check that deliberately
+  classifies this as `IdmDeviceError` so `read_batch()` falls back to single
+  reads. With the default transport that fallback was unreachable: a firmware
+  that answers one batch short failed every poll with a reconnect. The
+  transport passes the words through and the client classifies them.
+- **`detect_model()` reported a wrong model when the link died mid-way.**
+  Every probe turns a transport failure into "register not implemented", so a
+  Navigator 10 with several circuits, solar and zone modules came back as a
+  bare Navigator 2.0 with circuit A, and was persisted as such. Detection now
+  raises `IdmConnectionError` when the connection is still suspect after the
+  probes.
+- **The `2.0.0` release was missing from `docs/compatibility-matrix.json`.** The
+  contract test `test_hass_compatibility_matrix_covers_current_api_version`
+  requires an entry for the version in `pyproject.toml`, so `pytest` failed on
+  `main` and the `validate` job of `release.yml` would have refused the next
+  release. The entry is added; it records that `2.0.0` is the stable of the
+  line validated as `2.0.0b1` with integration `0.16.0-beta.1`.
+
 ## [2.0.0] - 2026-08-26
 
 Stable release of the `2.0` line after validation of `2.0.0b1` with Home
