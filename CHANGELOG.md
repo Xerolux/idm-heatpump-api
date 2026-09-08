@@ -14,6 +14,35 @@ changelog is history. Everything from `2.0.0b1` on is English.
 
 ### Fixed
 
+- **Errors *raised* by pymodbus escaped the library as pymodbus types.**
+  `check_transport_response` only covered failures pymodbus reports as a
+  response object. A request that got no answer (`ModbusIOException`: timeout,
+  cancelled request, short frame) and a dropped link (`ConnectionException`)
+  are raised instead, and inherit from `ModbusException` only, so they bypassed
+  the retry and reconnect loop, `probe_register()` (documented to return
+  `None`) and `detect_model()`, and reached consumers that catch
+  `IdmModbusError` as foreign exceptions. The built-in transport now
+  translates them: `ConnectionException` to `IdmConnectionError`, every other
+  `ModbusException` to `IdmTransportError`, with the original as `__cause__`.
+- **A dropped pymodbus client was orphaned, not closed, on reconnect.** When
+  the controller closed the idle socket, `connect()` built a second
+  `AsyncModbusTcpClient` and let go of the first without `close()`. The first
+  still owned pymodbus's own reconnect task (`reconnect_delay=0.5`), so it
+  re-opened a TCP session that nothing owned and `disconnect()` never closed:
+  two live connections to the heat pump. The stale client is closed first now.
+- **A short batch answer reconnected instead of isolating the register.** The
+  built-in transport raised `IdmTransportError` for a response shorter than
+  requested, pre-empting the client's central check that deliberately
+  classifies this as `IdmDeviceError` so `read_batch()` falls back to single
+  reads. With the default transport that fallback was unreachable: a firmware
+  that answers one batch short failed every poll with a reconnect. The
+  transport passes the words through and the client classifies them.
+- **`detect_model()` reported a wrong model when the link died mid-way.**
+  Every probe turns a transport failure into "register not implemented", so a
+  Navigator 10 with several circuits, solar and zone modules came back as a
+  bare Navigator 2.0 with circuit A, and was persisted as such. Detection now
+  raises `IdmConnectionError` when the connection is still suspect after the
+  probes.
 - **The `2.0.0` release was missing from `docs/compatibility-matrix.json`.** The
   contract test `test_hass_compatibility_matrix_covers_current_api_version`
   requires an entry for the version in `pyproject.toml`, so `pytest` failed on
