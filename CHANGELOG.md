@@ -12,6 +12,8 @@ changelog is history. Everything from `2.0.0b1` on is English.
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-09-08
+
 ### Fixed
 
 - **`supported_models` claimed Navigator 2.0 / Pro support for the 33
