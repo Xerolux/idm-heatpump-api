@@ -12,6 +12,15 @@ changelog is history. Everything from `2.0.0b1` on is English.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The `2.0.0` release was missing from `docs/compatibility-matrix.json`.** The
+  contract test `test_hass_compatibility_matrix_covers_current_api_version`
+  requires an entry for the version in `pyproject.toml`, so `pytest` failed on
+  `main` and the `validate` job of `release.yml` would have refused the next
+  release. The entry is added; it records that `2.0.0` is the stable of the
+  line validated as `2.0.0b1` with integration `0.16.0-beta.1`.
+
 ## [2.0.0] - 2026-08-26
 
 Stable release of the `2.0` line after validation of `2.0.0b1` with Home
