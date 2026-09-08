@@ -9,14 +9,18 @@ import pytest
 
 from idm_heatpump.web import (
     DEFAULT_NAVIGATOR10_REQUEST_DELAY,
+    DEFAULT_NAVIGATOR20_PATHS,
     WEB_VALUE_DESCRIPTIONS,
     IdmNavigator10WebClient,
     IdmNavigator20WebClient,
     IdmWebAuthenticationError,
     IdmWebConnectionError,
     IdmWebData,
+    IdmWebError,
+    IdmWebPinRejectedError,
     IdmWebProtocolError,
     IdmWebResponseError,
+    IdmWebTimeoutError,
     IdmWebValue,
     _extract_csrf_token,
     _is_ip_literal,
@@ -1034,3 +1038,280 @@ async def test_navigator20_close_resets_state_even_when_session_close_fails(
     assert client._own_session is False
     assert client._data_paths == ()
     assert client._csrf_token is None
+
+
+# ---------------------------------------------------------------------------
+# Navigator 10: connect timeout, close() racing a request, handshake errors
+# ---------------------------------------------------------------------------
+
+
+class HangingSession:
+    """A host that accepts TCP but never completes the WebSocket upgrade."""
+
+    def __init__(self) -> None:
+        self.closed = False
+
+    async def ws_connect(self, url: str, timeout: object) -> FakeWs:
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+@pytest.mark.asyncio
+async def test_navigator10_connect_timeout_bounds_the_handshake() -> None:
+    """``timeout`` must apply to the connect/upgrade, not only to the close handshake."""
+    session = HangingSession()
+    client = IdmNavigator10WebClient("192.0.2.10", "1234", timeout=0.05, session=session)
+
+    with pytest.raises(IdmWebTimeoutError, match="timed out"):
+        await asyncio.wait_for(client.connect(), timeout=2.0)
+
+    assert client.diagnostics().websocket_connected is False
+
+
+@pytest.mark.asyncio
+async def test_navigator10_connect_passes_a_websocket_timeout_object() -> None:
+    """The aiohttp ws_connect timeout is the close timeout and wants ClientWSTimeout."""
+    aiohttp = pytest.importorskip("aiohttp")
+    seen: list[object] = []
+
+    class RecordingSession(FakeSession):
+        async def ws_connect(self, url: str, timeout: object) -> FakeWs:
+            seen.append(timeout)
+            return await super().ws_connect(url, timeout)  # type: ignore[arg-type]
+
+    session = RecordingSession(FakeWs(['{"authorized":true}']))
+    client = IdmNavigator10WebClient("192.0.2.10", "1234", timeout=3, session=session)
+
+    await client.connect()
+
+    assert len(seen) == 1
+    assert isinstance(seen[0], aiohttp.ClientWSTimeout)
+    assert seen[0].ws_close == 3
+
+
+class BlockingWs(FakeWs):
+    """receive() blocks until close() is called, then reports the CLOSED frame."""
+
+    def __init__(self, responses: list[str]) -> None:
+        super().__init__(responses)
+        self.receiving = asyncio.Event()
+        self.released = asyncio.Event()
+
+    async def receive(self, timeout: float) -> FakeWsMessage:
+        if self.responses:
+            return FakeWsMessage(self.responses.pop(0))
+        self.receiving.set()
+        await self.released.wait()
+        message = FakeWsMessage("")
+        message.type = "CLOSED"
+        return message
+
+    async def close(self) -> None:
+        self.closed = True
+        self.released.set()
+
+
+@pytest.mark.asyncio
+async def test_navigator10_close_during_request_does_not_reconnect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """close() while a request is in flight must not make that request reconnect.
+
+    The in-flight receive() sees the CLOSED frame, which the reconnect loop
+    otherwise treats as a device-side drop: it opened a fresh websocket and an
+    owned ClientSession after close() had already returned, and nothing ever
+    closed them.
+    """
+    first_ws = BlockingWs(['{"authorized":true}'])
+    replacement_ws = FakeWs(['{"authorized":true}', '{"settingDetail":{"value":""}}'])
+    session = FakeSession([first_ws, replacement_ws])
+    monkeypatch.setattr("aiohttp.ClientSession", lambda: session)
+    client = IdmNavigator10WebClient("192.0.2.10", "1234", timeout=1, reconnect_base_delay=0)
+
+    await client.connect()
+    reader = asyncio.create_task(client.read_data(("4768",)))
+    await first_ws.receiving.wait()
+
+    await client.close()
+
+    with pytest.raises(IdmWebProtocolError, match="closed during the request"):
+        await reader
+    assert len(session.urls) == 1, "the closed client must not have reconnected"
+    assert session.closed is True
+    assert client._session is None
+    assert client._ws is None
+    assert client.diagnostics().websocket_connected is False
+
+    # An explicit connect() afterwards is still allowed.
+    await client.connect()
+    assert len(session.urls) == 2
+    await client.close()
+
+
+@pytest.mark.parametrize("exc_name", ["ServerDisconnectedError", "ClientError"])
+@pytest.mark.asyncio
+async def test_navigator10_handshake_client_errors_are_web_errors(exc_name: str) -> None:
+    """aiohttp errors that are not OSError (no 101, disconnect mid-upgrade) are wrapped."""
+    aiohttp = pytest.importorskip("aiohttp")
+    raised = getattr(aiohttp, exc_name)()
+
+    class HandshakeFailingSession(FakeSession):
+        async def ws_connect(self, url: str, timeout: object) -> FakeWs:
+            raise raised
+
+    session = HandshakeFailingSession(FakeWs([]))
+    client = IdmNavigator10WebClient("192.0.2.10", "1234", timeout=1, session=session)
+
+    with pytest.raises(IdmWebConnectionError, match="handshake failed") as info:
+        await client.connect()
+
+    assert info.value.__cause__ is raised
+
+
+@pytest.mark.parametrize("payload", ["[]", "null", "42", '"text"'])
+def test_navigator10_parsers_reject_non_object_json(payload: str) -> None:
+    with pytest.raises(IdmWebResponseError, match="not a JSON object"):
+        parse_navigator_setting_response(payload)
+    with pytest.raises(IdmWebResponseError, match="not a JSON object"):
+        parse_navigator_statistic_response(payload, "stat")
+    with pytest.raises(IdmWebResponseError, match="not a JSON object"):
+        parse_navigator_notifications_response(payload)
+
+
+# ---------------------------------------------------------------------------
+# Navigator 2.0: transport errors after login, HTTP 401/403, session expiry
+# ---------------------------------------------------------------------------
+
+
+def _nav2_logged_in_responses(
+    heatpump: list[FakeHttpResponse],
+) -> dict[tuple[str, str], list[FakeHttpResponse]]:
+    return {
+        ("GET", "/"): [FakeHttpResponse(200, "OK")] * 3,
+        ("POST", "/"): [FakeHttpResponse(200, "OK")] * 3,
+        ("GET", "/data/heatpump.php"): heatpump,
+    }
+
+
+class RaisingAfterLoginSession(FakeHttpSession):
+    def __init__(self, responses: dict[tuple[str, str], list[FakeHttpResponse]]) -> None:
+        super().__init__(responses)
+        self.raise_with: BaseException | None = None
+
+    def request(self, method: str, url: str, **kwargs: object) -> FakeHttpResponse:
+        if self.raise_with is not None:
+            raise self.raise_with
+        return super().request(method, url, **kwargs)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("raised", "expected"),
+    [
+        (TimeoutError(), IdmWebTimeoutError),
+        (OSError("unreachable"), IdmWebConnectionError),
+        ("ClientConnectionError", IdmWebConnectionError),
+        ("ServerDisconnectedError", IdmWebConnectionError),
+    ],
+)
+@pytest.mark.asyncio
+async def test_navigator20_read_after_login_wraps_transport_errors(
+    raised: BaseException | str, expected: type[Exception]
+) -> None:
+    """Only login() used to translate these; a later poll leaked the raw error."""
+    if isinstance(raised, str):
+        aiohttp = pytest.importorskip("aiohttp")
+        raised = getattr(aiohttp, raised)()
+    session = RaisingAfterLoginSession(
+        _nav2_logged_in_responses(
+            [FakeHttpResponse(200, "<table><tr><td>B33</td><td>21,5 °C</td></tr></table>")]
+        )
+    )
+    client = IdmNavigator20WebClient("192.0.2.10", "1234", timeout=1, session=session)
+    await client.connect()
+    session.raise_with = raised
+
+    with pytest.raises(expected) as info:
+        await client.read_data(paths=("/data/heatpump.php",))
+
+    assert isinstance(info.value, IdmWebError)
+    assert info.value.__cause__ is raised
+    assert client.diagnostics().last_error
+
+
+@pytest.mark.parametrize("status", [401, 403])
+@pytest.mark.asyncio
+async def test_navigator20_http_status_pin_rejection_keeps_its_type(status: int) -> None:
+    """A firmware answering the login POST with 401/403 is a rejected PIN, not 'detection failed'."""
+    login_form = '<html><form><input type="password" name="pin"></form></html>'
+    session = FakeHttpSession(
+        {
+            ("GET", "/"): [FakeHttpResponse(200, login_form)],
+            ("POST", "/"): [FakeHttpResponse(status, "")] * 4,
+            ("POST", "/index.php"): [FakeHttpResponse(status, "")] * 4,
+            ("POST", "/login.php"): [FakeHttpResponse(status, "")] * 4,
+            **{("GET", path): [FakeHttpResponse(status, "")] for path in DEFAULT_NAVIGATOR20_PATHS},
+        }
+    )
+    client = IdmNavigator20WebClient("192.0.2.10", "1234", timeout=1, session=session)
+
+    with pytest.raises(IdmWebPinRejectedError):
+        await client.connect()
+
+    assert client.diagnostics().last_error is not None
+
+
+@pytest.mark.asyncio
+async def test_navigator20_read_data_relogs_in_once_after_session_expiry() -> None:
+    """A data endpoint serving the login page again means the session expired."""
+    login_page = '<html><form><input type="password" name="pin"></form></html>'
+    data = "<table><tr><td>B33</td><td>21,5 °C</td></tr></table>"
+    session = FakeHttpSession(
+        _nav2_logged_in_responses(
+            [
+                FakeHttpResponse(200, data),  # probe during connect()
+                FakeHttpResponse(200, data),  # first poll
+                FakeHttpResponse(200, login_page),  # second poll: session expired
+                FakeHttpResponse(200, data),  # probe during the re-login, served to that poll
+                FakeHttpResponse(200, data),  # third poll
+            ]
+        )
+    )
+    client = IdmNavigator20WebClient("192.0.2.10", "1234", timeout=1, session=session)
+    await client.connect()
+
+    first = await client.read_data(paths=("/data/heatpump.php",))
+    second = await client.read_data(paths=("/data/heatpump.php",))
+    third = await client.read_data(paths=("/data/heatpump.php",))
+
+    assert first.get_value("flow_temperature") == "21,5 °C"
+    assert second.get_value("flow_temperature") == "21,5 °C"
+    assert third.get_value("flow_temperature") == "21,5 °C"
+    assert session.requests.count(("POST", "/", {"pin": "1234"})) == 2
+    assert session.requests.count(("GET", "/data/heatpump.php", None)) == 5
+
+
+@pytest.mark.asyncio
+async def test_navigator20_read_data_gives_up_after_one_failed_relogin() -> None:
+    login_page = '<html><form><input type="password" name="pin"></form></html>'
+    data = "<table><tr><td>B33</td><td>21,5 °C</td></tr></table>"
+    session = FakeHttpSession(
+        _nav2_logged_in_responses(
+            [
+                FakeHttpResponse(200, data),  # probe during connect()
+                FakeHttpResponse(200, login_page),  # poll: session expired
+                FakeHttpResponse(200, login_page),  # the re-login gets the form again
+            ]
+        )
+    )
+    client = IdmNavigator20WebClient("192.0.2.10", "1234", timeout=1, session=session)
+    await client.connect()
+
+    with pytest.raises(IdmWebAuthenticationError, match="login form returned again"):
+        await client.read_data(paths=("/data/heatpump.php",))
+
+    # Exactly one re-login was attempted; the client is reset for the next poll.
+    assert session.requests.count(("POST", "/", {"pin": "1234"})) == 2
+    assert client._data_paths == ()

@@ -14,6 +14,48 @@ changelog is history. Everything from `2.0.0b1` on is English.
 
 ### Fixed
 
+- **Navigator 10 web: `timeout` did not bound the WebSocket connect.** The
+  float passed to `ws_connect(timeout=...)` is aiohttp's *close* timeout
+  (3.10+ spells it `ClientWSTimeout(ws_close=...)` and warned on every
+  connect). A controller that accepted TCP but never answered the upgrade
+  held `connect()` for aiohttp's session default of 300 s instead of the
+  documented 8 s. The connect, the upgrade and the authorization frame now run
+  under `asyncio.timeout(timeout)`, and the close timeout is passed the way
+  aiohttp wants it.
+- **Navigator 10 web: `close()` during a request re-opened the connection.**
+  Closing the websocket fails the request in flight with the CLOSED frame,
+  which the reconnect loop took for a device-side drop: it opened a new
+  websocket and, on the owned-session path, a new `ClientSession` after
+  `close()` had returned, and nothing ever closed them (a Home Assistant
+  reload while a poll runs). The request now fails with
+  `IdmWebWebSocketError` and does not reconnect; an explicit `connect()`
+  still re-opens the client.
+- **Navigator 10 web: handshake failures escaped as raw aiohttp errors.**
+  `WSServerHandshakeError` (no 101: wrong port, an HTTP frontend, a firmware
+  answering the `auth_code` with a status) and `ServerDisconnectedError` are
+  `ClientError` but not `OSError`, so `connect()` raised them unwrapped where
+  the docs promise `IdmWebError`. They are `IdmWebConnectionError` now.
+- **Navigator 10 web: a non-object JSON reply raised `AttributeError`.** The
+  setting, statistic and notification parsers called `.get()` on whatever
+  `json.loads` returned; `null`, `[]`, a number or a string reached the caller
+  as `AttributeError`. They raise `IdmWebResponseError`.
+- **Navigator 2.0 web: polls after login leaked raw transport errors.** Only
+  the login path translated aiohttp and OS errors; every later `read_data()`
+  raised `ClientConnectorError`, `ServerDisconnectedError`, `OSError` or the
+  bare `TimeoutError`. `IdmWebTimeoutError` was never raised by this client
+  at all. `_request_text` now maps them to `IdmWebTimeoutError` and
+  `IdmWebConnectionError`.
+- **Navigator 2.0 web: HTTP 401/403 on login was reported as a detection
+  failure.** The status mapping to `IdmWebPinRejectedError` existed but every
+  caller reached during `login()` swallowed it, so the consumer got
+  `IdmWebResponseError("NAV2 web detection failed ...")` for a wrong PIN.
+  The authentication error is kept and raised.
+- **Navigator 2.0 web: no recovery after the session expired.** When a data
+  endpoint served the login page again (cookie expired, controller rebooted),
+  `read_data()` raised `IdmWebAuthenticationError` on every poll and never
+  logged in again, so a valid PIN looked permanently rejected until the
+  consumer restarted. It now re-logs in once, mirroring the CSRF retry, and
+  raises only if the endpoint still serves the form.
 - **Errors *raised* by pymodbus escaped the library as pymodbus types.**
   `check_transport_response` only covered failures pymodbus reports as a
   response object. A request that got no answer (`ModbusIOException`: timeout,
