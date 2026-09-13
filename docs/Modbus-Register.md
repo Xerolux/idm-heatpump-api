@@ -399,10 +399,10 @@ addresses must never be served from the shared map.
 | 1506 | `hc_e_status` | UINT16 | RO | - |  |
 | 1507 | `hc_f_status` | UINT16 | RO | - |  |
 | 1508 | `hc_g_status` | UINT16 | RO | - |  |
-| 1509 | `compressor_1_status` | UINT16 | RO | - | 0=off, 1=on |
-| 1510 | `compressor_2_status` | UINT16 | RO | - | 0=off, 1=on |
-| 1511 | `compressor_3_status` | UINT16 | RO | - | 0=off, 1=on |
-| 1512 | `compressor_4_status` | UINT16 | RO | - | 0=off, 1=on |
+| 1509 | `compressor_status_1` | UINT16 | RO | - | 0=off, 1=on |
+| 1510 | `compressor_status_2` | UINT16 | RO | - | 0=off, 1=on |
+| 1511 | `compressor_status_3` | UINT16 | RO | - | 0=off, 1=on |
+| 1512 | `compressor_status_4` | UINT16 | RO | - | 0=off, 1=on |
 | 1513 | `charging_pump_status` | UINT16 | RO | - | 0=Off, 1=Running, 2=Fault |
 | 1514 | `heat_source_pump_status` | UINT16 | RO | - | 0=Off, 1=Running, 2=Fault |
 | 1515 | `intermediate_circuit_pump_status` | UINT16 | RO | - | 0=Off, 1=Running, 2=Fault |

@@ -12,6 +12,17 @@ changelog is history. Everything from `2.0.0b1` on is English.
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-09-13
+
+### Fixed
+
+- **Navigator 1.7 compressor statuses were named `compressor_N_status`.** The
+  shared family calls them `compressor_status_N` (1100-1103), and consumers
+  key translations and binary-sensor metadata by that name. The four 1.7
+  registers (1509-1512) are renamed to match; no address, datatype or
+  behavior changed.
+
+
 ## [2.1.0] - 2026-09-13
 
 ### Added

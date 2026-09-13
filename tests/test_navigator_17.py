@@ -79,10 +79,10 @@ EXPECTED_STATUS: dict[str, int] = {
     "hc_e_status": 1506,
     "hc_f_status": 1507,
     "hc_g_status": 1508,
-    "compressor_1_status": 1509,
-    "compressor_2_status": 1510,
-    "compressor_3_status": 1511,
-    "compressor_4_status": 1512,
+    "compressor_status_1": 1509,
+    "compressor_status_2": 1510,
+    "compressor_status_3": 1511,
+    "compressor_status_4": 1512,
     "charging_pump_status": 1513,
     "heat_source_pump_status": 1514,
     "intermediate_circuit_pump_status": 1515,
@@ -256,7 +256,7 @@ def test_navigator_17_status_enums() -> None:
     for name in ("cascade_mode", "solar_mode", "smart_grid_status", "isc_mode"):
         assert regs[name].enum_options is None, name
     for idx in range(1, 5):
-        assert regs[f"compressor_{idx}_status"].binary, name
+        assert regs[f"compressor_status_{idx}"].binary
 
 
 def test_navigator_17_flow_block_is_contiguous() -> None:
