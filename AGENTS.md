@@ -66,9 +66,19 @@ documented logical range overlaps at block boundaries.
   **Publish** with the tag. A GitHub release with assets is not proof the
   package is on PyPI — check PyPI itself.
 - **Every release carries the support links.** They are part of the release body
-  in `release.yml`; keep them in step with `.github/FUNDING.yml`.
+  in `release.yml`; keep them in step with `.github/FUNDING.yml`. The same
+  links are pinned at the top of `README.md` and `CHANGELOG.md` — when a
+  funding link changes, all four places move together.
 - **Write in English** — changelog, release notes, docs, commit messages, pull
   request text, comments and docstrings, including the prose baked into
   workflows and scripts.
+- **The changelog is kept version-to-version.** When a stable version is cut,
+  fold its prerelease sections into the single stable section with
+  `python scripts/consolidate_changelog.py --version <x.y.z>`, then rework the
+  draft: individual prereleases need not be named, but nothing that changed
+  may be dropped by the fold. `tests/test_changelog_consolidation.py` fails
+  the build while prerelease headings remain after their stable cut. This
+  applies from `2.1.1` on; older history keeps the shape it was published
+  with, and the per-prerelease record stays in git and the GitHub tags.
 
 See `docs/RELEASE_PROCESS.md` for the full procedure.
