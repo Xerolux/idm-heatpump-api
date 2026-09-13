@@ -5,8 +5,14 @@ is intentionally unsupported and where to be careful.
 
 ## Unsupported protocol families
 
-- **Navigator 1.0 / 1.7** is a separate protocol family. Its addresses must
-  not be copied into the Navigator 2.0/10/Pro map and it is **not supported**.
+- **Navigator 1.0 / 1.7** is a separate protocol family, supported with
+  its own read-only map (input blocks 1000-1088 and 1500-1524 from its
+  official register table) plus a writable PV supplement (74/76/78/82 and
+  the read-only power measurement 4122) that is included only when the
+  detection probe at address 74 responded. Its addresses must never be
+  copied into the Navigator 2.0/10/Pro map; the holding/coil blocks
+  (2000+/3000+) stay unmapped because their per-register semantics are
+  undocumented in the sources available.
 - The optional web supplement is strictly **read-only**. There is no write path
   through the local HTTP / WebSocket interface.
 

@@ -210,6 +210,12 @@
       "hass_integration_version": "pending",
       "status": "api-prepared",
       "notes": "Stable release of the 2.0 line after validation of 2.0.0b1 with integration 0.16.0-beta.1. No register-map, encoding, write-safety or wire-protocol changes from the beta; the contract tests target the integration's main again, which is the migrated pymodbus-free consumer (Xerolux/idm-heatpump-hass#255)."
+    },
+    {
+      "api_version": "2.1.0",
+      "hass_integration_version": "pending",
+      "status": "api-prepared",
+      "notes": "Adds the Navigator 1.0/1.7 protocol family as a read-only model: official 1.x register table (input block 1000-1088, status words 1500-1524), Illegal-Data-Address signature detection, and a family-wide write block."
     }
   ]
 }

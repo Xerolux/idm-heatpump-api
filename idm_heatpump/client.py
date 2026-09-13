@@ -26,6 +26,7 @@ from .const import (
     MODEL_DETECTION_MAX_RETRIES,
     MODEL_DETECTION_TIMEOUT,
     MODEL_NAVIGATOR_10,
+    MODEL_NAVIGATOR_17,
     MODEL_NAVIGATOR_20,
     MODEL_NAVIGATOR_PRO,
     MODEL_UNKNOWN,
@@ -85,6 +86,19 @@ _DETECT_BOOSTER_FAULT_UNAVAILABLE = 255  # UCHAR sentinel, raw word 0xFFFF
 _DETECT_ZONE_MODULE_BASE = 2000
 _DETECT_ZONE_MODULE_STEP = 65
 _DETECT_EMPTY_SLOT_STOP_THRESHOLD = 2
+# Navigator 1.0/1.7 (separate protocol family) detection. The 1.x firmware
+# answers the low FC04 input block from address 1000 while rejecting the
+# shared 2.0/10/Pro family addresses with Modbus Illegal Data Address.
+_DETECT_NAV17_CORE = 1000
+# Addresses whose Illegal-Data-Address rejection, together with a responding
+# core block, confirms the 1.x family after the 1350 gate fired. Updated 1.x
+# firmware can answer the post-2016 PV supplement (74/76/78/82) and even the
+# Navigator-10-only power registers, so those must not be in this set.
+_DETECT_NAV17_REJECTED: tuple[int, ...] = (
+    1350,  # heating-circuit A flow temperature (gate)
+    1498,  # active heating-circuit mode A
+    2000,  # zone-module block base
+)
 DEFAULT_REGISTER_SOURCE = "official_idm_modbus"
 DEFAULT_REGISTER_SOURCE_VERSION = (
     "MODBUS TCP NAVIGATOR 10 2025-06-18 plus Navigator 2.0/Pro legacy docs"
@@ -460,6 +474,10 @@ class IdmModbusClient:
         self._last_eeprom_writes: dict[str, float] = {}
         self._cyclic_write_deadlines: dict[str, float] = {}
         self._last_error_context: ModbusErrorContext | None = None
+        # Per-address record of whether the last probe_register() call was
+        # rejected by the device with Illegal Data Address. Model detection
+        # reads it to tell "register not implemented" apart from "no answer".
+        self._probe_illegal_rejections: dict[int, bool] = {}
         self._eeprom_write_interval = DEFAULT_EEPROM_WRITE_INTERVAL
         self._time = time.monotonic
         # Set to True after any connection/transport failure
@@ -838,18 +856,24 @@ class IdmModbusClient:
     ) -> list[int] | None:
         """Try to read a register without affecting failure tracking.
 
-        Returns the register values or None if the read fails.
+        Returns the register values or None if the read fails. Each probe also
+        records in ``_probe_illegal_rejections`` whether the device explicitly
+        rejected the address with Illegal Data Address, so model detection can
+        distinguish "register not implemented" from "no answer at all".
         """
         try:
             await self._ensure_connected()
-            return await self._read_registers(
+            regs = await self._read_registers(
                 address,
                 count,
                 max_retries=max_retries,
                 request_timeout=timeout,
             )
-        except (IdmModbusError, OSError):
+        except (IdmModbusError, OSError) as err:
+            self._probe_illegal_rejections[address] = _is_illegal_address_exception(err)
             return None
+        self._probe_illegal_rejections[address] = False
+        return regs
 
     async def _probe_model_register(self, address: int, count: int = 1) -> list[int] | None:
         """Probe model/capability registers with short, single-attempt reads."""
@@ -859,6 +883,33 @@ class IdmModbusClient:
             max_retries=MODEL_DETECTION_MAX_RETRIES,
             timeout=MODEL_DETECTION_TIMEOUT,
         )
+
+    def _probe_rejected_illegal_address(self, address: int) -> bool | None:
+        """Return whether a probed address was rejected, or None if never probed."""
+        return self._probe_illegal_rejections.get(address)
+
+    async def _matches_navigator_17_signature(self) -> bool:
+        """Detect the Navigator 1.0/1.7 protocol family by its response shape.
+
+        The 1.x family responds on the low FC04 input block (from address
+        1000) while rejecting the shared 2.0/10/Pro family's heating-circuit
+        and zone-module blocks with Modbus exception code 2. A device that
+        answers nothing (offline) or that responds on the heating-circuit
+        block must not classify as Navigator 1.7. Updated 1.x firmware can
+        answer the post-2016 PV supplement and the power registers, so those
+        addresses are deliberately not part of the signature.
+
+        Only probes already made during this detection run decide the
+        rejection set; the single new probe is the core-block response check,
+        which goes through the same :meth:`probe_register` seam.
+        """
+        core = await self._probe_model_register(_DETECT_NAV17_CORE, 2)
+        if core is None or len(core) != 2:
+            return False
+        for address in _DETECT_NAV17_REJECTED:
+            if self._probe_rejected_illegal_address(address) is not True:
+                return False
+        return True
 
     @staticmethod
     def _probe_float_value(
@@ -905,6 +956,12 @@ class IdmModbusClient:
           5. Probe PV register (74)
           6. Probe cascade register (1147)
           7. Probe Navigator-10-only power-limit register (4108) when needed
+          8. A rejection (Illegal Data Address) of the heating-circuit block
+             base (1350) gates the Navigator 1.0/1.7 family signature: the
+             core input block (1000) responds while the shared family
+             addresses are all rejected. This runs before the circuit-based
+             classification because the shared active-mode probes (1498+)
+             overlap the 1.x status block (1500+) and could fake circuits.
 
         Args:
             read_firmware: Probe Modbus register 4120 for the firmware version.
@@ -912,6 +969,7 @@ class IdmModbusClient:
                 software version or wants to avoid this unreliable register.
         """
         await self._ensure_connected()
+        self._probe_illegal_rejections.clear()
 
         active_circuits: list[str] = []
         for i in range(MAX_HEATING_CIRCUITS):
@@ -1080,7 +1138,30 @@ class IdmModbusClient:
             if nav10_block_present:
                 has_navigator_10_indicators = True
 
-        if has_navigator_10_indicators or zone_modules > 0:
+        is_navigator_17 = False
+        if self._probe_rejected_illegal_address(_DETECT_HC_FLOW_BASE) is True:
+            # Every shared-family controller (2.0/10/Pro) implements the
+            # heating-circuit block; an Illegal Data Address rejection at its
+            # base means this is the separate 1.x protocol family. Confirm
+            # with the full signature before committing, because the shared
+            # family's active-mode probes (1498+) can overlap the 1.x status
+            # block (1500+) and would otherwise fake heating circuits.
+            is_navigator_17 = await self._matches_navigator_17_signature()
+
+        if is_navigator_17:
+            model_name = MODEL_NAVIGATOR_17
+            # The 1.x family exposes none of the probed shared-family
+            # capabilities; anything apparent came from overlapping probe
+            # addresses and must not leak into the model info. The PV probe
+            # (74) is the exception: a response there means the post-2016 PV
+            # supplement is present and its registers join the 1.7 map.
+            active_circuits = []
+            zone_modules = 0
+            has_solar = False
+            has_isc = False
+            has_cascade = False
+            features = {FEATURE_PV} if has_pv else set()
+        elif has_navigator_10_indicators or zone_modules > 0:
             # Navigator 10 is the current generation; also report Pro-like capabilities
             model_name = MODEL_NAVIGATOR_10 if has_navigator_10_indicators else MODEL_NAVIGATOR_PRO
         elif active_circuits:

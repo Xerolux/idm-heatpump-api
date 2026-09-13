@@ -110,6 +110,11 @@ jobs:
           ref: main
           path: integration-contract
 
+      # The integration's conftest prefers the real voluptuous over its stub
+      # (it ships with Home Assistant), so the contract environment needs it.
+      - name: Install integration test dependencies
+        run: pip install voluptuous
+
       - name: Run Home Assistant integration contract tests
         run: |
           PYTHONPATH="$PWD:$PWD/integration-contract" pytest \

@@ -12,6 +12,51 @@ changelog is history. Everything from `2.0.0b1` on is English.
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-09-13
+
+### Added
+
+- **Navigator 1.0/1.7 protocol family support.** A new `MODEL_NAVIGATOR_17`
+  model exposes the 1.x family's official register table (`ma_de_812049`,
+  dated 2016-06-13): 44 FC04 FLOAT values (1000-1088 — outdoor/flow/DHW/
+  solar/ISC temperatures, humidity at 1046, thermal power and cumulative
+  energy meters) and 25 status words (1500-1524 — fault number, operating
+  mode, heating-circuit and compressor statuses, pump statuses,
+  cascade/solar/smart-grid/ISC modes). The map is strictly separate from the
+  shared 2.0/10/Pro families — the data points differ address by address —
+  and its base registers are all read-only. `hp_operating_mode` (1501) is
+  UCHAR per the official table, because firmwares return the mode byte
+  doubled into the word (a value of 1 arrives as 0x0101).
+- **Post-2016 PV supplement (writable).** When the detection probe at
+  address 74 responded, the 1.7 map additionally carries the PV/
+  energy-management registers iDM documented after the 2016 table:
+  `pv_surplus` (74), `electric_heater_power` (76), `pv_production` (78) and
+  `house_consumption` (82) accept the same volatile GLT writes as on the
+  shared family, and `power_consumption_hp` (4122) is a read-only
+  measurement. Older 1.x firmware that rejects address 74 keeps the pure
+  read-only map.
+- **1.x family detection.** `detect_model` classifies the family through its
+  response signature: the core input block (1000) responds while the shared
+  family's heating-circuit base (1350), active-mode base (1498) and
+  zone-module base (2000) are rejected with Modbus Illegal Data Address. The
+  1350 rejection gates the signature — impossible on the shared family — and
+  runs before the circuit-based classification, because the shared
+  active-mode probes (1498-1504) overlap the 1.x status block (1500-1524)
+  and would otherwise fake heating circuits. Updated 1.x firmware answering
+  the PV block or the power registers still classifies as 1.7 and reports
+  `has_pv`. `probe_register` records per-address Illegal-Data-Address
+  rejections for this; detection performs no extra I/O.
+- `PUMP_STATUS_OPTIONS` and `MODEL_NAVIGATOR_17` are exported constants; the
+  register schema snapshot (`tests/fixtures/register_schema_v1.json`) gains
+  `navigator_17` and `navigator_17_pv` maps; `docs/Modbus-Register.md`
+  documents the 1.7 table with a code-validated test.
+
+### Notes
+
+- The 1.x holding block (2000+) and coil block (3000+) remain unmapped;
+  enabling further writes requires their per-register semantics from an
+  official source or hardware verification first.
+
 ## [2.0.1] - 2026-09-08
 
 ### Fixed

@@ -14,7 +14,9 @@ reference, see [Client Methods](Services).
 - **Modbus TCP** enabled on the controller (see below).
 - Network access from the machine running the library to the controller.
 
-> Navigator 1.0/1.7 is a separate protocol family and is **not** supported.
+> Navigator 1.0/1.7 is a separate protocol family, supported with its
+> own read-only register map (plus PV-supplement writes when the firmware
+> provides them).
 
 ## Enable Modbus TCP on the Navigator
 

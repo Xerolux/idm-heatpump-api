@@ -328,6 +328,107 @@ configurable rooms (6 is the current Navigator 10 default); each room block is
 Example (zone module 1): room 1 temperature = 2002, setpoint = 2004, humidity = 2006,
 mode = 2007, relay = 2008; room 2 starts at 2009.
 
+## Navigator 1.7 (read-only)
+
+The Navigator 1.0/1.7 controllers use a separate protocol family. The library
+exposes their FC04 input blocks below; the FC03/06 holding block (2000+) and
+the FC01/05 coil block (3000+) are not mapped, because their per-register
+semantics are undocumented in the sources available. Source: official iDM
+Modbus TCP documentation for Navigator 1.0/1.7 (`ma_de_812049`, register
+table dated 2016-06-13).
+
+Same physical layer as the shared family: Modbus TCP port **502**, unit ID 1,
+IEEE-754 `FLOAT` values in two registers, low word first. The data points
+differ from the shared 2.0/10/Pro table address by address — for example 1002
+is the heat-pump flow temperature and 1046 the humidity sensor — so these
+addresses must never be served from the shared map.
+
+| Address | Name | Type | Access | Unit | Notes |
+|---------|------|------|--------|------|-------|
+| 1000 | `outdoor_temp` | FLOAT | RO | °C |  |
+| 1002 | `hp_flow_temp` | FLOAT | RO | °C |  |
+| 1004 | `hgl_flow_temp` | FLOAT | RO | °C |  |
+| 1006 | `heat_source_outlet_temp` | FLOAT | RO | °C |  |
+| 1008 | `storage_temp` | FLOAT | RO | °C | Heat-pump return / storage temperature |
+| 1010 | `cold_storage_temp` | FLOAT | RO | °C |  |
+| 1012 | `dhw_temp` | FLOAT | RO | °C | Domestic hot water temperature |
+| 1014 | `dhw_tapping_temp` | FLOAT | RO | °C | Fresh-water tapping temperature |
+| 1016 | `hc_a_flow_temp` | FLOAT | RO | °C | Heating-circuit A flow temperature |
+| 1018 | `hc_b_flow_temp` | FLOAT | RO | °C |  |
+| 1020 | `hc_c_flow_temp` | FLOAT | RO | °C |  |
+| 1022 | `hc_d_flow_temp` | FLOAT | RO | °C |  |
+| 1024 | `hc_e_flow_temp` | FLOAT | RO | °C |  |
+| 1026 | `hc_f_flow_temp` | FLOAT | RO | °C |  |
+| 1028 | `hc_g_flow_temp` | FLOAT | RO | °C |  |
+| 1030 | `hc_a_room_device_temp` | FLOAT | RO | °C | Room device A |
+| 1032 | `hc_b_room_device_temp` | FLOAT | RO | °C |  |
+| 1034 | `hc_c_room_device_temp` | FLOAT | RO | °C |  |
+| 1036 | `hc_d_room_device_temp` | FLOAT | RO | °C |  |
+| 1038 | `hc_e_room_device_temp` | FLOAT | RO | °C |  |
+| 1040 | `hc_f_room_device_temp` | FLOAT | RO | °C |  |
+| 1042 | `hc_g_room_device_temp` | FLOAT | RO | °C |  |
+| 1044 | `hot_gas_temp` | FLOAT | RO | °C |  |
+| 1046 | `humidity_sensor` | FLOAT | RO | % | 0..100 |
+| 1048 | `air_intake_temp` | FLOAT | RO | °C |  |
+| 1050 | `air_heat_exchanger_temp` | FLOAT | RO | °C |  |
+| 1052 | `solar_collector_temp` | FLOAT | RO | °C |  |
+| 1054 | `solar_charging_temp` | FLOAT | RO | °C |  |
+| 1056 | `solar_collector_return_temp` | FLOAT | RO | °C |  |
+| 1058 | `solar_pool_temp` | FLOAT | RO | °C | Heat-source reference / pool |
+| 1060 | `outdoor_temp_avg` | FLOAT | RO | °C | Averaged outdoor temperature |
+| 1062 | `heat_source_inlet_temp` | FLOAT | RO | °C |  |
+| 1064 | `isc_cooling_charge_temp` | FLOAT | RO | °C | ISC cooling charge sensor |
+| 1066 | `isc_recooling_temp` | FLOAT | RO | °C | ISC recooling sensor |
+| 1068 | `thermal_power_hp_flow` | FLOAT | RO | kW |  |
+| 1070 | `thermal_power_hgl_flow` | FLOAT | RO | kW |  |
+| 1072 | `thermal_power_total` | FLOAT | RO | kW | Current total thermal power |
+| 1074 | `thermal_power_solar` | FLOAT | RO | kW |  |
+| 1076 | `energy_total` | FLOAT | RO | kWh | Cumulative |
+| 1078 | `energy_heating` | FLOAT | RO | kWh | Cumulative |
+| 1080 | `energy_hgl` | FLOAT | RO | kWh | Cumulative |
+| 1082 | `energy_cooling` | FLOAT | RO | kWh | Cumulative |
+| 1084 | `energy_solar` | FLOAT | RO | kWh | Cumulative |
+| 1086 | `groundwater_pump_flow_total` | FLOAT | RO | - | Flow counter; unit undocumented |
+| 1088 | `heat_source_pump_operating_hours` | FLOAT | RO | h | Cumulative |
+| 1500 | `error_number` | UINT16 | RO | - | Current fault number |
+| 1501 | `hp_operating_mode` | UCHAR | RO | - | 0=Standby; 1=Heating; 2=Cooling; 4=DHW; 8=Defrost; firmware doubles the byte into the word |
+| 1502 | `hc_a_status` | UINT16 | RO | - | Heating-circuit A status |
+| 1503 | `hc_b_status` | UINT16 | RO | - |  |
+| 1504 | `hc_c_status` | UINT16 | RO | - |  |
+| 1505 | `hc_d_status` | UINT16 | RO | - |  |
+| 1506 | `hc_e_status` | UINT16 | RO | - |  |
+| 1507 | `hc_f_status` | UINT16 | RO | - |  |
+| 1508 | `hc_g_status` | UINT16 | RO | - |  |
+| 1509 | `compressor_1_status` | UINT16 | RO | - | 0=off, 1=on |
+| 1510 | `compressor_2_status` | UINT16 | RO | - | 0=off, 1=on |
+| 1511 | `compressor_3_status` | UINT16 | RO | - | 0=off, 1=on |
+| 1512 | `compressor_4_status` | UINT16 | RO | - | 0=off, 1=on |
+| 1513 | `charging_pump_status` | UINT16 | RO | - | 0=Off, 1=Running, 2=Fault |
+| 1514 | `heat_source_pump_status` | UINT16 | RO | - | 0=Off, 1=Running, 2=Fault |
+| 1515 | `intermediate_circuit_pump_status` | UINT16 | RO | - | 0=Off, 1=Running, 2=Fault |
+| 1516 | `isc_cold_storage_pump_status` | UINT16 | RO | - | 0=Off, 1=Running, 2=Fault |
+| 1517 | `isc_recooling_pump_status` | UINT16 | RO | - | 0=Off, 1=Running, 2=Fault |
+| 1518 | `compressor_stages_heating` | UINT16 | RO | - | Running compressor stages |
+| 1519 | `compressor_stages_cooling` | UINT16 | RO | - |  |
+| 1520 | `compressor_stages_dhw` | UINT16 | RO | - | DHW priority stages |
+| 1521 | `cascade_mode` | UINT16 | RO | - | Value set undocumented |
+| 1522 | `solar_mode` | UINT16 | RO | - | Value set undocumented |
+| 1523 | `smart_grid_status` | UINT16 | RO | - | Value set undocumented |
+| 1524 | `isc_mode` | UINT16 | RO | - | Value set undocumented |
+
+Updated 1.x firmware carries a post-2016 PV supplement (iDM support
+documentation; not in the 2016 table). When the detection probe at address 74
+responds, these registers join the 1.7 map — the four PV values accept the
+same volatile GLT writes as on the shared family:
+
+| Address | Name | Type | Access | Unit | Notes |
+|---------|------|------|--------|------|-------|
+| 74 | `pv_surplus` | FLOAT | RW | kW | PV surplus written by the energy manager |
+| 76 | `electric_heater_power` | FLOAT | RW | kW |  |
+| 78 | `pv_production` | FLOAT | RW | kW |  |
+| 82 | `house_consumption` | FLOAT | RW | kW |  |
+| 4122 | `power_consumption_hp` | FLOAT | RO | kW | Current power draw |
+
 ## Notes
 
 - Address 1004 (internal message): message numbers 020–999 — read as 16-bit value.

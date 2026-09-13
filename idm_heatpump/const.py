@@ -20,6 +20,7 @@ MAX_ROOMS_PER_ZONE: int = 8  # Navigator 10 / current hardware: 6 rooms; older c
 MODEL_NAVIGATOR_20: str = "Navigator 2.0"
 MODEL_NAVIGATOR_PRO: str = "Navigator Pro"
 MODEL_NAVIGATOR_10: str = "Navigator 10"
+MODEL_NAVIGATOR_17: str = "Navigator 1.7"
 MODEL_UNKNOWN: str = "Unknown"
 
 FEATURE_SOLAR: str = "solar"
@@ -155,6 +156,15 @@ ACTIVE_HC_MODE_OPTIONS: dict[int, str] = {
 ZONE_MODULE_MODE_OPTIONS: dict[int, str] = {
     0: "Cooling",
     1: "Heating",
+}
+
+
+# Navigator 1.7 status registers (1513-1517): pump and compressor auxiliary
+# statuses share one documented value set.
+PUMP_STATUS_OPTIONS: dict[int, str] = {
+    0: "Off",
+    1: "Running",
+    2: "Fault",
 }
 
 
