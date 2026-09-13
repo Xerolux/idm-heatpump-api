@@ -12,6 +12,45 @@ changelog is history. Everything from `2.0.0b1` on is English.
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-09-13
+
+### Added
+
+- **Navigator 1.0/1.7 protocol family support (read-only).** A new
+  `MODEL_NAVIGATOR_17` model exposes the 1.x family's official register table
+  (`ma_de_812049`, dated 2016-06-13): 44 FC04 FLOAT values (1000-1088,
+  outdoor/flow/DHW/solar/ISC temperatures, humidity at 1046, thermal power
+  and cumulative energy meters) and 25 UINT16 status words (1500-1524,
+  fault number, operating mode, heating-circuit and compressor statuses,
+  pump statuses, cascade/solar/smart-grid/ISC modes). The map is strictly
+  separate from the shared 2.0/10/Pro families — the data points differ
+  address by address — and every register is `writable=False`, so
+  `simulate_write`/`write_register`/`set_value` reject any write, including
+  custom registers, while a 1.7 model is detected.
+- **1.x family detection.** `detect_model` classifies the family through its
+  response signature: the core input block (1000) responds while the shared
+  family addresses (heating-circuit base 1350, active-mode base 1498,
+  zone-module base 2000, Navigator-10-only 4001/4108/4122) are rejected with
+  Modbus Illegal Data Address. The check is gated on the 1350 rejection —
+  impossible on the shared family — and runs before the circuit-based
+  classification, because the shared active-mode probes (1498-1504)
+  overlap the 1.x status block (1500-1524) and would otherwise fake heating
+  circuits. `probe_register` now records per-address Illegal-Data-Address
+  rejections for this purpose; it adds no extra I/O.
+- `PUMP_STATUS_OPTIONS` and `MODEL_NAVIGATOR_17` are exported constants; the
+  register schema snapshot (`tests/fixtures/register_schema_v1.json`) gains a
+  `navigator_17` map; `docs/Modbus-Register.md` documents the 1.7 table with
+  a code-validated test.
+
+### Notes
+
+- Firmware variants that answer shared-family addresses with sentinels
+  instead of rejecting them defeat the signature detection; consumers should
+  offer a manual model override for those (the Home Assistant integration
+  ships one).
+- The 1.x holding block (2000+) and coil block (3000+) remain unmapped;
+  enabling writes requires hardware verification first.
+
 ## [2.0.1] - 2026-09-08
 
 ### Fixed

@@ -5,8 +5,14 @@ is intentionally unsupported and where to be careful.
 
 ## Unsupported protocol families
 
-- **Navigator 1.0 / 1.7** is a separate protocol family. Its addresses must
-  not be copied into the Navigator 2.0/10/Pro map and it is **not supported**.
+- **Navigator 1.0 / 1.7** is a separate protocol family, supported
+  **read-only** (input blocks 1000-1088 and 1500-1524 from its official
+  register table). Its addresses must never be copied into the Navigator
+  2.0/10/Pro map; its holding/coil blocks (2000+/3000+) and therefore every
+  write path stay unmapped until verified on real hardware. Firmware
+  variants that answer shared-family addresses instead of rejecting them
+  defeat the automatic signature detection and need the consumer-side model
+  override.
 - The optional web supplement is strictly **read-only**. There is no write path
   through the local HTTP / WebSocket interface.
 

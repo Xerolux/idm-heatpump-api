@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from idm_heatpump.client import IdmModelInfo, RegisterDef
-from idm_heatpump.const import MODEL_NAVIGATOR_10, MODEL_NAVIGATOR_20
+from idm_heatpump.const import MODEL_NAVIGATOR_10, MODEL_NAVIGATOR_17, MODEL_NAVIGATOR_20
 from idm_heatpump.registers import build_register_map
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -70,6 +70,15 @@ def _current_schema() -> dict[str, Any]:
         has_pv=True,
         has_cascade=True,
     )
+    navigator_17 = IdmModelInfo(
+        model_name=MODEL_NAVIGATOR_17,
+        active_heating_circuits=[],
+        zone_modules=0,
+        has_solar=False,
+        has_isc=False,
+        has_pv=False,
+        has_cascade=False,
+    )
 
     return {
         "schema_version": 1,
@@ -77,6 +86,7 @@ def _current_schema() -> dict[str, Any]:
             "default": _serialize_map(build_register_map()),
             "navigator_10_full": _serialize_map(build_register_map(model_info=navigator_10)),
             "navigator_20_circuit_a": _serialize_map(build_register_map(model_info=navigator_20)),
+            "navigator_17": _serialize_map(build_register_map(model_info=navigator_17)),
         },
     }
 

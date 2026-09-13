@@ -3,11 +3,15 @@
 Register map sources:
 - Official iDM "MODBUS TCP NAVIGATOR 10" documentation (Stand 18.06.2025, NAV10_20.23+)
 - Earlier Navigator 2.0 / Pro documentation
+- Official iDM "Modbus TCP Navigator 1.0 und 1.7" documentation
+  (ma_de_812049, register table dated 2016-06-13) for the separate
+  Navigator 1.7 read-only map
 
 Supports:
 - Navigator 10 (current generation)
 - Navigator 2.0
 - Navigator Pro
+- Navigator 1.7 (read-only input blocks; see _navigator_17_registers)
 
 All new descriptions are in English. German original terms kept in comments where helpful
 for cross-reference with official iDM docs.
@@ -32,6 +36,8 @@ from .const import (
     ISC_MODE_OPTIONS,
     MAX_ROOMS_PER_ZONE,
     MODEL_NAVIGATOR_10,
+    MODEL_NAVIGATOR_17,
+    PUMP_STATUS_OPTIONS,
     ROOM_MODE_OPTIONS,
     SMART_GRID_OPTIONS,
     SOLAR_MODE_OPTIONS,
@@ -1298,6 +1304,188 @@ def _glt_registers() -> dict[str, RegisterDef]:
     }
 
 
+NAVIGATOR_17_REGISTER_SOURCE = "official_idm_modbus"
+NAVIGATOR_17_REGISTER_SOURCE_VERSION = (
+    "Modbus TCP Navigator 1.0/1.7 register table 2016-06-13 (ma_de_812049)"
+)
+
+
+def _navigator_17_register(
+    address: int,
+    datatype: DataType,
+    name: str,
+    **kwargs: Any,
+) -> RegisterDef:
+    """Build a Navigator 1.7 register with family-wide metadata pre-filled."""
+    return RegisterDef(
+        address=address,
+        datatype=datatype,
+        name=name,
+        source=NAVIGATOR_17_REGISTER_SOURCE,
+        source_version=NAVIGATOR_17_REGISTER_SOURCE_VERSION,
+        supported_models=(MODEL_NAVIGATOR_17,),
+        **kwargs,
+    )
+
+
+def _navigator_17_registers() -> dict[str, RegisterDef]:
+    """Read-only register map for the Navigator 1.0/1.7 protocol family.
+
+    Source: official iDM Modbus TCP documentation for Navigator 1.0/1.7
+    (ma_de_812049, register table dated 2016-06-13). The 1.x family uses a
+    completely different layout from Navigator 2.0/10/Pro; in particular the
+    meaning of the FLOAT block from address 1000 differs register by register
+    (for example 1002 is the heat-pump flow temperature, not the averaged
+    outdoor temperature, and 1046 is the humidity sensor). Never reuse the
+    shared 2.0/10/Pro definitions for these addresses.
+
+    Scope is deliberately read-only: the FC04 input blocks (FLOAT values from
+    1000, status words from 1500) are exposed; the FC03/06 holding block from
+    2000 and the FC01/05 coil block from 3000 are not mapped, because their
+    write semantics are unverified on this family. Every register therefore
+    stays ``writable=False`` and ``write_class`` is FORBIDDEN.
+    """
+    regs: dict[str, RegisterDef] = {}
+
+    # FC04 input block from 1000: FLOAT values, low word first.
+    float_specs: list[tuple[int, str, str | None]] = [
+        (1000, "outdoor_temp", "°C"),  # Aussentemperatur
+        (1002, "hp_flow_temp", "°C"),  # Wärmepumpen Vorlauftemperatur
+        (1004, "hgl_flow_temp", "°C"),  # HGL Vorlauftemperatur
+        (1006, "heat_source_outlet_temp", "°C"),  # Wärmequellenaustrittstemperatur
+        # WP-Rücklauftemperatur / Wärmespeichertemperatur (one data point)
+        (1008, "storage_temp", "°C"),
+        (1010, "cold_storage_temp", "°C"),  # Kältespeichertemperatur
+        (1012, "dhw_temp", "°C"),  # Trinkwassererwärmertemperatur
+        (1014, "dhw_tapping_temp", "°C"),  # Frischwasserzapftemperatur
+        (1044, "hot_gas_temp", "°C"),  # Heissgastemperatur
+        (1046, "humidity_sensor", "%"),  # Feuchtesensor
+        (1048, "air_intake_temp", "°C"),  # Luftansaugtemperatur
+        (1050, "air_heat_exchanger_temp", "°C"),  # Luftwärmetauschertemperatur
+        (1052, "solar_collector_temp", "°C"),  # Solar Kollektortemperatur
+        (1054, "solar_charging_temp", "°C"),  # Solar Ladetemperatur
+        (1056, "solar_collector_return_temp", "°C"),  # Solar Kollektorrücklauftemperatur
+        # Solar Wärmequellenreferenz-/Pooltemperatur
+        (1058, "solar_pool_temp", "°C"),
+        (1060, "outdoor_temp_avg", "°C"),  # Gemittelte Aussentemperatur
+        (1062, "heat_source_inlet_temp", "°C"),  # Wärmequelleneintrittstemperatur
+        (1064, "isc_cooling_charge_temp", "°C"),  # ISC Ladefühler Kühlen
+        (1066, "isc_recooling_temp", "°C"),  # ISC Rückkühlfühler
+    ]
+    for address, name, unit in float_specs:
+        regs[name] = _navigator_17_register(address, DataType.FLOAT, name, unit=unit)
+
+    # Heating-circuit A-G flow temperatures (1016-1028) and room-device
+    # temperatures (1030-1042), two registers per value.
+    for idx, letter in enumerate("abcdefg"):
+        regs[f"hc_{letter}_flow_temp"] = _navigator_17_register(
+            1016 + idx * 2, DataType.FLOAT, f"hc_{letter}_flow_temp", unit="°C"
+        )
+        # Raumgerät temperature of heating circuit A-G
+        regs[f"hc_{letter}_room_device_temp"] = _navigator_17_register(
+            1030 + idx * 2, DataType.FLOAT, f"hc_{letter}_room_device_temp", unit="°C"
+        )
+
+    # Thermal power values (kW, instantaneous).
+    regs["thermal_power_hp_flow"] = _navigator_17_register(
+        1068, DataType.FLOAT, "thermal_power_hp_flow", unit="kW", state_class="measurement"
+    )
+    regs["thermal_power_hgl_flow"] = _navigator_17_register(
+        1070, DataType.FLOAT, "thermal_power_hgl_flow", unit="kW", state_class="measurement"
+    )
+    # Wärmemenge Momentanleistung
+    regs["thermal_power_total"] = _navigator_17_register(
+        1072, DataType.FLOAT, "thermal_power_total", unit="kW", state_class="measurement"
+    )
+    regs["thermal_power_solar"] = _navigator_17_register(
+        1074, DataType.FLOAT, "thermal_power_solar", unit="kW", state_class="measurement"
+    )
+
+    # Heat meters (kWh, cumulative).
+    regs["energy_total"] = _navigator_17_register(
+        1076, DataType.FLOAT, "energy_total", unit="kWh", state_class="total_increasing"
+    )
+    regs["energy_heating"] = _navigator_17_register(
+        1078, DataType.FLOAT, "energy_heating", unit="kWh", state_class="total_increasing"
+    )
+    regs["energy_hgl"] = _navigator_17_register(
+        1080, DataType.FLOAT, "energy_hgl", unit="kWh", state_class="total_increasing"
+    )
+    regs["energy_cooling"] = _navigator_17_register(
+        1082, DataType.FLOAT, "energy_cooling", unit="kWh", state_class="total_increasing"
+    )
+    regs["energy_solar"] = _navigator_17_register(
+        1084, DataType.FLOAT, "energy_solar", unit="kWh", state_class="total_increasing"
+    )
+    # Summe Durchflussmengenzähler Grundwasserpumpe; the volume unit is not
+    # documented, so the value is exposed without one.
+    regs["groundwater_pump_flow_total"] = _navigator_17_register(
+        1086, DataType.FLOAT, "groundwater_pump_flow_total", state_class="total_increasing"
+    )
+    # Betriebsstundenzähler Wärmequellenpumpe
+    regs["heat_source_pump_operating_hours"] = _navigator_17_register(
+        1088,
+        DataType.FLOAT,
+        "heat_source_pump_operating_hours",
+        unit="h",
+        state_class="total_increasing",
+    )
+
+    # FC04 input block from 1500: UINT16 status words.
+    regs["error_number"] = _navigator_17_register(
+        1500,
+        DataType.UINT16,
+        "error_number",  # Aktuelle Störungsnummer
+    )
+    regs["hp_operating_mode"] = _navigator_17_register(
+        1501,
+        DataType.UINT16,
+        "hp_operating_mode",
+        enum_options=HP_OPERATING_MODE_OPTIONS,
+    )
+    for idx, letter in enumerate("abcdefg"):
+        regs[f"hc_{letter}_status"] = _navigator_17_register(
+            1502 + idx, DataType.UINT16, f"hc_{letter}_status"
+        )
+    for idx in range(1, 5):
+        # Status Verdichter 1-4: 0 = off, 1 = on.
+        regs[f"compressor_{idx}_status"] = _navigator_17_register(
+            1508 + idx, DataType.UINT16, f"compressor_{idx}_status", binary=True
+        )
+    # Pump statuses share the documented 0/1/2 value set.
+    pump_specs: list[tuple[int, str]] = [
+        (1513, "charging_pump_status"),  # Ladepumpe
+        (1514, "heat_source_pump_status"),  # Wärmequellenpumpe
+        (1515, "intermediate_circuit_pump_status"),  # Zwischenkreispumpe
+        (1516, "isc_cold_storage_pump_status"),  # ISC Kältespeicherpumpe
+        (1517, "isc_recooling_pump_status"),  # ISC Rückkühlpumpe
+    ]
+    for address, name in pump_specs:
+        regs[name] = _navigator_17_register(
+            address, DataType.UINT16, name, enum_options=PUMP_STATUS_OPTIONS
+        )
+    # Laufende Verdichterstufen (counts).
+    regs["compressor_stages_heating"] = _navigator_17_register(
+        1518, DataType.UINT16, "compressor_stages_heating"
+    )
+    regs["compressor_stages_cooling"] = _navigator_17_register(
+        1519, DataType.UINT16, "compressor_stages_cooling"
+    )
+    # Laufende Verdichterstufen Vorrang gesamt (DHW priority).
+    regs["compressor_stages_dhw"] = _navigator_17_register(
+        1520, DataType.UINT16, "compressor_stages_dhw"
+    )
+    # Betriebsart Kaskade / Solar / Smart Grid / IDM Systemkühlung (ISC).
+    # The 1.x documentation does not define value sets for these modes, so
+    # they are exposed as plain numbers.
+    regs["cascade_mode"] = _navigator_17_register(1521, DataType.UINT16, "cascade_mode")
+    regs["solar_mode"] = _navigator_17_register(1522, DataType.UINT16, "solar_mode")
+    regs["smart_grid_status"] = _navigator_17_register(1523, DataType.UINT16, "smart_grid_status")
+    regs["isc_mode"] = _navigator_17_register(1524, DataType.UINT16, "isc_mode")
+
+    return regs
+
+
 def get_heating_circuit_registers(
     circuit_letter: str,
 ) -> dict[str, RegisterDef]:
@@ -1630,6 +1818,13 @@ def _build_register_map_impl(
         raise ValueError(f"zone_modules must be 0-10, got {zone_modules}")
     if not (1 <= rooms_per_zone <= MAX_ROOMS_PER_ZONE):
         raise ValueError(f"rooms_per_zone must be 1-{MAX_ROOMS_PER_ZONE}, got {rooms_per_zone}")
+
+    if model_info is not None and model_info.model_name == MODEL_NAVIGATOR_17:
+        # Navigator 1.7 is a separate protocol family with its own official
+        # register table. The shared 2.0/10/Pro families must never be applied
+        # to it: most shared addresses are rejected with Illegal Data Address
+        # and the low input block carries different data points.
+        return _navigator_17_registers()
 
     all_regs: dict[str, RegisterDef] = {}
 

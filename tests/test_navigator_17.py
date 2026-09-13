@@ -1,0 +1,444 @@
+"""Navigator 1.0/1.7 protocol family: register map, detection, write block.
+
+The 1.x family is a separate protocol family with its own official register
+table (ma_de_812049, 2016-06-13). These tests pin the map contents, the
+detection signature, and the read-only contract.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import struct
+from typing import Any
+
+from idm_heatpump.client import (
+    DataType,
+    IdmModbusClient,
+    IdmModelInfo,
+    RegisterDef,
+    RegisterType,
+)
+from idm_heatpump.const import (
+    MODEL_NAVIGATOR_10,
+    MODEL_NAVIGATOR_17,
+    MODEL_NAVIGATOR_20,
+    MODEL_NAVIGATOR_PRO,
+    MODEL_UNKNOWN,
+    PUMP_STATUS_OPTIONS,
+)
+from idm_heatpump.registers import (
+    NAVIGATOR_17_REGISTER_SOURCE,
+    NAVIGATOR_17_REGISTER_SOURCE_VERSION,
+    _navigator_17_registers,
+    build_register_map,
+    get_register_registry,
+)
+
+from .fake_modbus import FakeModbusTransport
+
+# Official 1.x table: FC04 FLOAT block 1000-1088, status words 1500-1524.
+EXPECTED_FLOATS: dict[str, int] = {
+    "outdoor_temp": 1000,
+    "hp_flow_temp": 1002,
+    "hgl_flow_temp": 1004,
+    "heat_source_outlet_temp": 1006,
+    "storage_temp": 1008,
+    "cold_storage_temp": 1010,
+    "dhw_temp": 1012,
+    "dhw_tapping_temp": 1014,
+    "hot_gas_temp": 1044,
+    "humidity_sensor": 1046,
+    "air_intake_temp": 1048,
+    "air_heat_exchanger_temp": 1050,
+    "solar_collector_temp": 1052,
+    "solar_charging_temp": 1054,
+    "solar_collector_return_temp": 1056,
+    "solar_pool_temp": 1058,
+    "outdoor_temp_avg": 1060,
+    "heat_source_inlet_temp": 1062,
+    "isc_cooling_charge_temp": 1064,
+    "isc_recooling_temp": 1066,
+    "thermal_power_hp_flow": 1068,
+    "thermal_power_hgl_flow": 1070,
+    "thermal_power_total": 1072,
+    "thermal_power_solar": 1074,
+    "energy_total": 1076,
+    "energy_heating": 1078,
+    "energy_hgl": 1080,
+    "energy_cooling": 1082,
+    "energy_solar": 1084,
+    "groundwater_pump_flow_total": 1086,
+    "heat_source_pump_operating_hours": 1088,
+}
+EXPECTED_STATUS: dict[str, int] = {
+    "error_number": 1500,
+    "hp_operating_mode": 1501,
+    "hc_a_status": 1502,
+    "hc_b_status": 1503,
+    "hc_c_status": 1504,
+    "hc_d_status": 1505,
+    "hc_e_status": 1506,
+    "hc_f_status": 1507,
+    "hc_g_status": 1508,
+    "compressor_1_status": 1509,
+    "compressor_2_status": 1510,
+    "compressor_3_status": 1511,
+    "compressor_4_status": 1512,
+    "charging_pump_status": 1513,
+    "heat_source_pump_status": 1514,
+    "intermediate_circuit_pump_status": 1515,
+    "isc_cold_storage_pump_status": 1516,
+    "isc_recooling_pump_status": 1517,
+    "compressor_stages_heating": 1518,
+    "compressor_stages_cooling": 1519,
+    "compressor_stages_dhw": 1520,
+    "cascade_mode": 1521,
+    "solar_mode": 1522,
+    "smart_grid_status": 1523,
+    "isc_mode": 1524,
+}
+for idx, letter in enumerate("abcdefg"):
+    EXPECTED_FLOATS[f"hc_{letter}_flow_temp"] = 1016 + idx * 2
+    EXPECTED_FLOATS[f"hc_{letter}_room_device_temp"] = 1030 + idx * 2
+
+
+def navigator_17_model_info() -> IdmModelInfo:
+    return IdmModelInfo(
+        model_name=MODEL_NAVIGATOR_17,
+        active_heating_circuits=[],
+        zone_modules=0,
+        has_solar=False,
+        has_isc=False,
+        has_pv=False,
+        has_cascade=False,
+    )
+
+
+class Navigator17Transport(FakeModbusTransport):
+    """Fake endpoint shaped like the observed 1.x family behaviour.
+
+    The low input block (1000-1524) responds; every shared 2.0/10/Pro family
+    probe address is rejected with Modbus exception code 2.
+    """
+
+    def __init__(self, *, status_block_responds: bool = True) -> None:
+        input_registers: dict[int, int] = {}
+        for address in range(1000, 1090):
+            input_registers[address] = 0
+        if status_block_responds:
+            for address in range(1500, 1525):
+                input_registers[address] = 1
+        rejected: set[tuple[str, int, int]] = set()
+        for address in (74, 76, 78, 82):  # PV block probes
+            rejected.add(("input", address, 2))
+        for i in range(7):  # heating-circuit flow temperatures 1350-1362
+            rejected.add(("input", 1350 + i * 2, 2))
+        for i in range(7):  # active-mode probes 1498-1504
+            rejected.add(("input", 1498 + i, 1))
+        if not status_block_responds:
+            for address in range(1500, 1525):
+                rejected.add(("input", address, 1))
+        for address in (1850, 1870, 4108, 4120, 4122, 4126):
+            rejected.add(("input", address, 2))
+        for address in (1147, 4001):
+            rejected.add(("input", address, 1))
+        for i in range(10):  # zone-module slots 2000, 2065, ...
+            rejected.add(("input", 2000 + i * 65, 1))
+        super().__init__(
+            input_registers=input_registers,
+            illegal_reads=rejected,
+        )
+
+
+def _float_words(value: float) -> list[int]:
+    raw = struct.pack("<f", value)
+    return list(struct.unpack("<HH", raw))
+
+
+def test_navigator_17_map_matches_official_table() -> None:
+    regs = _navigator_17_registers()
+
+    expected = {**EXPECTED_FLOATS, **EXPECTED_STATUS}
+    assert set(regs) == set(expected), sorted(set(regs) ^ set(expected))
+    for name, address in expected.items():
+        assert regs[name].address == address, name
+
+
+def test_navigator_17_map_is_read_only() -> None:
+    for name, reg in _navigator_17_registers().items():
+        assert not reg.writable, name
+        assert reg.write_class.value == "forbidden", name
+        assert reg.register_type is RegisterType.INPUT, name
+
+
+def test_navigator_17_map_declares_family_metadata() -> None:
+    for name, reg in _navigator_17_registers().items():
+        assert reg.supported_models == (MODEL_NAVIGATOR_17,), name
+        assert reg.source == NAVIGATOR_17_REGISTER_SOURCE, name
+        assert reg.source_version == NAVIGATOR_17_REGISTER_SOURCE_VERSION, name
+
+
+def test_navigator_17_map_datatypes_and_units() -> None:
+    regs = _navigator_17_registers()
+
+    for name in EXPECTED_FLOATS:
+        assert regs[name].datatype is DataType.FLOAT, name
+        assert regs[name].size == 2, name
+    for name in EXPECTED_STATUS:
+        assert regs[name].datatype is DataType.UINT16, name
+        assert regs[name].size == 1, name
+    assert regs["outdoor_temp"].unit == "°C"
+    assert regs["humidity_sensor"].unit == "%"
+    assert regs["thermal_power_total"].unit == "kW"
+    assert regs["energy_total"].unit == "kWh"
+    assert regs["heat_source_pump_operating_hours"].unit == "h"
+    # The flow-counter volume unit is not documented in the 1.x table.
+    assert regs["groundwater_pump_flow_total"].unit is None
+
+
+def test_navigator_17_energy_and_power_state_classes() -> None:
+    regs = _navigator_17_registers()
+
+    for name in ("thermal_power_hp_flow", "thermal_power_hgl_flow", "thermal_power_total"):
+        assert regs[name].state_class == "measurement", name
+    for name in (
+        "energy_total",
+        "energy_heating",
+        "energy_hgl",
+        "energy_cooling",
+        "energy_solar",
+        "groundwater_pump_flow_total",
+        "heat_source_pump_operating_hours",
+    ):
+        assert regs[name].state_class == "total_increasing", name
+
+
+def test_navigator_17_status_enums() -> None:
+    regs = _navigator_17_registers()
+
+    assert regs["hp_operating_mode"].enum_options is not None
+    for name in (
+        "charging_pump_status",
+        "heat_source_pump_status",
+        "intermediate_circuit_pump_status",
+        "isc_cold_storage_pump_status",
+        "isc_recooling_pump_status",
+    ):
+        assert regs[name].enum_options == PUMP_STATUS_OPTIONS, name
+    # Undocumented 1.x mode value sets stay numeric.
+    for name in ("cascade_mode", "solar_mode", "smart_grid_status", "isc_mode"):
+        assert regs[name].enum_options is None, name
+    for idx in range(1, 5):
+        assert regs[f"compressor_{idx}_status"].binary, name
+
+
+def test_navigator_17_flow_block_is_contiguous() -> None:
+    """The FLOAT block must cover 1000-1089 without word gaps.
+
+    Batches only span exactly adjacent addresses; the official 1.x table
+    places a FLOAT at every second address from 1000 through 1088.
+    """
+    regs = _navigator_17_registers()
+    covered: set[int] = set()
+    for reg in regs.values():
+        if 1000 <= reg.address <= 1089:
+            covered.update(range(reg.address, reg.address + reg.size))
+    assert covered == set(range(1000, 1090))
+
+
+def test_build_register_map_returns_1_7_map_only() -> None:
+    model_info = navigator_17_model_info()
+    built = build_register_map(model_info=model_info)
+
+    assert set(built) == set(_navigator_17_registers())
+    # Capability flags from a misdetection must not add shared-family blocks.
+    polluted = IdmModelInfo(
+        model_name=MODEL_NAVIGATOR_17,
+        active_heating_circuits=["A", "B"],
+        zone_modules=3,
+        has_solar=True,
+        has_isc=True,
+        has_pv=True,
+        has_cascade=True,
+    )
+    assert set(build_register_map(model_info=polluted)) == set(built)
+
+
+def test_shared_family_maps_never_expose_1_7_only_registers() -> None:
+    nav20 = IdmModelInfo(
+        model_name=MODEL_NAVIGATOR_20,
+        active_heating_circuits=["A"],
+        zone_modules=0,
+        has_solar=False,
+        has_isc=False,
+        has_pv=False,
+        has_cascade=False,
+    )
+    nav20_map = build_register_map(model_info=nav20)
+
+    for name in ("hot_gas_temp", "thermal_power_total", "error_number"):
+        assert name not in nav20_map
+    # Shared names keep their shared-family addresses, not the 1.x ones.
+    assert nav20_map["outdoor_temp"].address == 1000
+    assert nav20_map["dhw_tapping_temp"].address == 1030
+    assert nav20_map["hc_a_flow_temp"].address == 1350
+    assert nav20_map["humidity_sensor"].address == 1392
+
+
+def test_1_7_map_keeps_family_addresses() -> None:
+    regs = _navigator_17_registers()
+
+    assert regs["outdoor_temp"].address == 1000
+    assert regs["hc_a_flow_temp"].address == 1016
+    assert regs["humidity_sensor"].address == 1046
+
+
+def test_register_registry_lookups_for_1_7() -> None:
+    registry = get_register_registry(model_info=navigator_17_model_info())
+
+    assert registry.get("hot_gas_temp") is not None
+    assert registry.get("system_mode") is None
+    assert registry.by_address(1046) is not None
+    assert registry.by_address(1392) is None
+    assert registry.writable() == {}
+
+
+def _detect_with_transport(transport: FakeModbusTransport) -> IdmModelInfo:
+    client = IdmModbusClient("127.0.0.1", max_retries=1, transport=transport)
+    return asyncio.run(client.detect_model())
+
+
+def test_detect_model_classifies_navigator_17() -> None:
+    info = _detect_with_transport(Navigator17Transport())
+
+    assert info.model_name == MODEL_NAVIGATOR_17
+    assert info.active_heating_circuits == []
+    assert info.zone_modules == 0
+    assert not info.has_solar
+    assert not info.has_isc
+    assert not info.has_pv
+    assert not info.has_cascade
+    assert info.features == set()
+
+
+def test_detect_model_classifies_navigator_17_without_status_block() -> None:
+    """A firmware that also rejects 1500+ still classifies as 1.7."""
+    info = _detect_with_transport(Navigator17Transport(status_block_responds=False))
+
+    assert info.model_name == MODEL_NAVIGATOR_17
+
+
+def test_detect_model_does_not_leak_overlapping_probe_results() -> None:
+    """Status words at 1500+ overlap the shared active-mode probes (1498+).
+
+    The answers must not fake heating circuits into the 1.7 model info.
+    """
+    transport = Navigator17Transport()
+    # Make the status words look like configured circuits (low byte != 255).
+    for address in range(1500, 1505):
+        transport.input_registers[address] = 2
+
+    info = _detect_with_transport(transport)
+
+    assert info.model_name == MODEL_NAVIGATOR_17
+    assert info.active_heating_circuits == []
+
+
+def _shared_family_transport(circuit_flow_words: list[int]) -> FakeModbusTransport:
+    """Fake endpoint shaped like a shared-family (2.0) controller.
+
+    The low block, heating-circuit block and active-mode registers answer;
+    the Navigator-10-only blocks, optional blocks and zone slots are rejected
+    with Modbus exception code 2, as a real 2.0 firmware does.
+    """
+    input_registers: dict[int, int] = {}
+    for address in range(1000, 1099):
+        input_registers[address] = 0
+    input_registers.update(zip(range(1350, 1364), circuit_flow_words))
+    for address in range(1498, 1505):
+        input_registers[address] = 0xFFFF
+    rejected: set[tuple[str, int, int]] = set()
+    for address in (74, 1850, 1870, 4108, 4120, 4122, 4126):
+        rejected.add(("input", address, 2))
+    for address in (1147, 4001, 2000, 2065):
+        rejected.add(("input", address, 1))
+    return FakeModbusTransport(input_registers=input_registers, illegal_reads=rejected)
+
+
+def test_detect_model_offline_device_cannot_classify_as_1_7() -> None:
+    """A silent link must never yield a confident 1.7 classification."""
+
+    class SilentTransport(FakeModbusTransport):
+        async def _read(self, *args: Any, **kwargs: Any) -> list[int]:
+            from idm_heatpump.exceptions import IdmTransportError
+
+            raise IdmTransportError("no response")
+
+    client = IdmModbusClient("127.0.0.1", max_retries=1, transport=SilentTransport())
+    from idm_heatpump.exceptions import IdmConnectionError
+
+    try:
+        asyncio.run(client.detect_model())
+    except IdmConnectionError:
+        pass
+    else:
+        raise AssertionError("a silent transport must fail detection, not classify")
+
+
+def test_detect_model_shared_family_with_sentinel_circuits_is_not_1_7() -> None:
+    """A 2.0 whose circuits answer the -1.0 sentinel must not become 1.7."""
+    transport = _shared_family_transport(_float_words(-1.0) * 7)
+
+    info = _detect_with_transport(transport)
+
+    # No circuit is active, but the heating-circuit block answers, so the
+    # device cannot be the 1.x family; it falls back to Unknown like before.
+    assert info.model_name == MODEL_UNKNOWN
+    assert info.model_name != MODEL_NAVIGATOR_17
+
+
+def test_detect_model_active_circuit_is_not_1_7() -> None:
+    transport = _shared_family_transport(_float_words(35.0) * 7)
+
+    info = _detect_with_transport(transport)
+
+    assert info.model_name == MODEL_NAVIGATOR_20
+
+
+def test_writes_are_blocked_for_navigator_17() -> None:
+    client = IdmModbusClient("127.0.0.1")
+    client.set_model_info(navigator_17_model_info())
+    custom = RegisterDef(address=1000, datatype=DataType.FLOAT, name="x")
+
+    for allow_custom in (False, True):
+        try:
+            client.simulate_write(custom, 1.0, allow_custom_register=allow_custom)
+        except ValueError as err:
+            assert "read-only" in str(err)
+        else:
+            raise AssertionError("write must be rejected for Navigator 1.7")
+
+
+def test_get_register_uses_1_7_map() -> None:
+    from idm_heatpump.registers import get_register
+
+    reg = get_register("hot_gas_temp", model_info=navigator_17_model_info())
+    assert reg is not None
+    assert reg.address == 1044
+
+    model_names = (MODEL_NAVIGATOR_10, MODEL_NAVIGATOR_20, MODEL_NAVIGATOR_PRO)
+    for model_name in model_names:
+        info = IdmModelInfo(
+            model_name=model_name,
+            active_heating_circuits=["A"],
+            zone_modules=0,
+            has_solar=False,
+            has_isc=False,
+            has_pv=False,
+            has_cascade=False,
+        )
+        try:
+            get_register("hot_gas_temp", model_info=info)
+        except ValueError:
+            continue
+        raise AssertionError(f"hot_gas_temp must not resolve for {model_name}")
