@@ -11,7 +11,7 @@ can rely on. For the full register map, see [Modbus Register](Modbus-Register).
 | IDM Navigator 10 | NAV10_20.23+ (2025) | up to 7 (A–G) | up to 10 (6 default, 8 configurable) | Maintainer-confirmed |
 | IDM Navigator 2.0 | firmware-dependent | up to 7 (A–G) | firmware-dependent | Expected; needs broader raw detection captures |
 | IDM Navigator Pro | firmware-dependent | up to 7 (A–G) | up to 10 (8 configurable) | Expected; needs complete diagnostics |
-| IDM Navigator 1.7 | n1.x firmware | static A–G sensor slots | none | Read-only model; detection via Illegal-Data-Address signature |
+| IDM Navigator 1.7 | n1.x firmware | static A–G sensor slots | none | Read-only base map + PV supplement when firmware provides it; detection via Illegal-Data-Address signature |
 
 > Navigator 1.0/1.7 is a separate protocol family, supported **read-only**:
 > sensor values from its official register table, no writable registers.

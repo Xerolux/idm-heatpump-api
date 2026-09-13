@@ -79,6 +79,15 @@ def _current_schema() -> dict[str, Any]:
         has_pv=False,
         has_cascade=False,
     )
+    navigator_17_pv = IdmModelInfo(
+        model_name=MODEL_NAVIGATOR_17,
+        active_heating_circuits=[],
+        zone_modules=0,
+        has_solar=False,
+        has_isc=False,
+        has_pv=True,
+        has_cascade=False,
+    )
 
     return {
         "schema_version": 1,
@@ -87,6 +96,7 @@ def _current_schema() -> dict[str, Any]:
             "navigator_10_full": _serialize_map(build_register_map(model_info=navigator_10)),
             "navigator_20_circuit_a": _serialize_map(build_register_map(model_info=navigator_20)),
             "navigator_17": _serialize_map(build_register_map(model_info=navigator_17)),
+            "navigator_17_pv": _serialize_map(build_register_map(model_info=navigator_17_pv)),
         },
     }
 

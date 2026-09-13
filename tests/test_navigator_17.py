@@ -15,7 +15,6 @@ from idm_heatpump.client import (
     DataType,
     IdmModbusClient,
     IdmModelInfo,
-    RegisterDef,
     RegisterType,
 )
 from idm_heatpump.const import (
@@ -164,11 +163,35 @@ def test_navigator_17_map_matches_official_table() -> None:
         assert regs[name].address == address, name
 
 
-def test_navigator_17_map_is_read_only() -> None:
+def test_navigator_17_base_map_is_read_only() -> None:
     for name, reg in _navigator_17_registers().items():
         assert not reg.writable, name
         assert reg.write_class.value == "forbidden", name
         assert reg.register_type is RegisterType.INPUT, name
+
+
+def test_navigator_17_pv_supplement_adds_writable_registers() -> None:
+    regs = _navigator_17_registers(has_pv=True)
+
+    for name, address in {
+        "pv_surplus": 74,
+        "electric_heater_power": 76,
+        "pv_production": 78,
+        "house_consumption": 82,
+        "power_consumption_hp": 4122,
+    }.items():
+        assert name in regs, name
+        assert regs[name].address == address, name
+
+    for name in ("pv_surplus", "electric_heater_power", "pv_production", "house_consumption"):
+        assert regs[name].writable, name
+        assert regs[name].unit == "kW", name
+        assert regs[name].datatype is DataType.FLOAT, name
+    # The power measurement stays read-only.
+    assert not regs["power_consumption_hp"].writable
+    assert regs["power_consumption_hp"].state_class == "measurement"
+    # Without the probe response the supplement is absent.
+    assert "pv_surplus" not in _navigator_17_registers(has_pv=False)
 
 
 def test_navigator_17_map_declares_family_metadata() -> None:
@@ -185,7 +208,11 @@ def test_navigator_17_map_datatypes_and_units() -> None:
         assert regs[name].datatype is DataType.FLOAT, name
         assert regs[name].size == 2, name
     for name in EXPECTED_STATUS:
-        assert regs[name].datatype is DataType.UINT16, name
+        if name == "hp_operating_mode":
+            # UCHAR per the 1.x table; firmwares double the byte into the word.
+            assert regs[name].datatype is DataType.UCHAR, name
+        else:
+            assert regs[name].datatype is DataType.UINT16, name
         assert regs[name].size == 1, name
     assert regs["outdoor_temp"].unit == "°C"
     assert regs["humidity_sensor"].unit == "%"
@@ -251,17 +278,36 @@ def test_build_register_map_returns_1_7_map_only() -> None:
     built = build_register_map(model_info=model_info)
 
     assert set(built) == set(_navigator_17_registers())
-    # Capability flags from a misdetection must not add shared-family blocks.
+    # Capability flags from a misdetection must not add shared-family
+    # blocks; only has_pv opens the 1.x PV supplement.
     polluted = IdmModelInfo(
         model_name=MODEL_NAVIGATOR_17,
         active_heating_circuits=["A", "B"],
         zone_modules=3,
         has_solar=True,
         has_isc=True,
-        has_pv=True,
+        has_pv=False,
         has_cascade=True,
     )
     assert set(build_register_map(model_info=polluted)) == set(built)
+    with_pv = IdmModelInfo(
+        model_name=MODEL_NAVIGATOR_17,
+        active_heating_circuits=[],
+        zone_modules=0,
+        has_solar=False,
+        has_isc=False,
+        has_pv=True,
+        has_cascade=False,
+    )
+    pv_map = build_register_map(model_info=with_pv)
+    assert "pv_surplus" in pv_map
+    assert set(pv_map) - set(built) == {
+        "pv_surplus",
+        "electric_heater_power",
+        "pv_production",
+        "house_consumption",
+        "power_consumption_hp",
+    }
 
 
 def test_shared_family_maps_never_expose_1_7_only_registers() -> None:
@@ -301,6 +347,23 @@ def test_register_registry_lookups_for_1_7() -> None:
     assert registry.by_address(1046) is not None
     assert registry.by_address(1392) is None
     assert registry.writable() == {}
+    with_pv = get_register_registry(
+        model_info=IdmModelInfo(
+            model_name=MODEL_NAVIGATOR_17,
+            active_heating_circuits=[],
+            zone_modules=0,
+            has_solar=False,
+            has_isc=False,
+            has_pv=True,
+            has_cascade=False,
+        )
+    )
+    assert set(with_pv.writable()) == {
+        "pv_surplus",
+        "electric_heater_power",
+        "pv_production",
+        "house_consumption",
+    }
 
 
 def _detect_with_transport(transport: FakeModbusTransport) -> IdmModelInfo:
@@ -319,6 +382,26 @@ def test_detect_model_classifies_navigator_17() -> None:
     assert not info.has_pv
     assert not info.has_cascade
     assert info.features == set()
+
+
+def test_detect_model_classifies_navigator_17_with_pv_supplement() -> None:
+    """Updated 1.x firmware answers the PV block and 4122; it must still be a
+    1.7 (with has_pv), not a Navigator 10."""
+    transport = Navigator17Transport()
+    for address in range(74, 90, 2):
+        transport.input_registers[address] = 0
+        transport.illegal_reads.discard(("input", address, 2))
+    for address in (4120, 4122, 4126):
+        transport.input_registers[address] = 0
+        transport.illegal_reads.discard(("input", address, 2))
+
+    info = _detect_with_transport(transport)
+
+    assert info.model_name == MODEL_NAVIGATOR_17
+    assert info.has_pv
+    assert info.features == {"pv"}
+    built = build_register_map(model_info=info)
+    assert "pv_surplus" in built and "power_consumption_hp" in built
 
 
 def test_detect_model_classifies_navigator_17_without_status_block() -> None:
@@ -405,18 +488,37 @@ def test_detect_model_active_circuit_is_not_1_7() -> None:
     assert info.model_name == MODEL_NAVIGATOR_20
 
 
-def test_writes_are_blocked_for_navigator_17() -> None:
+def test_writes_follow_the_1_7_map() -> None:
+    """Without the PV supplement every named register is read-only; with it,
+    only the PV registers accept writes, exactly like the shared family."""
     client = IdmModbusClient("127.0.0.1")
     client.set_model_info(navigator_17_model_info())
-    custom = RegisterDef(address=1000, datatype=DataType.FLOAT, name="x")
 
-    for allow_custom in (False, True):
-        try:
-            client.simulate_write(custom, 1.0, allow_custom_register=allow_custom)
-        except ValueError as err:
-            assert "read-only" in str(err)
-        else:
-            raise AssertionError("write must be rejected for Navigator 1.7")
+    try:
+        client.simulate_write("outdoor_temp", 20.0)
+    except ValueError as err:
+        assert "not available" in str(err) or "read-only" in str(err)
+    else:
+        raise AssertionError("outdoor_temp must not be writable on Navigator 1.7")
+
+    with_pv = IdmModelInfo(
+        model_name=MODEL_NAVIGATOR_17,
+        active_heating_circuits=[],
+        zone_modules=0,
+        has_solar=False,
+        has_isc=False,
+        has_pv=True,
+        has_cascade=False,
+    )
+    client.set_model_info(with_pv)
+    plan = client.simulate_write("pv_surplus", 2.5)
+    assert plan.requested_value == 2.5
+    try:
+        client.simulate_write("outdoor_temp", 20.0)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("outdoor_temp must stay read-only with the PV supplement")
 
 
 def test_get_register_uses_1_7_map() -> None:

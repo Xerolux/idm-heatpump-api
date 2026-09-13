@@ -184,11 +184,13 @@ def test_navigator_17_table_matches_code() -> None:
         zone_modules=0,
         has_solar=False,
         has_isc=False,
-        has_pv=False,
+        has_pv=True,
         has_cascade=False,
         features=set(),
         firmware_version=None,
     )
+    # has_pv=True covers the PV supplement rows too; its base rows share the
+    # same addresses as the base map.
     nav17_map = build_register_map(model_info)
 
     row_re = re.compile(r"^\|\s*(\d+)\s*\|\s*`([a-z0-9_]+)`\s*\|", re.MULTILINE)

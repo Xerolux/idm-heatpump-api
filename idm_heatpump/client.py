@@ -91,18 +91,13 @@ _DETECT_EMPTY_SLOT_STOP_THRESHOLD = 2
 # shared 2.0/10/Pro family addresses with Modbus Illegal Data Address.
 _DETECT_NAV17_CORE = 1000
 # Addresses whose Illegal-Data-Address rejection, together with a responding
-# core block, identifies the 1.x family. Every shared-family controller
-# (2.0/10/Pro) implements the heating-circuit block, so 1350 can never be
-# rejected by that family; 1498, 2000 and the 4001+/4108+/4122+ blocks close
-# the remaining escape routes. All of these are probed by the regular
-# capability scan, so no extra I/O is needed for the signature.
+# core block, confirms the 1.x family after the 1350 gate fired. Updated 1.x
+# firmware can answer the post-2016 PV supplement (74/76/78/82) and even the
+# Navigator-10-only power registers, so those must not be in this set.
 _DETECT_NAV17_REJECTED: tuple[int, ...] = (
-    1350,  # heating-circuit A flow temperature
+    1350,  # heating-circuit A flow temperature (gate)
     1498,  # active heating-circuit mode A
     2000,  # zone-module block base
-    4001,  # Navigator-10-only booster block
-    4108,  # Navigator-10-only power limit
-    4122,  # Navigator-10-only power measurement
 )
 DEFAULT_REGISTER_SOURCE = "official_idm_modbus"
 DEFAULT_REGISTER_SOURCE_VERSION = (
@@ -897,11 +892,12 @@ class IdmModbusClient:
         """Detect the Navigator 1.0/1.7 protocol family by its response shape.
 
         The 1.x family responds on the low FC04 input block (from address
-        1000) while rejecting the shared 2.0/10/Pro family addresses —
-        heating circuits, zone modules and the Navigator-10-only blocks —
-        with Modbus exception code 2. A device that answers nothing (offline)
-        or that responds on any shared-family address must not classify as
-        Navigator 1.7.
+        1000) while rejecting the shared 2.0/10/Pro family's heating-circuit
+        and zone-module blocks with Modbus exception code 2. A device that
+        answers nothing (offline) or that responds on the heating-circuit
+        block must not classify as Navigator 1.7. Updated 1.x firmware can
+        answer the post-2016 PV supplement and the power registers, so those
+        addresses are deliberately not part of the signature.
 
         Only probes already made during this detection run decide the
         rejection set; the single new probe is the core-block response check,
@@ -1156,14 +1152,15 @@ class IdmModbusClient:
             model_name = MODEL_NAVIGATOR_17
             # The 1.x family exposes none of the probed shared-family
             # capabilities; anything apparent came from overlapping probe
-            # addresses and must not leak into the model info.
+            # addresses and must not leak into the model info. The PV probe
+            # (74) is the exception: a response there means the post-2016 PV
+            # supplement is present and its registers join the 1.7 map.
             active_circuits = []
             zone_modules = 0
             has_solar = False
             has_isc = False
-            has_pv = False
             has_cascade = False
-            features = set()
+            features = {FEATURE_PV} if has_pv else set()
         elif has_navigator_10_indicators or zone_modules > 0:
             # Navigator 10 is the current generation; also report Pro-like capabilities
             model_name = MODEL_NAVIGATOR_10 if has_navigator_10_indicators else MODEL_NAVIGATOR_PRO
@@ -1402,13 +1399,6 @@ class IdmModbusClient:
     ) -> WriteSafetyResult:
         """Validate and encode a write without necessarily sending it."""
         register = self._get_register_by_key(reg) if isinstance(reg, str) else reg
-        if self._model_info is not None and self._model_info.model_name == MODEL_NAVIGATOR_17:
-            # The 1.x family is exposed read-only; its holding/coil blocks are
-            # not mapped and no write path is validated for it, including
-            # custom registers.
-            raise ValueError(
-                "Navigator 1.7 is supported read-only; writes are disabled for this protocol family"
-            )
         if not register.writable:
             raise ValueError(f"Register '{register.name}' is read-only")
         self._validate_write_allowed(

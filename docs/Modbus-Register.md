@@ -331,11 +331,11 @@ mode = 2007, relay = 2008; room 2 starts at 2009.
 ## Navigator 1.7 (read-only)
 
 The Navigator 1.0/1.7 controllers use a separate protocol family. The library
-exposes their register table **read-only**: the FC04 input blocks below are
-mapped; the FC03/06 holding block (2000+) and the FC01/05 coil block (3000+)
-are not mapped, because their write semantics are unverified on this family.
-Source: official iDM Modbus TCP documentation for Navigator 1.0/1.7
-(`ma_de_812049`, register table dated 2016-06-13).
+exposes their FC04 input blocks below; the FC03/06 holding block (2000+) and
+the FC01/05 coil block (3000+) are not mapped, because their per-register
+semantics are undocumented in the sources available. Source: official iDM
+Modbus TCP documentation for Navigator 1.0/1.7 (`ma_de_812049`, register
+table dated 2016-06-13).
 
 Same physical layer as the shared family: Modbus TCP port **502**, unit ID 1,
 IEEE-754 `FLOAT` values in two registers, low word first. The data points
@@ -391,7 +391,7 @@ addresses must never be served from the shared map.
 | 1086 | `groundwater_pump_flow_total` | FLOAT | RO | - | Flow counter; unit undocumented |
 | 1088 | `heat_source_pump_operating_hours` | FLOAT | RO | h | Cumulative |
 | 1500 | `error_number` | UINT16 | RO | - | Current fault number |
-| 1501 | `hp_operating_mode` | UINT16 | RO | - | 0=Standby; 1=Heating; 2=Cooling; 4=DHW; 8=Defrost |
+| 1501 | `hp_operating_mode` | UCHAR | RO | - | 0=Standby; 1=Heating; 2=Cooling; 4=DHW; 8=Defrost; firmware doubles the byte into the word |
 | 1502 | `hc_a_status` | UINT16 | RO | - | Heating-circuit A status |
 | 1503 | `hc_b_status` | UINT16 | RO | - |  |
 | 1504 | `hc_c_status` | UINT16 | RO | - |  |
@@ -415,6 +415,19 @@ addresses must never be served from the shared map.
 | 1522 | `solar_mode` | UINT16 | RO | - | Value set undocumented |
 | 1523 | `smart_grid_status` | UINT16 | RO | - | Value set undocumented |
 | 1524 | `isc_mode` | UINT16 | RO | - | Value set undocumented |
+
+Updated 1.x firmware carries a post-2016 PV supplement (iDM support
+documentation; not in the 2016 table). When the detection probe at address 74
+responds, these registers join the 1.7 map — the four PV values accept the
+same volatile GLT writes as on the shared family:
+
+| Address | Name | Type | Access | Unit | Notes |
+|---------|------|------|--------|------|-------|
+| 74 | `pv_surplus` | FLOAT | RW | kW | PV surplus written by the energy manager |
+| 76 | `electric_heater_power` | FLOAT | RW | kW |  |
+| 78 | `pv_production` | FLOAT | RW | kW |  |
+| 82 | `house_consumption` | FLOAT | RW | kW |  |
+| 4122 | `power_consumption_hp` | FLOAT | RO | kW | Current power draw |
 
 ## Notes
 

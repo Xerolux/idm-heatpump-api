@@ -44,8 +44,9 @@ This library is primarily designed to power the unofficial [IDM Heatpump Home As
 | IDM Navigator 2.0 | firmware-dependent | up to 7 (A–G) | firmware-dependent | Expected; needs broader raw detection captures |
 | IDM Navigator Pro | firmware-dependent | up to 7 (A–G) | up to 10 (8 configurable) | Expected; needs complete diagnostics |
 
-> Navigator 1.0/1.7 is a separate protocol family and is supported
-> **read-only** (sensor values only; no writable registers).
+> Navigator 1.0/1.7 is a separate protocol family, supported with its
+> own read-only register map (plus PV-supplement writes when the firmware
+> provides them).
 
 ## Requirements
 

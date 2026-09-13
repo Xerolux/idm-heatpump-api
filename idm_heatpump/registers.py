@@ -1308,6 +1308,12 @@ NAVIGATOR_17_REGISTER_SOURCE = "official_idm_modbus"
 NAVIGATOR_17_REGISTER_SOURCE_VERSION = (
     "Modbus TCP Navigator 1.0/1.7 register table 2016-06-13 (ma_de_812049)"
 )
+# The PV block (74-82) and the power measurement (4122) were added to the 1.x
+# firmware after the 2016 table was published; iDM support documents them as
+# the same data points the shared 2.0/10/Pro family exposes at the same
+# addresses. Older 1.x firmware rejects them, so the block is included only
+# when the detection probe at address 74 responded.
+NAVIGATOR_17_PV_SOURCE_VERSION = "iDM PV-signal Modbus TCP supplement to ma_de_812049 (post-2016)"
 
 
 def _navigator_17_register(
@@ -1328,8 +1334,8 @@ def _navigator_17_register(
     )
 
 
-def _navigator_17_registers() -> dict[str, RegisterDef]:
-    """Read-only register map for the Navigator 1.0/1.7 protocol family.
+def _navigator_17_registers(*, has_pv: bool = False) -> dict[str, RegisterDef]:
+    """Register map for the Navigator 1.0/1.7 protocol family.
 
     Source: official iDM Modbus TCP documentation for Navigator 1.0/1.7
     (ma_de_812049, register table dated 2016-06-13). The 1.x family uses a
@@ -1339,11 +1345,14 @@ def _navigator_17_registers() -> dict[str, RegisterDef]:
     outdoor temperature, and 1046 is the humidity sensor). Never reuse the
     shared 2.0/10/Pro definitions for these addresses.
 
-    Scope is deliberately read-only: the FC04 input blocks (FLOAT values from
-    1000, status words from 1500) are exposed; the FC03/06 holding block from
-    2000 and the FC01/05 coil block from 3000 are not mapped, because their
-    write semantics are unverified on this family. Every register therefore
-    stays ``writable=False`` and ``write_class`` is FORBIDDEN.
+    The base map is read-only: the FC04 input blocks (FLOAT values from 1000,
+    status words from 1500) carry no write path. The FC03/06 holding block
+    from 2000 and the FC01/05 coil block from 3000 stay unmapped because
+    their per-register semantics are undocumented in the sources available.
+    When the detection probe at address 74 responded (``has_pv``), the
+    post-2016 PV supplement is included: the writable PV/energy-management
+    registers (74/76/78/82, mirroring the shared family's volatile writes)
+    and the read-only power measurement at 4122.
     """
     regs: dict[str, RegisterDef] = {}
 
@@ -1437,9 +1446,12 @@ def _navigator_17_registers() -> dict[str, RegisterDef]:
         DataType.UINT16,
         "error_number",  # Aktuelle Störungsnummer
     )
+    # UCHAR per the 1.x table: firmwares return the mode byte doubled into
+    # both bytes of the word (a value of 1 arrives as 0x0101), so the low
+    # byte must be masked off instead of decoding the whole word.
     regs["hp_operating_mode"] = _navigator_17_register(
         1501,
-        DataType.UINT16,
+        DataType.UCHAR,
         "hp_operating_mode",
         enum_options=HP_OPERATING_MODE_OPTIONS,
     )
@@ -1482,6 +1494,38 @@ def _navigator_17_registers() -> dict[str, RegisterDef]:
     regs["solar_mode"] = _navigator_17_register(1522, DataType.UINT16, "solar_mode")
     regs["smart_grid_status"] = _navigator_17_register(1523, DataType.UINT16, "smart_grid_status")
     regs["isc_mode"] = _navigator_17_register(1524, DataType.UINT16, "isc_mode")
+
+    if has_pv:
+        # Post-2016 PV supplement (see NAVIGATOR_17_PV_SOURCE_VERSION). The
+        # data points and semantics match the shared family's PV block at the
+        # same addresses; the writes are volatile GLT values like there.
+        pv_specs: list[tuple[int, str]] = [
+            (74, "pv_surplus"),
+            (76, "electric_heater_power"),
+            (78, "pv_production"),
+            (82, "house_consumption"),
+        ]
+        for address, name in pv_specs:
+            regs[name] = RegisterDef(
+                address=address,
+                datatype=DataType.FLOAT,
+                name=name,
+                unit="kW",
+                writable=True,
+                source=NAVIGATOR_17_REGISTER_SOURCE,
+                source_version=NAVIGATOR_17_PV_SOURCE_VERSION,
+                supported_models=(MODEL_NAVIGATOR_17,),
+            )
+        regs["power_consumption_hp"] = RegisterDef(
+            address=4122,
+            datatype=DataType.FLOAT,
+            name="power_consumption_hp",
+            unit="kW",
+            state_class="measurement",
+            source=NAVIGATOR_17_REGISTER_SOURCE,
+            source_version=NAVIGATOR_17_PV_SOURCE_VERSION,
+            supported_models=(MODEL_NAVIGATOR_17,),
+        )
 
     return regs
 
@@ -1823,8 +1867,9 @@ def _build_register_map_impl(
         # Navigator 1.7 is a separate protocol family with its own official
         # register table. The shared 2.0/10/Pro families must never be applied
         # to it: most shared addresses are rejected with Illegal Data Address
-        # and the low input block carries different data points.
-        return _navigator_17_registers()
+        # and the low input block carries different data points. The PV
+        # supplement is included only when the probe at address 74 responded.
+        return _navigator_17_registers(has_pv=model_info.has_pv)
 
     all_regs: dict[str, RegisterDef] = {}
 

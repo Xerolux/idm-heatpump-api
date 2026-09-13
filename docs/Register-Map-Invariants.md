@@ -118,14 +118,17 @@ Navigator 1.0/1.7 uses a distinct map:
 - IEEE-754 floats use the same low-word-first ordering.
 
 Navigator 1.0/1.7 is supported **read-only** as the separate
-`Navigator 1.7` model. Its FC04 input blocks (FLOAT values 1000-1088, status
-words 1500-1524) come from the official `ma_de_812049` register table
-(2016-06-13) and are the only addresses mapped; the data points differ from
+`Navigator 1.7` model, plus a post-2016 PV supplement (writable 74/76/78/82,
+read-only 4122) that joins the map only when the probe at address 74
+responded. Its FC04 input blocks (FLOAT values 1000-1088, status words
+1500-1524) come from the official `ma_de_812049` register table
+(2016-06-13); the data points differ from
 the shared 2.0/10/Pro table address by address (for example 1002 is the
 heat-pump flow temperature there, not the averaged outdoor temperature), so
 no definition may be shared with the other families. The holding block
-(2000+) and coil block (3000+) stay unmapped until their write semantics are
-verified on real 1.x hardware; every 1.7 register is `writable=False` and
+(2000+) and coil block (3000+) stay unmapped because their per-register
+semantics are undocumented in the sources available; every 1.7 register
+outside the PV supplement is `writable=False` and
 `detect_model` classifies the family through its Illegal-Data-Address
 signature (core block responds, shared-family addresses rejected) before the
 circuit-based classification, because the shared active-mode probes
