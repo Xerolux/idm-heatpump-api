@@ -1460,9 +1460,11 @@ def _navigator_17_registers(*, has_pv: bool = False) -> dict[str, RegisterDef]:
             1502 + idx, DataType.UINT16, f"hc_{letter}_status"
         )
     for idx in range(1, 5):
-        # Status Verdichter 1-4: 0 = off, 1 = on.
-        regs[f"compressor_{idx}_status"] = _navigator_17_register(
-            1508 + idx, DataType.UINT16, f"compressor_{idx}_status", binary=True
+        # Status Verdichter 1-4: 0 = off, 1 = on. Named like the shared
+        # family's compressor_status_N so consumers reuse translations and
+        # binary metadata.
+        regs[f"compressor_status_{idx}"] = _navigator_17_register(
+            1508 + idx, DataType.UINT16, f"compressor_status_{idx}", binary=True
         )
     # Pump statuses share the documented 0/1/2 value set.
     pump_specs: list[tuple[int, str]] = [

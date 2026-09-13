@@ -216,6 +216,12 @@
       "hass_integration_version": "pending",
       "status": "api-prepared",
       "notes": "Adds the Navigator 1.0/1.7 protocol family as a read-only model: official 1.x register table (input block 1000-1088, status words 1500-1524), Illegal-Data-Address signature detection, and a family-wide write block."
+    },
+    {
+      "api_version": "2.1.1",
+      "hass_integration_version": "pending",
+      "status": "api-prepared",
+      "notes": "Renames the Navigator 1.7 compressor statuses to the shared family's compressor_status_N names so consumers reuse translations and binary metadata."
     }
   ]
 }
