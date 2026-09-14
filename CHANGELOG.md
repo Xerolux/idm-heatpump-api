@@ -24,6 +24,8 @@ changelog is history. Everything from `2.0.0b1` on is English.
 
 ## [Unreleased]
 
+## [2.1.2] - 2026-09-14
+
 ### Fixed
 
 - Navigator 10 skips explicitly inaccessible optional setting sections, retaining
