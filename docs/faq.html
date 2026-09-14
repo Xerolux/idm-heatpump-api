@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IDM Navigator Heat Pump FAQ | Python, Home Assistant and Modbus TCP</title>
+<meta name="description" content="Answers about connecting IDM Navigator heat pumps to Python and Home Assistant via local Modbus TCP. Supported models, port, installation and cloud requirements.">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<link rel="canonical" href="https://xerolux.github.io/idm-heatpump-api/faq.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="IDM Navigator Heat Pump FAQ">
+<meta property="og:description" content="Python and Home Assistant integration FAQ for IDM Navigator heat pumps via local Modbus TCP.">
+<meta property="og:url" content="https://xerolux.github.io/idm-heatpump-api/faq.html">
+<script type="application/ld+json">
+{
+ "@context":"https://schema.org",
+ "@type":"FAQPage",
+ "mainEntity":[
+  {"@type":"Question","name":"Can I connect an IDM heat pump to Python?","acceptedAnswer":{"@type":"Answer","text":"Yes. Install idm-heatpump-api with the pymodbus extra and use IdmModbusClient over local Modbus TCP."}},
+  {"@type":"Question","name":"Does the IDM Heatpump API work with Home Assistant?","acceptedAnswer":{"@type":"Answer","text":"Yes. The library is the device-logic layer used by the IDM Heatpump Home Assistant integration."}},
+  {"@type":"Question","name":"Which IDM Navigator models are supported?","acceptedAnswer":{"@type":"Answer","text":"The project targets Navigator 2.0, Navigator 10 and Navigator Pro."}},
+  {"@type":"Question","name":"Is an IDM cloud account required?","acceptedAnswer":{"@type":"Answer","text":"No. Communication is local through the IDM controller Modbus TCP interface, normally on port 502."}}
+ ]
+}
+</script>
+<style>body{font-family:system-ui,sans-serif;max-width:820px;margin:3rem auto;padding:0 1.25rem;color:#17202a;line-height:1.65}a{color:#0057d8}article{background:#f7f9fc;padding:2rem;border-radius:14px}h1{line-height:1.2}h2{margin-top:2rem}</style>
+</head>
+<body><article>
+<p><a href="https://xerolux.github.io/idm-heatpump-api/">IDM Heatpump API documentation</a></p>
+<h1>IDM Navigator Heat Pump FAQ</h1>
+<p>Answers for developers and Home Assistant users who want to monitor or control an IDM Navigator heat pump locally with Python and Modbus TCP.</p>
+<h2>Can I connect an IDM heat pump to Python?</h2>
+<p>Yes. Install <code>idm-heatpump-api[pymodbus]</code> and use <code>IdmModbusClient</code> to communicate with the local IDM Navigator controller over Modbus TCP.</p>
+<h2>Does the IDM Heatpump API work with Home Assistant?</h2>
+<p>Yes. The library powers the unofficial <a href="https://github.com/Xerolux/idm-heatpump-hass">IDM Heatpump Home Assistant integration</a>.</p>
+<h2>Which IDM Navigator models are supported?</h2>
+<p>The project targets IDM Navigator 2.0, Navigator 10 and Navigator Pro. Navigator 1.0 and 1.7 are separate protocol families.</p>
+<h2>Is an IDM cloud account required?</h2>
+<p>No. Communication takes place locally through the IDM controller's Modbus TCP interface, normally on port 502.</p>
+</article></body>
+</html>
