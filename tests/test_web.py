@@ -1315,3 +1315,68 @@ async def test_navigator20_read_data_gives_up_after_one_failed_relogin() -> None
     # Exactly one re-login was attempted; the client is reset for the next poll.
     assert session.requests.count(("POST", "/", {"pin": "1234"})) == 2
     assert client._data_paths == ()
+
+
+INACCESSIBLE_SETTING = json.dumps(
+    {
+        "setting": {
+            "note": {"text": "setting item [13259] is not accessible!", "type": "danger"},
+            "redirect": {
+                "command": "overview",
+                "controller": "setting",
+                "data": {"settingId": "4747"},
+            },
+        }
+    }
+)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ids", [("4768", "13259"), ("13259", "4768")])
+async def test_nav10_skips_inaccessible_section_and_preserves_values(
+    ids: tuple[str, ...], caplog: pytest.LogCaptureFixture
+) -> None:
+    section = json.dumps({"settingDetail": {"id": "4768", "value": NAV10_SENSOR_HTML}})
+    ws = FakeWs(
+        ['{"authorized":true}']
+        + [INACCESSIBLE_SETTING if item == "13259" else section for item in ids]
+    )
+    client = IdmNavigator10WebClient("192.0.2.10", "1234", session=FakeSession(ws), request_delay=0)
+    with caplog.at_level("DEBUG", logger="idm_heatpump.web"):
+        data = await client.read_data(ids, include_raw=True)
+    assert data.simple_values["hotgas_temperature"] == "31.0°C"
+    assert data.raw_responses["setting:13259"] == INACCESSIBLE_SETTING
+    assert len(ws.sent) == 2
+    assert "13259 is not accessible; skipping" in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("response", [INACCESSIBLE_SETTING, "{}", "[]", "invalid"])
+async def test_nav10_does_not_return_empty_success_for_unavailable_or_invalid_sections(
+    response: str,
+) -> None:
+    client = IdmNavigator10WebClient(
+        "192.0.2.10",
+        "1234",
+        session=FakeSession(FakeWs(['{"authorized":true}', response])),
+        request_delay=0,
+    )
+    with pytest.raises(IdmWebResponseError):
+        await client.read_data(("13259",))
+    assert client.diagnostics().last_success_monotonic is not None
+    assert client._cached_data is None
+
+
+@pytest.mark.asyncio
+async def test_nav20_spa_shell_is_detection_error_not_rejected_pin() -> None:
+    shell = '<html><script>const words = ["login", "pin", "password", "csrf"];</script><app-root></app-root></html>'
+    responses = {
+        ("GET", "/"): [FakeHttpResponse(200, shell)],
+        ("POST", "/"): [FakeHttpResponse(200, shell)],
+    }
+    responses.update(
+        {("GET", path): [FakeHttpResponse(200, shell)] for path in DEFAULT_NAVIGATOR20_PATHS}
+    )
+    client = IdmNavigator20WebClient("192.0.2.10", "1234", session=FakeHttpSession(responses))
+    with pytest.raises(IdmWebResponseError, match="detection failed"):
+        await client.read_data()

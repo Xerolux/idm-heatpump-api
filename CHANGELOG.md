@@ -24,6 +24,15 @@ changelog is history. Everything from `2.0.0b1` on is English.
 
 ## [Unreleased]
 
+### Fixed
+
+- Navigator 10 skips explicitly inaccessible optional setting sections, retaining
+  the other values and failing if no section is readable. Malformed responses
+  still raise a response error. This covers setting ID 13259 on NAV10_20.24
+  ([integration issue #325](https://github.com/Xerolux/idm-heatpump-hass/issues/325)).
+- Navigator 2.0 login detection requires a form with a PIN/password input;
+  Angular application shells mentioning login or CSRF no longer imply a rejected PIN.
+
 ### Added
 
 - Repository tooling: `scripts/consolidate_changelog.py` folds a version's
