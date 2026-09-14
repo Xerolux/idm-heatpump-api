@@ -1,4 +1,4 @@
-# IDM Heatpump API
+# IDM Heatpump API – Python Modbus TCP Library for IDM Navigator
 
 [![PyPI version](https://img.shields.io/pypi/v/idm-heatpump-api.svg?style=for-the-badge)](https://pypi.org/project/idm-heatpump-api/)
 [![PyPI downloads](https://img.shields.io/pypi/dm/idm-heatpump-api.svg?style=for-the-badge)](https://pypistats.org/packages/idm-heatpump-api)
