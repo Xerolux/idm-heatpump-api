@@ -3,71 +3,50 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>IDM Heatpump API Docs</title>
+  <title>IDM Navigator Heatpump API Documentation | Python Modbus TCP</title>
+  <meta name="description" content="Documentation for the asynchronous Python library for IDM Navigator heat pumps via local Modbus TCP. Read registers, detect models and safely control IDM heat pumps from Python." />
+  <meta name="robots" content="index, follow, max-image-preview:large" />
+  <link rel="canonical" href="https://xerolux.github.io/idm-heatpump-api/" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="IDM Navigator Heatpump API Documentation" />
+  <meta property="og:description" content="Python library for local IDM Navigator heat pump monitoring and control via Modbus TCP." />
+  <meta property="og:url" content="https://xerolux.github.io/idm-heatpump-api/" />
+  <meta property="og:site_name" content="Xerolux IDM Heatpump API" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="IDM Navigator Heatpump API Documentation" />
+  <meta name="twitter:description" content="Python library for local IDM Navigator heat pump monitoring and control via Modbus TCP." />
   <style>
-    :root {
-      color-scheme: light;
-      --bg: #f5f7fb;
-      --card: #ffffff;
-      --text: #1b2430;
-      --muted: #4b5563;
-      --link: #0057d8;
-      --border: #d9e0ea;
-    }
-    body {
-      margin: 0;
-      font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-      background: linear-gradient(160deg, #eef3ff 0%, var(--bg) 100%);
-      color: var(--text);
-    }
-    main {
-      max-width: 760px;
-      margin: 4rem auto;
-      padding: 0 1.25rem;
-    }
-    .card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 1.5rem;
-      box-shadow: 0 14px 34px rgba(13, 41, 83, 0.08);
-    }
-    h1 {
-      margin-top: 0;
-      font-size: 1.9rem;
-    }
-    p {
-      line-height: 1.6;
-      color: var(--muted);
-    }
-    ul {
-      line-height: 1.8;
-      padding-left: 1.25rem;
-    }
-    a {
-      color: var(--link);
-      text-decoration: none;
-      font-weight: 600;
-    }
-    a:hover {
-      text-decoration: underline;
-    }
+    :root { color-scheme: light; --bg:#f5f7fb; --card:#fff; --text:#1b2430; --muted:#4b5563; --link:#0057d8; --border:#d9e0ea; }
+    body { margin:0; font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif; background:linear-gradient(160deg,#eef3ff 0%,var(--bg) 100%); color:var(--text); }
+    main { max-width:820px; margin:4rem auto; padding:0 1.25rem; }
+    .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:2rem; box-shadow:0 14px 34px rgba(13,41,83,.08); }
+    h1 { margin-top:0; font-size:2rem; } h2 { margin-top:2rem; } p, li { line-height:1.65; color:var(--muted); } a { color:var(--link); font-weight:600; } code { background:#eef3ff; padding:.1rem .3rem; border-radius:4px; }
   </style>
 </head>
 <body>
   <main>
-    <section class="card">
-      <h1>IDM Heatpump API Documentation</h1>
-      <p>
-        Welcome. This Pages site is published from the <code>docs/</code> directory.
-        For full documentation navigation, use one of the links below.
-      </p>
+    <article class="card">
+      <p><a href="https://github.com/Xerolux/idm-heatpump-api">Xerolux / idm-heatpump-api</a></p>
+      <h1>IDM Navigator Heatpump API Documentation</h1>
+      <p>An asynchronous Python library for monitoring and controlling IDM Navigator 2.0, Navigator 10 and Navigator Pro heat pumps over local Modbus TCP.</p>
+      <h2>What this library provides</h2>
       <ul>
-        <li><a href="https://github.com/Xerolux/idm-heatpump-api/wiki">Open GitHub Wiki</a></li>
-        <li><a href="https://github.com/Xerolux/idm-heatpump-api">Open Repository</a></li>
-        <li><a href="../README.md">Open README</a></li>
+        <li>Model and capability detection for IDM Navigator controllers.</li>
+        <li>Register maps for temperatures, energy, heating circuits, hot water, PV, solar, cascade and diagnostics.</li>
+        <li>Safe asynchronous reads, retries, reconnection and validated register writes.</li>
+        <li>Optional read-only local web access for values that are not available through Modbus.</li>
       </ul>
-    </section>
+      <h2>Start here</h2>
+      <ul>
+        <li><a href="https://github.com/Xerolux/idm-heatpump-api#installation">Install the Python package</a></li>
+        <li><a href="https://github.com/Xerolux/idm-heatpump-api#basic-usage">Read an IDM heat pump with Python</a></li>
+        <li><a href="https://github.com/Xerolux/idm-heatpump-api/wiki">Browse the GitHub Wiki</a></li>
+        <li><a href="https://github.com/Xerolux/idm-heatpump-hass">Use the Home Assistant integration</a></li>
+        <li><a href="https://pypi.org/project/idm-heatpump-api/">Install from PyPI</a></li>
+      </ul>
+      <h2>Local communication</h2>
+      <p>Enable Modbus TCP on the IDM controller. The default connection uses port <code>502</code> and slave ID <code>1</code>; no IDM cloud account is required.</p>
+    </article>
   </main>
 </body>
 </html>
