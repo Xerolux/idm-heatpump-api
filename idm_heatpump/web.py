@@ -637,14 +637,8 @@ def _extract_csrf_token(html: str) -> str | None:
 
 def _looks_like_login_page(text: str) -> bool:
     """Return True if the response looks like an HTML login page."""
-    lowered = text.lower()
-    if "<html" not in lowered:
-        return False
-    # Precise signal: an HTML form with a password/PIN input field.
-    if _LOGIN_FORM_RE.search(text) and _PASSWORD_INPUT_RE.search(text):
-        return True
-    # Fallback heuristic for non-standard or JS-generated login pages.
-    return any(marker in lowered for marker in ("login", "pin", "password", "passwort", "csrf"))
+    # SPA shells can mention login/PIN/CSRF without presenting a login form.
+    return bool(_LOGIN_FORM_RE.search(text) and _PASSWORD_INPUT_RE.search(text))
 
 
 def _looks_like_auth_failure(text: str) -> bool:
@@ -1060,15 +1054,41 @@ class IdmNavigator10WebClient:
         values: dict[str, IdmWebValue] = {}
         raw_responses: dict[str, str] = {}
 
+        parsed_sections = 0
+
         for i, setting_id in enumerate(setting_ids):
             request = dict(_NAVIGATOR10_SETTING_REQUEST)
             request["data"] = {"settingId": setting_id}
             raw = await self._send_json_and_receive_text(request)
             if include_raw:
                 raw_responses[f"setting:{setting_id}"] = raw
-            values.update(parse_navigator_setting_response(raw))
+            try:
+                section_values = parse_navigator_setting_response(raw)
+            except IdmWebResponseError:
+                # Firmware-specific optional sections may be unavailable even
+                # after successful authentication. Do not hide malformed data.
+                try:
+                    payload = json.loads(raw)
+                except json.JSONDecodeError:
+                    raise IdmWebResponseError(
+                        "Navigator 10 setting response is not valid JSON"
+                    ) from None
+                setting = payload.get("setting") if isinstance(payload, dict) else None
+                note = setting.get("note") if isinstance(setting, dict) else None
+                if not (
+                    isinstance(note, dict)
+                    and note.get("text") == f"setting item [{setting_id}] is not accessible!"
+                ):
+                    raise
+                _LOGGER.debug("Navigator 10 setting %s is not accessible; skipping", setting_id)
+            else:
+                values.update(section_values)
+                parsed_sections += 1
             if self._request_delay and i < len(setting_ids) - 1:
                 await asyncio.sleep(self._request_delay)
+
+        if not parsed_sections:
+            raise IdmWebResponseError("Navigator 10 returned no accessible setting sections")
 
         data = IdmWebData(model="Navigator 10 Web", values=values, raw_responses=raw_responses)
         self._cached_data = data
