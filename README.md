@@ -24,6 +24,21 @@ This library is primarily designed to power the unofficial [IDM Heatpump Home As
 >
 > The `docs/` directory is the single source of truth and is used for both GitHub Pages and Wiki sync.
 
+
+## IDM Navigator API FAQ
+
+### Can I connect an IDM heat pump to Python?
+Yes. Install the package with the `pymodbus` extra and use `IdmModbusClient` to communicate with the local IDM Navigator controller over Modbus TCP.
+
+### Does this work with Home Assistant?
+Yes. The library is the device-logic layer used by the [IDM Heatpump Home Assistant integration](https://github.com/Xerolux/idm-heatpump-hass). It can also be used in another Python-based home-automation project.
+
+### Which IDM Navigator models are supported?
+The project targets Navigator 2.0, Navigator 10 and Navigator Pro. Navigator 1.0 and 1.7 use a separate protocol family and are documented separately where applicable.
+
+### Is an IDM cloud account required?
+No. Communication takes place locally through the IDM controller's Modbus TCP interface. Modbus TCP must be enabled on the controller, normally on port 502.
+
 ## Features
 
 * **Asynchronous:** Fully async operations using `pymodbus` with automatic reconnection.
