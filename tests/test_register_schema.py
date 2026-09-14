@@ -23,6 +23,7 @@ def _serialize_register(reg: RegisterDef) -> dict[str, Any]:
         "writable": reg.writable,
         "min_val": reg.min_val,
         "max_val": reg.max_val,
+        "step": reg.step,
         "enum_options": {
             str(key): value for key, value in sorted((reg.enum_options or {}).items())
         },

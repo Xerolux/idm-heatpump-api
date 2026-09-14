@@ -105,3 +105,24 @@ The public API snapshot test also guards the registry surface:
 ```bash
 pytest tests/test_public_api.py -v
 ```
+
+## Numeric step and unknown limits
+
+Since 2.2.0, `RegisterDef.step: float | None = None` is an optional, positive,
+finite consumer hint in physical units, also exported as `step` by
+`RegisterRegistry.to_schema()`. It is appended to the constructor to preserve
+existing positional arguments. It does not round writes or add a new rejection
+rule. Consumers can use a known step in numeric controls; `None` means unknown.
+
+Heating curves A–G expose 0.1, matching the controller UI precision reported
+in #81 and the integration correction in Xerolux/idm-heatpump-hass#229.
+The NAV10 manual documents the range 0.1–3.5, but does not explicitly specify
+a wire quantization for these registers.
+
+Zone room setpoints expose 0.5 °C: the official
+`docs/New/Modbus_TCP_NAVIGATOR_10.pdf` (18 June 2025), printed page 20,
+explicitly requires half-degree steps. Its min/max columns for address 2004
+and the subsequent room setpoints are blank. The adjacent 15–30 °C limits
+belong to the measured/external room temperature and must not be copied.
+Their `min_val`/`max_val` therefore remain `None` pending authoritative limits.
+Other GLT/PV FLOAT registers without documented bounds also remain unchanged.
