@@ -16,7 +16,8 @@ An asynchronous Python library for communicating with **IDM Navigator heat pumps
 This library is primarily designed to power the unofficial [IDM Heatpump Home Assistant custom integration](https://github.com/Xerolux/idm-heatpump-hass), but it can be used independently for any Python project that needs to monitor or control an IDM heat pump.
 
 > **Documentation:**
-> - GitHub Pages: https://xerolux.github.io/idm-heatpump-api/
+ > - GitHub Pages: https://xerolux.github.io/idm-heatpump-api/
+> - SEO FAQ: https://xerolux.github.io/idm-heatpump-api/faq.html
 > - GitHub Wiki: https://github.com/Xerolux/idm-heatpump-api/wiki
 > - PyPI: https://pypi.org/project/idm-heatpump-api/
 > - API contract: [docs/API-Contract.md](docs/API-Contract.md)
