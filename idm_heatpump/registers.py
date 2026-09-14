@@ -150,6 +150,7 @@ class RegisterRegistry:
                 "scale": reg.multiplier,
                 "min_value": reg.min_val,
                 "max_value": reg.max_val,
+                "step": reg.step,
                 "writable": reg.writable,
                 "register_type": reg.register_type.value,
                 "write_class": reg.write_class.value,
@@ -1601,6 +1602,7 @@ def get_heating_circuit_registers(
         writable=True,
         min_val=0.1,
         max_val=3.5,
+        step=0.1,  # Controller UI precision; see Register-Metadata.md.
         eeprom_sensitive=True,
     )
     regs[f"hc_{c}_heating_limit"] = RegisterDef(
@@ -1749,7 +1751,8 @@ def get_zone_module_registers(
             name=f"zm{z}_room{room}_setpoint",
             unit="°C",
             writable=True,
-            # Setpoint can only be communicated in 0.5 °C steps
+            step=0.5,
+            # NAV10 manual p. 20: 0.5 °C steps; min/max columns are blank.
         )
         regs[f"zm{z}_room{room}_humidity"] = RegisterDef(
             address=room_base + 4,

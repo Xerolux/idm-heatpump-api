@@ -340,6 +340,7 @@ class RegisterDef:
     )
     sentinel_values: tuple[int | float | str, ...] = ()
     last_verified: str | None = None
+    step: float | None = None
     size: int = field(init=False)
 
     def __post_init__(self) -> None:
@@ -357,6 +358,8 @@ class RegisterDef:
             raise ValueError(f"Register {self.name} must declare at least one supported model")
         if not math.isfinite(self.multiplier) or self.multiplier == 0:
             raise ValueError(f"Multiplier must be finite and non-zero, got {self.multiplier}")
+        if self.step is not None and (not math.isfinite(self.step) or self.step <= 0):
+            raise ValueError(f"Step must be finite and positive, got {self.step}")
         if self.min_val is not None and not math.isfinite(self.min_val):
             raise ValueError(f"Minimum value must be finite, got {self.min_val}")
         if self.max_val is not None and not math.isfinite(self.max_val):

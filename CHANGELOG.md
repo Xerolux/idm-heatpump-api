@@ -24,6 +24,21 @@ changelog is history. Everything from `2.0.0b1` on is English.
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-09-14
+
+### Added
+
+- Optional `RegisterDef.step` metadata, exported by the registry and schema:
+  heating curves use 0.1, zone room setpoints use 0.5 °C (#81).
+- Document that the official zone setpoint min/max columns are blank;
+  no undocumented bounds or write rounding are introduced.
+
+### Fixed
+
+- Merge CI updates from #92, #95, #96, #102 and #103, keeping CodeQL
+  init/analyze on 4.38.0 together. Group future CodeQL Dependabot updates.
+- Record the first 2.0.0 integration consumer and missing 2.1.2 matrix entry.
+
 ## [2.1.2] - 2026-09-14
 
 ### Fixed
