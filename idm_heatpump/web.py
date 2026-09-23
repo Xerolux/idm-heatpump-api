@@ -70,6 +70,11 @@ _NAVIGATOR10_NOTIFICATION_REQUEST = {
     "command": "overview",
 }
 
+_NAVIGATOR10_HOME_REQUEST = {
+    "controller": "home",
+    "command": "detail",
+}
+
 
 def _parse_auth_response(text: str) -> tuple[bool, bool | None]:
     """Parse a Navigator 10 auth response once.
@@ -877,6 +882,178 @@ def parse_navigator_notifications_response(
 
 
 @dataclass(frozen=True)
+class IdmWebDemandReason:
+    """One decoded demand-reason widget of the Navigator 10 home screen."""
+
+    path: str
+    operation_mode: int | None
+    info: int | None
+    reason: str | None
+
+
+@dataclass(frozen=True)
+class IdmWebHomeDetail:
+    """Read-only Navigator 10 home/detail snapshot.
+
+    Covers the widgets the controller uses to render its demand reason
+    ("Anforderungsgrund") plus the live energy-flow block. The demand-reason
+    widgets carry ``operationMode`` always and an ``info`` bitmask while a
+    demand is active; without an active demand no ``info`` is present.
+    """
+
+    demand_reasons: tuple[IdmWebDemandReason, ...] = ()
+    pv_power: IdmWebValue | None = None
+    grid_power: IdmWebValue | None = None
+    raw_response: str | None = None
+
+    @property
+    def pv_demand_active(self) -> bool:
+        """Return whether any widget reports PV as its demand reason."""
+        return any(node.reason == "pv" for node in self.demand_reasons)
+
+
+# Navigator 10 demand reason tables, decoded from the web UI's JavaScript
+# (firmware jsonVersion 11, verified September 2026 against live frames).
+# ``operationMode`` selects the table: 1 heating, 4 domestic hot water,
+# 0 "no information", 8 "off". The check order is the SPA's priority order;
+# the first matching bit wins, and more than one set bit (ignoring bit 0)
+# means "more demands". Bit 32 is PV in both tables.
+NAVIGATOR10_HEATING_DEMAND_REASON_BITS: tuple[tuple[int, str], ...] = (
+    (2, "no_info"),
+    (4, "external_input"),
+    (8, "external_bus"),
+    (16, "isc"),
+    (32, "pv"),
+    (64, "frost_protection"),
+    (128, "hc_a"),
+    (256, "hc_b"),
+    (512, "hc_c"),
+    (1024, "hc_d"),
+    (2048, "hc_e"),
+    (4096, "hc_f"),
+    (8192, "hc_g"),
+    (16384, "system_off"),
+    (32768, "ion"),
+)
+NAVIGATOR10_DHW_DEMAND_REASON_BITS: tuple[tuple[int, str], ...] = (
+    (2, "single_loading"),
+    (4, "single_loading_boost"),
+    (8, "external_input"),
+    (16, "external_bus"),
+    (32, "pv"),
+    (64, "isc"),
+    (128, "schedule"),
+    (256, "schedule_boost"),
+    (512, "system_off"),
+    (1024, "dhw_comfort"),
+    (2048, "ion"),
+    (4096, "cascade"),
+    (8192, "dhw_booster"),
+)
+
+
+def decode_navigator10_demand_reason(operation_mode: int | None, info: int | None) -> str | None:
+    """Decode one demand-reason widget exactly like the Navigator 10 web UI.
+
+    Returns ``None`` for an undocumented ``operationMode``, a missing info
+    bitmask while a demand table applies, or an info bitmask whose set bits
+    are unknown to the firmware tables.
+    """
+    if operation_mode == 0:
+        return "no_info"
+    if operation_mode == 8:
+        return "off"
+    if operation_mode is None or info is None:
+        return None
+    masked = info & -2
+    if masked & (masked - 1):
+        return "more_demands"
+    if operation_mode == 1:
+        table = NAVIGATOR10_HEATING_DEMAND_REASON_BITS
+    elif operation_mode == 4:
+        table = NAVIGATOR10_DHW_DEMAND_REASON_BITS
+    else:
+        return None
+    for bit, reason in table:
+        if info & bit:
+            return reason
+    return None
+
+
+def _parse_home_power(value: object, name: str) -> IdmWebValue | None:
+    if not isinstance(value, dict):
+        return None
+    raw = value.get("value")
+    if raw is None:
+        return None
+    try:
+        numeric = float(str(raw))
+    except ValueError:
+        numeric = None
+    return IdmWebValue(name=name, value=str(raw), raw_key=name, unit="kW", numeric_value=numeric)
+
+
+def parse_navigator_home_response(
+    raw_response: str,
+    *,
+    include_raw: bool = False,
+) -> IdmWebHomeDetail:
+    """Parse a Navigator 10 home/detail response.
+
+    Walks the whole payload for widgets carrying ``operationMode``/``info``
+    (the demand-reason tiles of the home screen) and reads the energy-flow
+    block's ``pv``/``grid`` values where present. The response envelope is
+    either ``home`` (full push) or ``homeDetail`` (detail request).
+    """
+    try:
+        payload = json.loads(raw_response)
+    except json.JSONDecodeError as exc:
+        raise IdmWebResponseError("Navigator 10 home response is not valid JSON") from exc
+
+    if not isinstance(payload, dict):
+        raise IdmWebResponseError("Navigator 10 home response is not a JSON object")
+
+    demand_reasons: list[IdmWebDemandReason] = []
+    pv_power: IdmWebValue | None = None
+    grid_power: IdmWebValue | None = None
+
+    def walk(node: object, path: str) -> None:
+        nonlocal pv_power, grid_power
+        if isinstance(node, dict):
+            if "operationMode" in node or "info" in node:
+                mode = node.get("operationMode")
+                info = node.get("info")
+                mode_int = mode if isinstance(mode, int) and not isinstance(mode, bool) else None
+                info_int = info if isinstance(info, int) and not isinstance(info, bool) else None
+                demand_reasons.append(
+                    IdmWebDemandReason(
+                        path=path,
+                        operation_mode=mode_int,
+                        info=info_int,
+                        reason=decode_navigator10_demand_reason(mode_int, info_int),
+                    )
+                )
+            if "pv" in node and pv_power is None:
+                pv_power = _parse_home_power(node.get("pv"), "home_pv_power")
+            if "grid" in node and grid_power is None:
+                grid_power = _parse_home_power(node.get("grid"), "home_grid_power")
+            for key, value in node.items():
+                walk(value, f"{path}/{key}")
+        elif isinstance(node, list):
+            for index, value in enumerate(node):
+                walk(value, f"{path}[{index}]")
+
+    walk(payload, "home")
+
+    return IdmWebHomeDetail(
+        demand_reasons=tuple(demand_reasons),
+        pv_power=pv_power,
+        grid_power=grid_power,
+        raw_response=raw_response if include_raw else None,
+    )
+
+
+@dataclass(frozen=True)
 class IdmWebDiagnostics:
     """Diagnostic snapshot for optional local web clients."""
 
@@ -1125,6 +1302,18 @@ class IdmNavigator10WebClient:
         notifications = parse_navigator_notifications_response(raw, include_raw=include_raw)
         self._last_success_monotonic = time.monotonic()
         return notifications
+
+    async def read_home_detail(self, *, include_raw: bool = False) -> IdmWebHomeDetail:
+        """Read the Navigator 10 home screen detail (demand reason, energy flow).
+
+        Navigator 10 only: the home/detail controller does not exist on the
+        Navigator 2.0 PHP interface.
+        """
+        await self.connect()
+        raw = await self._send_json_and_receive_text(_NAVIGATOR10_HOME_REQUEST)
+        detail = parse_navigator_home_response(raw, include_raw=include_raw)
+        self._last_success_monotonic = time.monotonic()
+        return detail
 
     def get_cached_data(self) -> IdmWebData | None:
         """Return the last valid Navigator 10 data snapshot, if one exists."""

@@ -198,8 +198,23 @@ See [`docs/Navigator-Protocol-Analysis.md`](docs/Navigator-Protocol-Analysis.md)
 
 Two transports are supported:
 
-- **Navigator 10** — local WebSocket on port `61220` via `IdmNavigator10WebClient` (created through `create_optional_navigator10_web_client()`). Supports `read_data()`, `read_statistics()`, and `read_notifications()`.
+- **Navigator 10** — local WebSocket on port `61220` via `IdmNavigator10WebClient` (created through `create_optional_navigator10_web_client()`). Supports `read_data()`, `read_statistics()`, `read_notifications()`, and `read_home_detail()`.
 - **Navigator 2.0** — local HTTP with CSRF token handling via `IdmNavigator20WebClient` (created through `create_optional_navigator20_web_client()`). Supports `read_data()`, `read_extra_data()`, and `capabilities()`.
+
+`read_home_detail()` (Navigator 10 only) reads the home screen the same way the
+built-in display does: it returns the controller's current **demand reason**
+("Anforderungsgrund") per widget — including **PV** — plus the live energy-flow
+`pv`/`grid` power values. The demand reason arrives as an `operationMode`
+selector plus an `info` bitmask while a demand is active; the decode tables
+(`NAVIGATOR10_HEATING_DEMAND_REASON_BITS`, `NAVIGATOR10_DHW_DEMAND_REASON_BITS`)
+reproduce the web UI's priority order, and `IdmWebHomeDetail.pv_demand_active`
+is the one-call answer for "is the heat pump running on PV right now".
+
+```python
+detail = await client.read_home_detail()
+if detail.pv_demand_active:
+    ...
+```
 
 If the user does not configure a local network PIN, consumers should not create a web client. Both factories return `None` for `None`, empty, or whitespace-only PIN values so Modbus-only operation can continue without errors. Use `web_pin_configured(pin)` to check explicitly.
 

@@ -81,6 +81,8 @@ from .registers import (
 )
 from .transport import IdmModbusTransport, quiet_pymodbus_logging
 from .web import (
+    NAVIGATOR10_DHW_DEMAND_REASON_BITS,
+    NAVIGATOR10_HEATING_DEMAND_REASON_BITS,
     RECOMMENDED_WEB_SCAN_INTERVAL,
     WEB_VALUE_DESCRIPTIONS,
     AuthenticationError,
@@ -92,9 +94,11 @@ from .web import (
     IdmWebConnectionError,
     IdmWebCsrfError,
     IdmWebData,
+    IdmWebDemandReason,
     IdmWebDependencyError,
     IdmWebDiagnostics,
     IdmWebError,
+    IdmWebHomeDetail,
     IdmWebNotification,
     IdmWebNotifications,
     IdmWebPinRejectedError,
@@ -110,6 +114,8 @@ from .web import (
     WebSocketError,
     create_optional_navigator10_web_client,
     create_optional_navigator20_web_client,
+    decode_navigator10_demand_reason,
+    parse_navigator_home_response,
     web_pin_configured,
 )
 
@@ -178,6 +184,8 @@ __all__ = [
     "IdmWebConnectionError",
     "IdmWebCsrfError",
     "IdmWebData",
+    "IdmWebDemandReason",
+    "IdmWebHomeDetail",
     "IdmWebDependencyError",
     "IdmWebDiagnostics",
     "IdmWebError",
@@ -200,7 +208,11 @@ __all__ = [
     "RegisterDef",
     "RegisterRegistry",
     "RegisterType",
+    "NAVIGATOR10_DHW_DEMAND_REASON_BITS",
+    "NAVIGATOR10_HEATING_DEMAND_REASON_BITS",
     "WEB_VALUE_DESCRIPTIONS",
+    "decode_navigator10_demand_reason",
+    "parse_navigator_home_response",
     "WriteClass",
     "WriteSafetyResult",
     "build_register_map",

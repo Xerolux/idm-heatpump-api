@@ -32,6 +32,55 @@ pressures, energy/runtime counters, statuses, software version and a
 redacted myIDM identifier. No account identifier, PIN, IP address or raw
 payload is stored in this repository.
 
+## Navigator 10 WebSocket home screen (validated September 2026)
+
+The Navigator 10 web interface renders the display's demand reason
+("Anforderungsgrund") from the `home/detail` WebSocket frame. The frame is a
+widget tree (envelope `home` for the full push, `homeDetail` for a detail
+request); every demand-reason widget carries `operationMode` and — only while
+a demand is active — an `info` bitmask. `operationMode` selects the table:
+`1` heating, `4` domestic hot water, `0` "no information", `8` "off". The
+decode priority and bit assignment below reproduce the web UI's JavaScript
+(firmware jsonVersion 11) and were confirmed against live frames.
+
+**Heating reasons (`operationMode` 1), in priority order:**
+
+| Bit | Reason slug |
+|-----|-------------|
+| 2 | `no_info` |
+| 4 | `external_input` |
+| 8 | `external_bus` |
+| 16 | `isc` |
+| **32** | **`pv`** |
+| 64 | `frost_protection` |
+| 128–8192 | `hc_a` … `hc_g` |
+| 16384 | `system_off` |
+| 32768 | `ion` |
+
+**Domestic hot water reasons (`operationMode` 4), in priority order:**
+
+| Bit | Reason slug |
+|-----|-------------|
+| 2 | `single_loading` |
+| 4 | `single_loading_boost` |
+| 8 | `external_input` |
+| 16 | `external_bus` |
+| **32** | **`pv`** |
+| 64 | `isc` |
+| 128 | `schedule` |
+| 256 | `schedule_boost` |
+| 512 | `system_off` |
+| 1024 | `dhw_comfort` |
+| 2048 | `ion` |
+| 4096 | `cascade` |
+| 8192 | `dhw_booster` |
+
+More than one set bit (ignoring bit 0) decodes as `more_demands`. The
+energy-flow widget carries the live `pv`/`grid` power values as strings.
+The library exposes all of this through `IdmNavigator10WebClient.read_home_detail()`
+(`IdmWebHomeDetail`, `IdmWebDemandReason`, `decode_navigator10_demand_reason()`,
+`parse_navigator_home_response()`).
+
 ## Static-analysis findings
 
 The Navigator client contains support for multiple generations:

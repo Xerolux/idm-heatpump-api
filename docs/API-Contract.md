@@ -22,6 +22,20 @@ Consumers that create entities from local web supplement values can use
 `WEB_VALUE_DESCRIPTIONS` for stable key metadata and `IdmWebData.get_value()` /
 `IdmWebData.get_numeric()` for defensive value access.
 
+### Navigator 10 home screen (demand reason)
+
+`IdmNavigator10WebClient.read_home_detail()` returns an `IdmWebHomeDetail`:
+the decoded demand reason of every home-screen widget (`IdmWebDemandReason`
+with `operation_mode`, the `info` bitmask and the decoded `reason` slug), the
+energy-flow `pv_power` / `grid_power` values, and the convenience flag
+`pv_demand_active`. The decode is exported as
+`decode_navigator10_demand_reason()` with the bit tables
+`NAVIGATOR10_HEATING_DEMAND_REASON_BITS` /
+`NAVIGATOR10_DHW_DEMAND_REASON_BITS`; `parse_navigator_home_response()` parses
+a raw frame without a client. Navigator 10 only — the Navigator 2.0 HTTP
+interface has no home controller. Reason slugs are stable API strings;
+presentation labels belong to the consumer.
+
 The package root `__all__` list is the public import contract. It is protected
 by `tests/test_public_api.py`.
 
