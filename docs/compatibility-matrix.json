@@ -191,7 +191,7 @@
       "api_version": "1.0.2",
       "hass_integration_version": "pending",
       "status": "hardware-verified",
-      "notes": "Web client mapping expansion: adds heating-circuit room temperature sensors B61-B67 (room_temperature_HK_A through G) to SENSOR_NAME_MAP and WEB_VALUE_DESCRIPTIONS. Verified live on a Navigator 10 ALM 6-15 with heating circuits A and D (B64 = 21.8 \u00b0C)."
+      "notes": "Web client mapping expansion: adds heating-circuit room temperature sensors B61-B67 (room_temperature_HK_A through G) to SENSOR_NAME_MAP and WEB_VALUE_DESCRIPTIONS. Verified live on a Navigator 10 ALM 6-15 with heating circuits A and D (B64 = 21.8 °C)."
     },
     {
       "api_version": "1.0.3",
@@ -234,6 +234,12 @@
       "hass_integration_version": "pending",
       "status": "api-prepared",
       "notes": "Adds optional register step metadata without changing wire encoding or write validation."
+    },
+    {
+      "api_version": "2.3.0",
+      "hass_integration_version": "pending",
+      "status": "api-prepared",
+      "notes": "Adds the Navigator 10 home/detail read (demand reason incl. PV, energy-flow power) as a new public web API; no changes to existing wire encoding, register map or write validation."
     }
   ]
 }

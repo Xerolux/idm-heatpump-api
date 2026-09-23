@@ -24,6 +24,25 @@ changelog is history. Everything from `2.0.0b1` on is English.
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-09-23
+
+### Added
+
+- `IdmNavigator10WebClient.read_home_detail()` (Navigator 10 only): reads the
+  home screen the way the built-in display does — the controller's demand
+  reason ("Anforderungsgrund") per widget, including **PV**, plus the live
+  energy-flow `pv`/`grid` power values.
+- New public web API: `IdmWebHomeDetail` (with `pv_demand_active`),
+  `IdmWebDemandReason`, `decode_navigator10_demand_reason()`,
+  `parse_navigator_home_response()` and the bit tables
+  `NAVIGATOR10_HEATING_DEMAND_REASON_BITS` / `NAVIGATOR10_DHW_DEMAND_REASON_BITS`,
+  which reproduce the web UI's decode priority bit for bit (firmware
+  jsonVersion 11, validated against live frames). Documented in the README,
+  `docs/API-Contract.md`, `docs/Navigator-Protocol-Analysis.md` and
+  `docs/Examples.md`.
+- No changes to the register map, wire encoding, write validation or any
+  existing public API.
+
 ## [2.2.0] - 2026-09-14
 
 ### Added

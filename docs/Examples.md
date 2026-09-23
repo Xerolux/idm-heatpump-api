@@ -177,6 +177,25 @@ if web is not None:
     await web.close()
 ```
 
+## Navigator 10 home screen: demand reason and energy flow
+
+```python
+import asyncio
+from idm_heatpump import create_optional_navigator10_web_client
+
+client = create_optional_navigator10_web_client("192.168.168.1", "1234")
+if client is not None:
+    detail = asyncio.run(client.read_home_detail())
+    print(detail.pv_demand_active)          # True while the controller reports PV
+    for node in detail.demand_reasons:
+        print(node.path, node.operation_mode, node.info, node.reason)
+    if detail.pv_power is not None:
+        print("PV:", detail.pv_power.value, detail.pv_power.unit)
+```
+
+The `reason` slugs are stable API strings (`"pv"`, `"hc_a"`, `"schedule"`,
+`"more_demands"`, `"no_info"`, `"off"`, …); render your own labels from them.
+
 ## Navigator 2.0 capabilities
 
 ```python
