@@ -26,19 +26,38 @@ changelog is history. Everything from `2.0.0b1` on is English.
 
 ### Added
 
-- **Navigator 1.0/1.7 holding block (community-verified).** The first
-  writable controls for the 1.x family, from a working FHEM configuration
-  against a real Navigator 1.7 (idm-heatpump-hass issue #319, September
-  2026): `system_mode_17` (register 2000, Standby / Automatic / Hot Water /
-  Hot Water Once) and `hc_a_operating_mode` (register 2002, Off / Time
-  Program / Normal / ECO / Heating Only) as writable FC03/FC06 holding
-  registers with their own enum tables — the value sets deliberately differ
-  from the shared family's `system_mode`/active hc mode. `hc_a_heating_limit_17`
-  (2058) and `bivalence_point_1_17` (2146) join read-only pending confirmed
-  units. The float registers of the same block (room setpoints 2016/2030,
-  heating curve 2044) are intentionally not mapped until their byte order is
-  verified against the controller display; the map's float rule stays
-  low-word-first.
+- **Navigator 1.0/1.7 holding block: the complete official RW table.** The
+  full FC03/FC06 parameter block 2000-2152 of the official iDM Modbus TCP
+  documentation for Navigator 1.0/1.7 (ma_de_812049 Rev.1, register table
+  2016-06-13) is now mapped, after the same table was confirmed against a
+  working FHEM configuration on a real Navigator 1.7 (idm-heatpump-hass
+  issue #319, September 2026): reads and daily writes of the operating
+  modes 2000/2002, and float reads at 2016/2030 returning exactly the
+  documented defaults (22/18), which settles the block's float word order
+  (low word first, as the official datatype section states). New writable,
+  EEPROM-sensitive registers (the official document allows 300 000 write
+  cycles per register and skips identical values):
+  `system_mode_17` (2000) and `hc_a_operating_mode` … `hc_g_operating_mode`
+  (2002-2014) with their own enum tables — the value sets deliberately
+  differ from the shared family's `system_mode`/active hc mode — plus, per
+  heating circuit A-G, the shared family's names for identical parameters
+  (`hc_*_room_setpoint_heat_normal` 15-30, `hc_*_room_setpoint_heat_eco`
+  10-25, `hc_*_heating_curve` 0.1-3.5 with step 0.1, `hc_*_heating_limit`
+  0-50, `hc_*_setpoint_flow_constant` 20-90,
+  `hc_*_room_setpoint_cool_normal`/`_cool_eco` 15-30, `hc_*_cooling_limit`
+  0-36, `hc_*_setpoint_flow_cooling` 8-30), the signed
+  `bivalence_point_1_17`/`bivalence_point_2_17` (2146/2148, -20..20),
+  `external_demand_temp_heating` (2142, 20-65) and
+  `external_demand_temp_cooling` (2144, 10-25),
+  `solar_operating_mode_17` (2150, Automatic / Domestic Water / Heat
+  Storage / Domestic Water + Heat Storage / Heat Source / Pool) and
+  `dhw_setpoint` (2152, Frischwasser-Solltemperatur FW030, 35-60). The
+  byte-sized parameters are mapped as whole-register UINT16 values (a full
+  register is reserved per value, confirmed by the capture); the bivalence
+  points are INT16. The official FC01/05 coil block (3000 Störung
+  quittieren, 3001 Anforderung Heizen, 3002 Anforderung Kühlen, 3003
+  Anforderung Vorrangladung) is documented in the same table but stays
+  unmapped until the transport implements FC01/FC05.
 
 ## [2.3.0] - 2026-09-23
 

@@ -117,18 +117,24 @@ Navigator 1.0/1.7 uses a distinct map:
 - FC01/05 coil block beginning at address 3000;
 - IEEE-754 floats use the same low-word-first ordering.
 
-Navigator 1.0/1.7 is supported **read-only** as the separate
-`Navigator 1.7` model, plus a post-2016 PV supplement (writable 74/76/78/82,
-read-only 4122) that joins the map only when the probe at address 74
-responded. Its FC04 input blocks (FLOAT values 1000-1088, status words
-1500-1524) come from the official `ma_de_812049` register table
-(2016-06-13); the data points differ from
-the shared 2.0/10/Pro table address by address (for example 1002 is the
-heat-pump flow temperature there, not the averaged outdoor temperature), so
-no definition may be shared with the other families. The holding block
-(2000+) and coil block (3000+) stay unmapped because their per-register
-semantics are undocumented in the sources available; every 1.7 register
-outside the PV supplement is `writable=False` and
+Navigator 1.0/1.7 is supported as the separate
+`Navigator 1.7` model with the complete official RW holding block
+(2000-2152, every register writable and EEPROM-sensitive), plus a post-2016
+PV supplement (writable 74/76/78/82, read-only 4122) that joins the map only
+when the probe at address 74 responded. Its FC04 input blocks (FLOAT values
+1000-1088, status words 1500-1524) and its FC03/06 holding block come from
+the official `ma_de_812049` Rev.1 register table (2016-06-13); the data
+points differ from the shared 2.0/10/Pro table address by address (for
+example 1002 is the heat-pump flow temperature there, not the averaged
+outdoor temperature), so no definition may be shared with the other
+families — except the holding block's per-circuit parameters, which reuse
+the shared family's register names because the official ranges are
+identical (the 2.0/10/Pro holding block is the direct successor of the 1.x
+table). The holding modes' enum tables stay separate because their value
+sets differ from the shared family's enums. The FC01/05 coil block (3000+)
+is documented in the same table but stays unmapped until the transport
+implements FC01/FC05; every 1.7 register outside the holding block and the
+PV supplement is `writable=False` and
 `detect_model` classifies the family through its Illegal-Data-Address
 signature (core block responds, shared-family addresses rejected) before the
 circuit-based classification, because the shared active-mode probes

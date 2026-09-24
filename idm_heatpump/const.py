@@ -50,8 +50,9 @@ SYSTEM_MODE_OPTIONS: dict[int, str] = {
 #: Navigator 1.0/1.7 system mode (holding register 2000). The value set
 #: differs from the shared family's SYSTEM_MODE_OPTIONS on purpose: 2 is
 #: hot water charging and 3 a one-time hot water charge, values the shared
-#: family assigns differently. Community-verified against a real Navigator
-#: 1.7 (idm-heatpump-hass issue #319, September 2026).
+#: family assigns differently. Official ma_de_812049 Rev.1 table; reads and
+#: writes confirmed against a real Navigator 1.7 (idm-heatpump-hass issue
+#: #319, September 2026).
 SYSTEM_MODE_17_OPTIONS: dict[int, str] = {
     0: "Standby",
     1: "Automatic",
@@ -68,6 +69,18 @@ HC_OPERATING_MODE_17_OPTIONS: dict[int, str] = {
     2: "Normal",
     3: "ECO",
     4: "Heating Only",
+}
+
+#: Navigator 1.0/1.7 solar operating mode (holding register 2150, SC002).
+#: Selects what the solar circuit charges. Distinct from the read-only
+#: ``solar_mode`` status word at 1522, which reports the running state with
+#: a different value range.
+SOLAR_OPERATING_MODE_17_OPTIONS: dict[int, str] = {
+    0: "Automatic",
+    1: "Domestic Water",
+    2: "Heat Storage",
+    3: "Domestic Water + Heat Storage",
+    4: "Heat Source / Pool",
 }
 
 
