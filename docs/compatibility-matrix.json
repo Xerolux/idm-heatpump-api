@@ -240,6 +240,18 @@
       "hass_integration_version": "pending",
       "status": "api-prepared",
       "notes": "Adds the Navigator 10 home/detail read (demand reason incl. PV, energy-flow power) as a new public web API; no changes to existing wire encoding, register map or write validation."
+    },
+    {
+      "api_version": "2.4.0",
+      "hass_integration_version": "0.19.0-b8",
+      "status": "beta-tested",
+      "notes": "Complete official Navigator 1.0/1.7 RW holding block (ma_de_812049 Rev.1): operating modes, per-circuit setpoints, heating curves, limits, signed bivalence points, solar mode, freshwater DHW setpoint. Register map only; no changes to wire encoding or write validation."
+    },
+    {
+      "api_version": "2.4.1",
+      "hass_integration_version": "pending",
+      "status": "api-prepared",
+      "notes": "Declares the documented MIN/MAX ranges on the Navigator 1.x status words so consumers can reject the uninitialized-memory reads of Rev.0-era firmware (idm-heatpump-hass#364)."
     }
   ]
 }
