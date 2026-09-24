@@ -25,13 +25,14 @@ import functools
 from dataclasses import dataclass, field, replace
 from typing import Any
 
-from .client import DataType, IdmModelInfo, RegisterDef
+from .client import DataType, IdmModelInfo, RegisterDef, RegisterType
 from .const import (
     ACTIVE_HC_MODE_OPTIONS,
     BIVALENCE_STATE_OPTIONS,
     BOOSTER_FAULT_OPTIONS,
     CIRCUIT_MODE_OPTIONS,
     EVU_LOCK_OPTIONS,
+    HC_OPERATING_MODE_17_OPTIONS,
     HP_OPERATING_MODE_OPTIONS,
     ISC_MODE_OPTIONS,
     MAX_ROOMS_PER_ZONE,
@@ -41,6 +42,7 @@ from .const import (
     ROOM_MODE_OPTIONS,
     SMART_GRID_OPTIONS,
     SOLAR_MODE_OPTIONS,
+    SYSTEM_MODE_17_OPTIONS,
     SYSTEM_MODE_OPTIONS,
     VARIABLE_INPUT_OPTIONS,
     ZONE_MODULE_MODE_OPTIONS,
@@ -1315,6 +1317,7 @@ NAVIGATOR_17_REGISTER_SOURCE_VERSION = (
 # addresses. Older 1.x firmware rejects them, so the block is included only
 # when the detection probe at address 74 responded.
 NAVIGATOR_17_PV_SOURCE_VERSION = "iDM PV-signal Modbus TCP supplement to ma_de_812049 (post-2016)"
+NAVIGATOR_17_HOLDING_SOURCE_VERSION = "Community-verified holding block of ma_de_812049 (FHEM capture, idm-heatpump-hass#319, 2026-09)"
 
 
 def _navigator_17_register(
@@ -1497,6 +1500,40 @@ def _navigator_17_registers(*, has_pv: bool = False) -> dict[str, RegisterDef]:
     regs["solar_mode"] = _navigator_17_register(1522, DataType.UINT16, "solar_mode")
     regs["smart_grid_status"] = _navigator_17_register(1523, DataType.UINT16, "smart_grid_status")
     regs["isc_mode"] = _navigator_17_register(1524, DataType.UINT16, "isc_mode")
+
+    # FC03/FC06 holding block from 2000. Undocumented in ma_de_812049; the
+    # semantics below come from a working FHEM configuration against a real
+    # Navigator 1.7 (idm-heatpump-hass issue #319, September 2026), where
+    # both operating modes are read and written daily. The value sets differ
+    # from the shared family's system_mode/hc modes, so the registers carry
+    # their own names and enum tables. The float registers of the same block
+    # (room setpoints 2016/2030, heating curve 2044) are deliberately not
+    # mapped: their byte order is unverified against the display while the
+    # map's float rule is low-word-first. Read-only here until verified.
+    holding_specs: list[tuple[int, str, bool, dict[int, str] | None]] = [
+        (2000, "system_mode_17", True, SYSTEM_MODE_17_OPTIONS),
+        (2002, "hc_a_operating_mode", True, HC_OPERATING_MODE_17_OPTIONS),
+        (2058, "hc_a_heating_limit_17", False, None),
+        (2146, "bivalence_point_1_17", False, None),
+    ]
+    for address, name, writable, options in holding_specs:
+        kwargs: dict[str, Any] = {
+            "address": address,
+            "datatype": DataType.UINT16,
+            "name": name,
+            "writable": writable,
+            "register_type": RegisterType.HOLDING,
+            "source": NAVIGATOR_17_REGISTER_SOURCE,
+            "source_version": NAVIGATOR_17_HOLDING_SOURCE_VERSION,
+            "supported_models": (MODEL_NAVIGATOR_17,),
+            "last_verified": "2026-09-24",
+        }
+        if options is not None:
+            kwargs["enum_options"] = options
+            kwargs["min_val"] = min(options)
+            kwargs["max_val"] = max(options)
+            kwargs["eeprom_sensitive"] = True
+        regs[name] = RegisterDef(**kwargs)
 
     if has_pv:
         # Post-2016 PV supplement (see NAVIGATOR_17_PV_SOURCE_VERSION). The

@@ -24,6 +24,22 @@ changelog is history. Everything from `2.0.0b1` on is English.
 
 ## [Unreleased]
 
+### Added
+
+- **Navigator 1.0/1.7 holding block (community-verified).** The first
+  writable controls for the 1.x family, from a working FHEM configuration
+  against a real Navigator 1.7 (idm-heatpump-hass issue #319, September
+  2026): `system_mode_17` (register 2000, Standby / Automatic / Hot Water /
+  Hot Water Once) and `hc_a_operating_mode` (register 2002, Off / Time
+  Program / Normal / ECO / Heating Only) as writable FC03/FC06 holding
+  registers with their own enum tables — the value sets deliberately differ
+  from the shared family's `system_mode`/active hc mode. `hc_a_heating_limit_17`
+  (2058) and `bivalence_point_1_17` (2146) join read-only pending confirmed
+  units. The float registers of the same block (room setpoints 2016/2030,
+  heating curve 2044) are intentionally not mapped until their byte order is
+  verified against the controller display; the map's float rule stays
+  low-word-first.
+
 ## [2.3.0] - 2026-09-23
 
 ### Added

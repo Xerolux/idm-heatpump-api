@@ -47,6 +47,29 @@ SYSTEM_MODE_OPTIONS: dict[int, str] = {
     5: "Heating/Cooling Only",
 }
 
+#: Navigator 1.0/1.7 system mode (holding register 2000). The value set
+#: differs from the shared family's SYSTEM_MODE_OPTIONS on purpose: 2 is
+#: hot water charging and 3 a one-time hot water charge, values the shared
+#: family assigns differently. Community-verified against a real Navigator
+#: 1.7 (idm-heatpump-hass issue #319, September 2026).
+SYSTEM_MODE_17_OPTIONS: dict[int, str] = {
+    0: "Standby",
+    1: "Automatic",
+    2: "Hot Water",
+    3: "Hot Water Once",
+}
+
+#: Navigator 1.0/1.7 heating-circuit operating mode (holding register 2002
+#: for circuit A). Not the shared family's active hc mode: this selects the
+#: circuit's operating mode, not the currently active function.
+HC_OPERATING_MODE_17_OPTIONS: dict[int, str] = {
+    0: "Off",
+    1: "Time Program",
+    2: "Normal",
+    3: "ECO",
+    4: "Heating Only",
+}
+
 
 class CircuitMode(enum.IntEnum):
     OFF = 0
