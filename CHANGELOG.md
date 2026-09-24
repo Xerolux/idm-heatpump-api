@@ -22,6 +22,22 @@ prerelease is `2.0.0b1`, not `2.0.0-beta.1` — see `docs/RELEASE_PROCESS.md`.
 Sections up to `1.0.3` are German; they stay as published, because a released
 changelog is history. Everything from `2.0.0b1` on is English.
 
+## [2.4.1] - 2026-09-24
+
+### Added
+
+- **Navigator 1.0/1.7 status words carry their documented ranges.** The
+  status block from 1502 (heating-circuit status 0-2, compressors 0-1,
+  pumps 0-2, compressor stages 0-12, cascade 0-8, solar 0-17, smart grid
+  0-3, ISC 0-8) now declares the MIN/MAX columns of the official
+  ma_de_812049 Rev.1 table as `min_val`/`max_val`. Rev.0-era 1.x firmware
+  is documented only up to address 1501 and answers the newer status words
+  with uninitialized memory instead of an Illegal Data Address rejection
+  (observed on firmware N1.MLj, idm-heatpump-hass issue #364: register
+  1502 returned random words every poll). Consumers can now reject such
+  reads as out of range. The fault number (1500) and the byte-doubled
+  operating mode (1501) deliberately keep no range.
+
 ## [2.4.0] - 2026-09-24
 
 ### Added

@@ -755,3 +755,43 @@ def test_1_7_holding_modes_accept_writes() -> None:
         pass
     else:
         raise AssertionError("bivalence point above the documented range must be rejected")
+
+
+def test_1_7_status_words_carry_documented_ranges() -> None:
+    """Rev.0-era firmware answers unimplemented status words with garbage.
+
+    The documented MIN/MAX ranges let consumers reject those reads instead
+    of surfacing uninitialized memory (idm-heatpump-hass issue #364,
+    firmware N1.MLj answered 1502 with random words).
+    """
+    regs = _navigator_17_registers()
+
+    for letter in "abcdefg":
+        reg = regs[f"hc_{letter}_status"]
+        assert (reg.min_val, reg.max_val) == (0, 2), letter
+    for idx in range(1, 5):
+        reg = regs[f"compressor_status_{idx}"]
+        assert (reg.min_val, reg.max_val) == (0, 1), idx
+    for name in (
+        "charging_pump_status",
+        "heat_source_pump_status",
+        "intermediate_circuit_pump_status",
+        "isc_cold_storage_pump_status",
+        "isc_recooling_pump_status",
+    ):
+        reg = regs[name]
+        assert (reg.min_val, reg.max_val) == (min(PUMP_STATUS_OPTIONS), max(PUMP_STATUS_OPTIONS)), (
+            name
+        )
+    for name in ("compressor_stages_heating", "compressor_stages_cooling", "compressor_stages_dhw"):
+        assert (regs[name].min_val, regs[name].max_val) == (0, 12), name
+    assert (regs["cascade_mode"].min_val, regs["cascade_mode"].max_val) == (0, 8)
+    assert (regs["solar_mode"].min_val, regs["solar_mode"].max_val) == (0, 17)
+    assert (regs["smart_grid_status"].min_val, regs["smart_grid_status"].max_val) == (0, 3)
+    assert (regs["isc_mode"].min_val, regs["isc_mode"].max_val) == (0, 8)
+    # No documented range: the fault number and the byte-doubled operating
+    # mode must not gain one.
+    assert regs["error_number"].min_val is None
+    assert regs["error_number"].max_val is None
+    assert regs["hp_operating_mode"].min_val is None
+    assert regs["hp_operating_mode"].max_val is None

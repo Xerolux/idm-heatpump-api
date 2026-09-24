@@ -1472,16 +1472,27 @@ def _navigator_17_registers(*, has_pv: bool = False) -> dict[str, RegisterDef]:
         "hp_operating_mode",
         enum_options=HP_OPERATING_MODE_OPTIONS,
     )
+    # The status words from 1502 on carry their documented MIN/MAX ranges so
+    # consumers can reject garbage: Rev.0-era 1.x firmware (documented up to
+    # 1501) answers these addresses with uninitialized memory instead of an
+    # Illegal Data Address rejection (observed on N1.MLj,
+    # idm-heatpump-hass issue #364).
     for idx, letter in enumerate("abcdefg"):
+        # Status Heizkreis A-G: 0-2.
         regs[f"hc_{letter}_status"] = _navigator_17_register(
-            1502 + idx, DataType.UINT16, f"hc_{letter}_status"
+            1502 + idx, DataType.UINT16, f"hc_{letter}_status", min_val=0, max_val=2
         )
     for idx in range(1, 5):
         # Status Verdichter 1-4: 0 = off, 1 = on. Named like the shared
         # family's compressor_status_N so consumers reuse translations and
         # binary metadata.
         regs[f"compressor_status_{idx}"] = _navigator_17_register(
-            1508 + idx, DataType.UINT16, f"compressor_status_{idx}", binary=True
+            1508 + idx,
+            DataType.UINT16,
+            f"compressor_status_{idx}",
+            binary=True,
+            min_val=0,
+            max_val=1,
         )
     # Pump statuses share the documented 0/1/2 value set.
     pump_specs: list[tuple[int, str]] = [
@@ -1493,26 +1504,39 @@ def _navigator_17_registers(*, has_pv: bool = False) -> dict[str, RegisterDef]:
     ]
     for address, name in pump_specs:
         regs[name] = _navigator_17_register(
-            address, DataType.UINT16, name, enum_options=PUMP_STATUS_OPTIONS
+            address,
+            DataType.UINT16,
+            name,
+            enum_options=PUMP_STATUS_OPTIONS,
+            min_val=min(PUMP_STATUS_OPTIONS),
+            max_val=max(PUMP_STATUS_OPTIONS),
         )
-    # Laufende Verdichterstufen (counts).
+    # Laufende Verdichterstufen (counts 0-12).
     regs["compressor_stages_heating"] = _navigator_17_register(
-        1518, DataType.UINT16, "compressor_stages_heating"
+        1518, DataType.UINT16, "compressor_stages_heating", min_val=0, max_val=12
     )
     regs["compressor_stages_cooling"] = _navigator_17_register(
-        1519, DataType.UINT16, "compressor_stages_cooling"
+        1519, DataType.UINT16, "compressor_stages_cooling", min_val=0, max_val=12
     )
-    # Laufende Verdichterstufen Vorrang gesamt (DHW priority).
+    # Laufende Verdichterstufen Vorrang gesamt (DHW priority, 0-12).
     regs["compressor_stages_dhw"] = _navigator_17_register(
-        1520, DataType.UINT16, "compressor_stages_dhw"
+        1520, DataType.UINT16, "compressor_stages_dhw", min_val=0, max_val=12
     )
     # Betriebsart Kaskade / Solar / Smart Grid / IDM Systemkühlung (ISC).
-    # The 1.x documentation does not define value sets for these modes, so
-    # they are exposed as plain numbers.
-    regs["cascade_mode"] = _navigator_17_register(1521, DataType.UINT16, "cascade_mode")
-    regs["solar_mode"] = _navigator_17_register(1522, DataType.UINT16, "solar_mode")
-    regs["smart_grid_status"] = _navigator_17_register(1523, DataType.UINT16, "smart_grid_status")
-    regs["isc_mode"] = _navigator_17_register(1524, DataType.UINT16, "isc_mode")
+    # Rev.1 documents the ranges but no value meanings, so they stay plain
+    # numbers bounded by the documented MIN/MAX.
+    regs["cascade_mode"] = _navigator_17_register(
+        1521, DataType.UINT16, "cascade_mode", min_val=0, max_val=8
+    )
+    regs["solar_mode"] = _navigator_17_register(
+        1522, DataType.UINT16, "solar_mode", min_val=0, max_val=17
+    )
+    regs["smart_grid_status"] = _navigator_17_register(
+        1523, DataType.UINT16, "smart_grid_status", min_val=0, max_val=3
+    )
+    regs["isc_mode"] = _navigator_17_register(
+        1524, DataType.UINT16, "isc_mode", min_val=0, max_val=8
+    )
 
     # FC03/FC06 holding block from 2000: the complete RW parameter table of
     # ma_de_812049 Rev.1 (system mode, per-circuit modes, room/flow
