@@ -18,14 +18,17 @@ from idm_heatpump.client import (
     RegisterType,
 )
 from idm_heatpump.const import (
+    HC_OPERATING_MODE_17_OPTIONS,
     MODEL_NAVIGATOR_10,
     MODEL_NAVIGATOR_17,
     MODEL_NAVIGATOR_20,
     MODEL_NAVIGATOR_PRO,
     MODEL_UNKNOWN,
     PUMP_STATUS_OPTIONS,
+    SYSTEM_MODE_17_OPTIONS,
 )
 from idm_heatpump.registers import (
+    NAVIGATOR_17_HOLDING_SOURCE_VERSION,
     NAVIGATOR_17_REGISTER_SOURCE,
     NAVIGATOR_17_REGISTER_SOURCE_VERSION,
     _navigator_17_registers,
@@ -36,6 +39,13 @@ from idm_heatpump.registers import (
 from .fake_modbus import FakeModbusTransport
 
 # Official 1.x table: FC04 FLOAT block 1000-1088, status words 1500-1524.
+# Community-verified FC03/FC06 holding block (idm-heatpump-hass#319).
+EXPECTED_HOLDING: dict[str, int] = {
+    "system_mode_17": 2000,
+    "hc_a_operating_mode": 2002,
+    "hc_a_heating_limit_17": 2058,
+    "bivalence_point_1_17": 2146,
+}
 EXPECTED_FLOATS: dict[str, int] = {
     "outdoor_temp": 1000,
     "hp_flow_temp": 1002,
@@ -157,14 +167,24 @@ def _float_words(value: float) -> list[int]:
 def test_navigator_17_map_matches_official_table() -> None:
     regs = _navigator_17_registers()
 
-    expected = {**EXPECTED_FLOATS, **EXPECTED_STATUS}
+    expected = {**EXPECTED_FLOATS, **EXPECTED_STATUS, **EXPECTED_HOLDING}
     assert set(regs) == set(expected), sorted(set(regs) ^ set(expected))
     for name, address in expected.items():
         assert regs[name].address == address, name
 
 
 def test_navigator_17_base_map_is_read_only() -> None:
+    """Read-only everywhere except the community-verified holding modes."""
+    holding = {
+        "system_mode_17",
+        "hc_a_operating_mode",
+        "hc_a_heating_limit_17",
+        "bivalence_point_1_17",
+    }
     for name, reg in _navigator_17_registers().items():
+        if name in holding:
+            assert reg.register_type is RegisterType.HOLDING, name
+            continue
         assert not reg.writable, name
         assert reg.write_class.value == "forbidden", name
         assert reg.register_type is RegisterType.INPUT, name
@@ -195,10 +215,19 @@ def test_navigator_17_pv_supplement_adds_writable_registers() -> None:
 
 
 def test_navigator_17_map_declares_family_metadata() -> None:
+    holding = {
+        "system_mode_17",
+        "hc_a_operating_mode",
+        "hc_a_heating_limit_17",
+        "bivalence_point_1_17",
+    }
     for name, reg in _navigator_17_registers().items():
         assert reg.supported_models == (MODEL_NAVIGATOR_17,), name
         assert reg.source == NAVIGATOR_17_REGISTER_SOURCE, name
-        assert reg.source_version == NAVIGATOR_17_REGISTER_SOURCE_VERSION, name
+        if name in holding:
+            assert reg.source_version == NAVIGATOR_17_HOLDING_SOURCE_VERSION, name
+        else:
+            assert reg.source_version == NAVIGATOR_17_REGISTER_SOURCE_VERSION, name
 
 
 def test_navigator_17_map_datatypes_and_units() -> None:
@@ -346,7 +375,8 @@ def test_register_registry_lookups_for_1_7() -> None:
     assert registry.get("system_mode") is None
     assert registry.by_address(1046) is not None
     assert registry.by_address(1392) is None
-    assert registry.writable() == {}
+    writable = registry.writable()
+    assert set(writable) == {"system_mode_17", "hc_a_operating_mode"}
     with_pv = get_register_registry(
         model_info=IdmModelInfo(
             model_name=MODEL_NAVIGATOR_17,
@@ -363,6 +393,9 @@ def test_register_registry_lookups_for_1_7() -> None:
         "electric_heater_power",
         "pv_production",
         "house_consumption",
+        # The holding operating modes are writable without the PV supplement too.
+        "system_mode_17",
+        "hc_a_operating_mode",
     }
 
 
@@ -544,3 +577,90 @@ def test_get_register_uses_1_7_map() -> None:
         except ValueError:
             continue
         raise AssertionError(f"hot_gas_temp must not resolve for {model_name}")
+
+
+def test_1_7_holding_block_registers() -> None:
+    """The community-verified FC03/FC06 block from 2000 exists with exact metadata.
+
+    Source: a working FHEM configuration against a real Navigator 1.7
+    (idm-heatpump-hass issue #319, September 2026). The float registers of
+    the same block (room setpoints, heating curve) are intentionally NOT
+    mapped yet: the byte order of the 2000-block floats is unverified
+    against the display, and the map's float rule is low-word-first.
+    """
+    regs = _navigator_17_registers()
+
+    system_mode = regs["system_mode_17"]
+    assert system_mode.address == 2000
+    assert system_mode.datatype is DataType.UINT16
+    assert system_mode.register_type is RegisterType.HOLDING
+    assert system_mode.writable is True
+    assert system_mode.enum_options == SYSTEM_MODE_17_OPTIONS
+    assert system_mode.eeprom_sensitive is True
+    assert system_mode.supported_models == (MODEL_NAVIGATOR_17,)
+    assert system_mode.last_verified == "2026-09-24"
+
+    operating_mode = regs["hc_a_operating_mode"]
+    assert operating_mode.address == 2002
+    assert operating_mode.datatype is DataType.UINT16
+    assert operating_mode.register_type is RegisterType.HOLDING
+    assert operating_mode.writable is True
+    assert operating_mode.enum_options == HC_OPERATING_MODE_17_OPTIONS
+    assert operating_mode.eeprom_sensitive is True
+
+    heating_limit = regs["hc_a_heating_limit_17"]
+    assert heating_limit.address == 2058
+    assert heating_limit.datatype is DataType.UINT16
+    assert heating_limit.register_type is RegisterType.HOLDING
+    assert heating_limit.writable is False
+
+    bivalence = regs["bivalence_point_1_17"]
+    assert bivalence.address == 2146
+    assert bivalence.datatype is DataType.UINT16
+    assert bivalence.register_type is RegisterType.HOLDING
+    assert bivalence.writable is False
+
+
+def test_1_7_holding_enums_match_the_verified_mapping() -> None:
+    """The value sets differ from the shared family on purpose."""
+    assert SYSTEM_MODE_17_OPTIONS == {
+        0: "Standby",
+        1: "Automatic",
+        2: "Hot Water",
+        3: "Hot Water Once",
+    }
+    assert HC_OPERATING_MODE_17_OPTIONS == {
+        0: "Off",
+        1: "Time Program",
+        2: "Normal",
+        3: "ECO",
+        4: "Heating Only",
+    }
+
+
+def test_1_7_holding_modes_accept_writes() -> None:
+    """The operating-mode holding registers are the first writable 1.x controls."""
+    client = IdmModbusClient("127.0.0.1")
+    client.set_model_info(
+        IdmModelInfo(
+            model_name=MODEL_NAVIGATOR_17,
+            active_heating_circuits=[],
+            zone_modules=0,
+            has_solar=False,
+            has_isc=False,
+            has_pv=False,
+            has_cascade=False,
+        )
+    )
+
+    plan = client.simulate_write("system_mode_17", 3)
+    assert plan.requested_value == 3
+    plan = client.simulate_write("hc_a_operating_mode", 2)
+    assert plan.requested_value == 2
+
+    try:
+        client.simulate_write("bivalence_point_1_17", 10)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("bivalence_point_1_17 must stay read-only")
