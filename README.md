@@ -61,8 +61,9 @@ No. Communication takes place locally through the IDM controller's Modbus TCP in
 | IDM Navigator Pro | firmware-dependent | up to 7 (A–G) | up to 10 (8 configurable) | Expected; needs complete diagnostics |
 
 > Navigator 1.0/1.7 is a separate protocol family, supported with its
-> own read-only register map (plus PV-supplement writes when the firmware
-> provides them).
+> own register map: read-only FC04 telemetry plus the complete official
+> writable holding block (setpoints, heating curves, limits, modes) and
+> PV-supplement writes when the firmware provides them.
 
 ## Requirements
 

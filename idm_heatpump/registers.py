@@ -42,6 +42,7 @@ from .const import (
     ROOM_MODE_OPTIONS,
     SMART_GRID_OPTIONS,
     SOLAR_MODE_OPTIONS,
+    SOLAR_OPERATING_MODE_17_OPTIONS,
     SYSTEM_MODE_17_OPTIONS,
     SYSTEM_MODE_OPTIONS,
     VARIABLE_INPUT_OPTIONS,
@@ -1317,7 +1318,10 @@ NAVIGATOR_17_REGISTER_SOURCE_VERSION = (
 # addresses. Older 1.x firmware rejects them, so the block is included only
 # when the detection probe at address 74 responded.
 NAVIGATOR_17_PV_SOURCE_VERSION = "iDM PV-signal Modbus TCP supplement to ma_de_812049 (post-2016)"
-NAVIGATOR_17_HOLDING_SOURCE_VERSION = "Community-verified holding block of ma_de_812049 (FHEM capture, idm-heatpump-hass#319, 2026-09)"
+NAVIGATOR_17_HOLDING_SOURCE_VERSION = (
+    "RW holding table of ma_de_812049 Rev.1 (2016-06-13), read/write confirmed"
+    " by FHEM capture (idm-heatpump-hass#319, 2026-09)"
+)
 
 
 def _navigator_17_register(
@@ -1342,21 +1346,30 @@ def _navigator_17_registers(*, has_pv: bool = False) -> dict[str, RegisterDef]:
     """Register map for the Navigator 1.0/1.7 protocol family.
 
     Source: official iDM Modbus TCP documentation for Navigator 1.0/1.7
-    (ma_de_812049, register table dated 2016-06-13). The 1.x family uses a
-    completely different layout from Navigator 2.0/10/Pro; in particular the
-    meaning of the FLOAT block from address 1000 differs register by register
-    (for example 1002 is the heat-pump flow temperature, not the averaged
-    outdoor temperature, and 1046 is the humidity sensor). Never reuse the
-    shared 2.0/10/Pro definitions for these addresses.
+    (ma_de_812049 Rev.1, register table dated 2016-06-13). The 1.x family
+    uses a completely different layout from Navigator 2.0/10/Pro; in
+    particular the meaning of the FLOAT block from address 1000 differs
+    register by register (for example 1002 is the heat-pump flow
+    temperature, not the averaged outdoor temperature, and 1046 is the
+    humidity sensor). Never reuse the shared 2.0/10/Pro definitions for
+    these addresses.
 
-    The base map is read-only: the FC04 input blocks (FLOAT values from 1000,
-    status words from 1500) carry no write path. The FC03/06 holding block
-    from 2000 and the FC01/05 coil block from 3000 stay unmapped because
-    their per-register semantics are undocumented in the sources available.
-    When the detection probe at address 74 responded (``has_pv``), the
-    post-2016 PV supplement is included: the writable PV/energy-management
-    registers (74/76/78/82, mirroring the shared family's volatile writes)
-    and the read-only power measurement at 4122.
+    The FC04 input blocks (FLOAT values from 1000, status words from 1500)
+    are read-only. The FC03/FC06 holding block from 2000 carries the
+    official RW parameter table (system mode, per-circuit operating modes,
+    room/flow setpoints, heating curves, limits, bivalence points, solar
+    mode, DHW setpoint); every holding register is EEPROM-sensitive per the
+    official warning (300 000 write cycles per register, identical values
+    are not rewritten). The per-circuit parameters reuse the shared
+    family's register names because ranges and semantics are identical —
+    the 2.0/10/Pro holding block is the direct successor of this table.
+    The FC01/05 coil block (3000 Störung quittieren, 3001 Anforderung
+    Heizen, 3002 Anforderung Kühlen, 3003 Anforderung Vorrangladung) is
+    documented in the same table but stays unmapped until the transport
+    implements FC01/FC05. When the detection probe at address 74 responded
+    (``has_pv``), the post-2016 PV supplement is included: the writable
+    PV/energy-management registers (74/76/78/82, mirroring the shared
+    family's volatile writes) and the read-only power measurement at 4122.
     """
     regs: dict[str, RegisterDef] = {}
 
@@ -1501,39 +1514,144 @@ def _navigator_17_registers(*, has_pv: bool = False) -> dict[str, RegisterDef]:
     regs["smart_grid_status"] = _navigator_17_register(1523, DataType.UINT16, "smart_grid_status")
     regs["isc_mode"] = _navigator_17_register(1524, DataType.UINT16, "isc_mode")
 
-    # FC03/FC06 holding block from 2000. Undocumented in ma_de_812049; the
-    # semantics below come from a working FHEM configuration against a real
-    # Navigator 1.7 (idm-heatpump-hass issue #319, September 2026), where
-    # both operating modes are read and written daily. The value sets differ
-    # from the shared family's system_mode/hc modes, so the registers carry
-    # their own names and enum tables. The float registers of the same block
-    # (room setpoints 2016/2030, heating curve 2044) are deliberately not
-    # mapped: their byte order is unverified against the display while the
-    # map's float rule is low-word-first. Read-only here until verified.
-    holding_specs: list[tuple[int, str, bool, dict[int, str] | None]] = [
-        (2000, "system_mode_17", True, SYSTEM_MODE_17_OPTIONS),
-        (2002, "hc_a_operating_mode", True, HC_OPERATING_MODE_17_OPTIONS),
-        (2058, "hc_a_heating_limit_17", False, None),
-        (2146, "bivalence_point_1_17", False, None),
-    ]
-    for address, name, writable, options in holding_specs:
-        kwargs: dict[str, Any] = {
-            "address": address,
-            "datatype": DataType.UINT16,
-            "name": name,
-            "writable": writable,
-            "register_type": RegisterType.HOLDING,
-            "source": NAVIGATOR_17_REGISTER_SOURCE,
-            "source_version": NAVIGATOR_17_HOLDING_SOURCE_VERSION,
-            "supported_models": (MODEL_NAVIGATOR_17,),
-            "last_verified": "2026-09-24",
-        }
-        if options is not None:
-            kwargs["enum_options"] = options
-            kwargs["min_val"] = min(options)
-            kwargs["max_val"] = max(options)
-            kwargs["eeprom_sensitive"] = True
-        regs[name] = RegisterDef(**kwargs)
+    # FC03/FC06 holding block from 2000: the complete RW parameter table of
+    # ma_de_812049 Rev.1 (system mode, per-circuit modes, room/flow
+    # setpoints, heating curves, limits, bivalence points, solar mode, DHW
+    # setpoint). The operating modes were additionally confirmed by a
+    # working FHEM configuration against a real Navigator 1.7
+    # (idm-heatpump-hass issue #319, September 2026), including daily writes
+    # of 2000/2002 and plausible float reads at 2016/2030 (the documented
+    # defaults 22/18). The 2000-block floats follow the map-wide low-word-
+    # first rule, which section 3.1 of the official document states
+    # explicitly (Reg_L first, Reg_H second). Per-circuit parameters reuse
+    # the shared family's names: the official ranges are identical, so
+    # consumers get the shared metadata for free. The system/circuit/solar
+    # modes carry their own names and enum tables because their value sets
+    # differ from the shared family. Every register here is writable and
+    # EEPROM-sensitive: the official document allows at most 300 000 write
+    # cycles per register and skips identical values.
+    def _holding(
+        address: int,
+        datatype: DataType,
+        name: str,
+        **kwargs: Any,
+    ) -> RegisterDef:
+        return RegisterDef(
+            address=address,
+            datatype=datatype,
+            name=name,
+            writable=True,
+            register_type=RegisterType.HOLDING,
+            source=NAVIGATOR_17_REGISTER_SOURCE,
+            source_version=NAVIGATOR_17_HOLDING_SOURCE_VERSION,
+            supported_models=(MODEL_NAVIGATOR_17,),
+            eeprom_sensitive=True,
+            last_verified="2026-09-24",
+            **kwargs,
+        )
+
+    # Enum modes: Betriebsart System (PROG0) 2000, Betriebsart Heizkreis
+    # A-G (HKA01-HKG01) 2002-2014, Betriebsart Solar (SC002) 2150.
+    for address, name, options in [
+        (2000, "system_mode_17", SYSTEM_MODE_17_OPTIONS),
+        *(
+            (2002 + idx * 2, f"hc_{letter}_operating_mode", HC_OPERATING_MODE_17_OPTIONS)
+            for idx, letter in enumerate("abcdefg")
+        ),
+        (2150, "solar_operating_mode_17", SOLAR_OPERATING_MODE_17_OPTIONS),
+    ]:
+        regs[name] = _holding(
+            address,
+            DataType.UINT16,
+            name,
+            enum_options=options,
+            min_val=min(options),
+            max_val=max(options),
+        )
+
+    # Word-sized parameters: Heizgrenze (HKA08) 2058-2070, Sollvorlauftemperatur
+    # Heizen for constant-flow circuits (HKA03) 2072-2084, Kühlgrenze (HKA58)
+    # 2114-2126, Sollvorlauftemperatur Kühlen (HKA53) 2128-2140, externe
+    # Anforderungstemperaturen (PH003/PC004) 2142/2144, Frischwasser-
+    # Solltemperatur (FW030) 2152. The official table types them as UCHAR; a
+    # whole register is reserved per value (2-register spacing), and the FHEM
+    # capture read clean small values, so they map as UINT16.
+    for address, name, min_val, max_val in [
+        *(
+            (2058 + idx * 2, f"hc_{letter}_heating_limit", 0, 50)
+            for idx, letter in enumerate("abcdefg")
+        ),
+        *(
+            (2072 + idx * 2, f"hc_{letter}_setpoint_flow_constant", 20, 90)
+            for idx, letter in enumerate("abcdefg")
+        ),
+        *(
+            (2114 + idx * 2, f"hc_{letter}_cooling_limit", 0, 36)
+            for idx, letter in enumerate("abcdefg")
+        ),
+        *(
+            (2128 + idx * 2, f"hc_{letter}_setpoint_flow_cooling", 8, 30)
+            for idx, letter in enumerate("abcdefg")
+        ),
+        (2142, "external_demand_temp_heating", 20, 65),
+        (2144, "external_demand_temp_cooling", 10, 25),
+        (2152, "dhw_setpoint", 35, 60),
+    ]:
+        regs[name] = _holding(
+            address,
+            DataType.UINT16,
+            name,
+            unit="°C",
+            min_val=min_val,
+            max_val=max_val,
+        )
+
+    # Float parameters (low word first): Raumsolltemperatur Heizen Normal
+    # (HKA04) 2016-2028 and ECO (HKA05) 2030-2042, Heizkurve (HKA10)
+    # 2044-2056, Raumsolltemperatur Kühlen Normal (HKA50) 2086-2098 and ECO
+    # (HKA51) 2100-2112.
+    for address, name, min_value, max_value, unit, extra in [
+        *(
+            (2016 + idx * 2, f"hc_{letter}_room_setpoint_heat_normal", 15.0, 30.0, "°C", {})
+            for idx, letter in enumerate("abcdefg")
+        ),
+        *(
+            (2030 + idx * 2, f"hc_{letter}_room_setpoint_heat_eco", 10.0, 25.0, "°C", {})
+            for idx, letter in enumerate("abcdefg")
+        ),
+        *(
+            (2044 + idx * 2, f"hc_{letter}_heating_curve", 0.1, 3.5, None, {"step": 0.1})
+            for idx, letter in enumerate("abcdefg")
+        ),
+        *(
+            (2086 + idx * 2, f"hc_{letter}_room_setpoint_cool_normal", 15.0, 30.0, "°C", {})
+            for idx, letter in enumerate("abcdefg")
+        ),
+        *(
+            (2100 + idx * 2, f"hc_{letter}_room_setpoint_cool_eco", 15.0, 30.0, "°C", {})
+            for idx, letter in enumerate("abcdefg")
+        ),
+    ]:
+        regs[name] = _holding(
+            address,
+            DataType.FLOAT,
+            name,
+            unit=unit,
+            min_val=min_value,
+            max_val=max_value,
+            **extra,
+        )
+
+    # Signed words: Bivalenzpunkt 1/2 (BV002/BV003) 2146/2148, -20..20 °C.
+    for address, name in ((2146, "bivalence_point_1_17"), (2148, "bivalence_point_2_17")):
+        regs[name] = _holding(
+            address,
+            DataType.INT16,
+            name,
+            unit="°C",
+            min_val=-20,
+            max_val=20,
+        )
 
     if has_pv:
         # Post-2016 PV supplement (see NAVIGATOR_17_PV_SOURCE_VERSION). The

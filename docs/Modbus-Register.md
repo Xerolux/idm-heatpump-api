@@ -328,14 +328,18 @@ configurable rooms (6 is the current Navigator 10 default); each room block is
 Example (zone module 1): room 1 temperature = 2002, setpoint = 2004, humidity = 2006,
 mode = 2007, relay = 2008; room 2 starts at 2009.
 
-## Navigator 1.7 (read-only)
+## Navigator 1.7
 
 The Navigator 1.0/1.7 controllers use a separate protocol family. The library
-exposes their FC04 input blocks below; the FC03/06 holding block (2000+) and
-the FC01/05 coil block (3000+) are not mapped, because their per-register
-semantics are undocumented in the sources available. Source: official iDM
-Modbus TCP documentation for Navigator 1.0/1.7 (`ma_de_812049`, register
-table dated 2016-06-13).
+exposes their FC04 input blocks and the complete official FC03/06 RW holding
+block (2000-2152) below; the FC01/05 coil block (3000-3003: Störung
+quittieren, Anforderung Heizen/Kühlen/Vorrangladung) is documented in the
+same table but stays unmapped until the transport implements FC01/FC05.
+Source: official iDM Modbus TCP documentation for Navigator 1.0/1.7
+(`ma_de_812049` Rev.1, register table dated 2016-06-13); the operating modes
+2000/2002 and the float word order were additionally confirmed by a working
+FHEM configuration against a real Navigator 1.7 (idm-heatpump-hass issue
+#319, September 2026).
 
 Same physical layer as the shared family: Modbus TCP port **502**, unit ID 1,
 IEEE-754 `FLOAT` values in two registers, low word first. The data points
@@ -415,6 +419,98 @@ addresses must never be served from the shared map.
 | 1522 | `solar_mode` | UINT16 | RO | - | Value set undocumented |
 | 1523 | `smart_grid_status` | UINT16 | RO | - | Value set undocumented |
 | 1524 | `isc_mode` | UINT16 | RO | - | Value set undocumented |
+
+### FC03/FC06 holding block (RW, EEPROM-sensitive)
+
+Every register of this block is writable and EEPROM-sensitive: the official
+document allows at most 300,000 write cycles per register and skips identical
+values. The byte-sized parameters are mapped as whole-register UINT16 values
+(the official table reserves a full register per value); the bivalence points
+are signed INT16. Per-circuit parameters reuse the shared family's register
+names because the official ranges are identical — the 2.0/10/Pro holding
+block is the direct successor of this table. The system/circuit/solar modes
+carry their own names because their value sets differ from the shared
+family's enums.
+
+| Address | Name | Type | Access | Unit | Notes |
+|---------|------|------|--------|------|-------|
+| 2000 | `system_mode_17` | UINT16 | RW | - | System mode (PROG0): 0=Standby, 1=Automatic, 2=Hot Water, 3=Hot Water Once; EEPROM-sensitive |
+| 2002 | `hc_a_operating_mode` | UINT16 | RW | - | Heating-circuit A operating mode (HKA01): 0=Off, 1=Time Program, 2=Normal, 3=ECO, 4=Heating Only; EEPROM-sensitive |
+| 2004 | `hc_b_operating_mode` | UINT16 | RW | - | Heating-circuit B operating mode (HKB01): 0=Off, 1=Time Program, 2=Normal, 3=ECO, 4=Heating Only; EEPROM-sensitive |
+| 2006 | `hc_c_operating_mode` | UINT16 | RW | - | Heating-circuit C operating mode (HKC01): 0=Off, 1=Time Program, 2=Normal, 3=ECO, 4=Heating Only; EEPROM-sensitive |
+| 2008 | `hc_d_operating_mode` | UINT16 | RW | - | Heating-circuit D operating mode (HKD01): 0=Off, 1=Time Program, 2=Normal, 3=ECO, 4=Heating Only; EEPROM-sensitive |
+| 2010 | `hc_e_operating_mode` | UINT16 | RW | - | Heating-circuit E operating mode (HKE01): 0=Off, 1=Time Program, 2=Normal, 3=ECO, 4=Heating Only; EEPROM-sensitive |
+| 2012 | `hc_f_operating_mode` | UINT16 | RW | - | Heating-circuit F operating mode (HKF01): 0=Off, 1=Time Program, 2=Normal, 3=ECO, 4=Heating Only; EEPROM-sensitive |
+| 2014 | `hc_g_operating_mode` | UINT16 | RW | - | Heating-circuit G operating mode (HKG01): 0=Off, 1=Time Program, 2=Normal, 3=ECO, 4=Heating Only; EEPROM-sensitive |
+| 2016 | `hc_a_room_setpoint_heat_normal` | FLOAT | RW | °C | Room setpoint heating normal (HKA04), 15..30; EEPROM-sensitive |
+| 2018 | `hc_b_room_setpoint_heat_normal` | FLOAT | RW | °C | Room setpoint heating normal (HKB04), 15..30; EEPROM-sensitive |
+| 2020 | `hc_c_room_setpoint_heat_normal` | FLOAT | RW | °C | Room setpoint heating normal (HKC04), 15..30; EEPROM-sensitive |
+| 2022 | `hc_d_room_setpoint_heat_normal` | FLOAT | RW | °C | Room setpoint heating normal (HKD04), 15..30; EEPROM-sensitive |
+| 2024 | `hc_e_room_setpoint_heat_normal` | FLOAT | RW | °C | Room setpoint heating normal (HKE04), 15..30; EEPROM-sensitive |
+| 2026 | `hc_f_room_setpoint_heat_normal` | FLOAT | RW | °C | Room setpoint heating normal (HKF04), 15..30; EEPROM-sensitive |
+| 2028 | `hc_g_room_setpoint_heat_normal` | FLOAT | RW | °C | Room setpoint heating normal (HKG04), 15..30; EEPROM-sensitive |
+| 2030 | `hc_a_room_setpoint_heat_eco` | FLOAT | RW | °C | Room setpoint heating ECO (HKA05), 10..25; EEPROM-sensitive |
+| 2032 | `hc_b_room_setpoint_heat_eco` | FLOAT | RW | °C | Room setpoint heating ECO (HKB05), 10..25; EEPROM-sensitive |
+| 2034 | `hc_c_room_setpoint_heat_eco` | FLOAT | RW | °C | Room setpoint heating ECO (HKC05), 10..25; EEPROM-sensitive |
+| 2036 | `hc_d_room_setpoint_heat_eco` | FLOAT | RW | °C | Room setpoint heating ECO (HKD05), 10..25; EEPROM-sensitive |
+| 2038 | `hc_e_room_setpoint_heat_eco` | FLOAT | RW | °C | Room setpoint heating ECO (HKE05), 10..25; EEPROM-sensitive |
+| 2040 | `hc_f_room_setpoint_heat_eco` | FLOAT | RW | °C | Room setpoint heating ECO (HKF05), 10..25; EEPROM-sensitive |
+| 2042 | `hc_g_room_setpoint_heat_eco` | FLOAT | RW | °C | Room setpoint heating ECO (HKG05), 10..25; EEPROM-sensitive |
+| 2044 | `hc_a_heating_curve` | FLOAT | RW | - | Heating curve (HKA10), 0.1..3.5, step 0.1; EEPROM-sensitive |
+| 2046 | `hc_b_heating_curve` | FLOAT | RW | - | Heating curve (HKB10), 0.1..3.5, step 0.1; EEPROM-sensitive |
+| 2048 | `hc_c_heating_curve` | FLOAT | RW | - | Heating curve (HKC10), 0.1..3.5, step 0.1; EEPROM-sensitive |
+| 2050 | `hc_d_heating_curve` | FLOAT | RW | - | Heating curve (HKD10), 0.1..3.5, step 0.1; EEPROM-sensitive |
+| 2052 | `hc_e_heating_curve` | FLOAT | RW | - | Heating curve (HKE10), 0.1..3.5, step 0.1; EEPROM-sensitive |
+| 2054 | `hc_f_heating_curve` | FLOAT | RW | - | Heating curve (HKF10), 0.1..3.5, step 0.1; EEPROM-sensitive |
+| 2056 | `hc_g_heating_curve` | FLOAT | RW | - | Heating curve (HKG10), 0.1..3.5, step 0.1; EEPROM-sensitive |
+| 2058 | `hc_a_heating_limit` | UINT16 | RW | °C | Heating limit (HKA08, Heizgrenze), 0..50; EEPROM-sensitive |
+| 2060 | `hc_b_heating_limit` | UINT16 | RW | °C | Heating limit (HKB08, Heizgrenze), 0..50; EEPROM-sensitive |
+| 2062 | `hc_c_heating_limit` | UINT16 | RW | °C | Heating limit (HKC08, Heizgrenze), 0..50; EEPROM-sensitive |
+| 2064 | `hc_d_heating_limit` | UINT16 | RW | °C | Heating limit (HKD08, Heizgrenze), 0..50; EEPROM-sensitive |
+| 2066 | `hc_e_heating_limit` | UINT16 | RW | °C | Heating limit (HKE08, Heizgrenze), 0..50; EEPROM-sensitive |
+| 2068 | `hc_f_heating_limit` | UINT16 | RW | °C | Heating limit (HKF08, Heizgrenze), 0..50; EEPROM-sensitive |
+| 2070 | `hc_g_heating_limit` | UINT16 | RW | °C | Heating limit (HKG08, Heizgrenze), 0..50; EEPROM-sensitive |
+| 2072 | `hc_a_setpoint_flow_constant` | UINT16 | RW | °C | Heating flow setpoint, constant-flow circuits only (HKA03), 20..90; EEPROM-sensitive |
+| 2074 | `hc_b_setpoint_flow_constant` | UINT16 | RW | °C | Heating flow setpoint, constant-flow circuits only (HKB03), 20..90; EEPROM-sensitive |
+| 2076 | `hc_c_setpoint_flow_constant` | UINT16 | RW | °C | Heating flow setpoint, constant-flow circuits only (HKC03), 20..90; EEPROM-sensitive |
+| 2078 | `hc_d_setpoint_flow_constant` | UINT16 | RW | °C | Heating flow setpoint, constant-flow circuits only (HKD03), 20..90; EEPROM-sensitive |
+| 2080 | `hc_e_setpoint_flow_constant` | UINT16 | RW | °C | Heating flow setpoint, constant-flow circuits only (HKE03), 20..90; EEPROM-sensitive |
+| 2082 | `hc_f_setpoint_flow_constant` | UINT16 | RW | °C | Heating flow setpoint, constant-flow circuits only (HKF03), 20..90; EEPROM-sensitive |
+| 2084 | `hc_g_setpoint_flow_constant` | UINT16 | RW | °C | Heating flow setpoint, constant-flow circuits only (HKG03), 20..90; EEPROM-sensitive |
+| 2086 | `hc_a_room_setpoint_cool_normal` | FLOAT | RW | °C | Room setpoint cooling normal (HKA50), 15..30; EEPROM-sensitive |
+| 2088 | `hc_b_room_setpoint_cool_normal` | FLOAT | RW | °C | Room setpoint cooling normal (HKB50), 15..30; EEPROM-sensitive |
+| 2090 | `hc_c_room_setpoint_cool_normal` | FLOAT | RW | °C | Room setpoint cooling normal (HKC50), 15..30; EEPROM-sensitive |
+| 2092 | `hc_d_room_setpoint_cool_normal` | FLOAT | RW | °C | Room setpoint cooling normal (HKD50), 15..30; EEPROM-sensitive |
+| 2094 | `hc_e_room_setpoint_cool_normal` | FLOAT | RW | °C | Room setpoint cooling normal (HKE50), 15..30; EEPROM-sensitive |
+| 2096 | `hc_f_room_setpoint_cool_normal` | FLOAT | RW | °C | Room setpoint cooling normal (HKF50), 15..30; EEPROM-sensitive |
+| 2098 | `hc_g_room_setpoint_cool_normal` | FLOAT | RW | °C | Room setpoint cooling normal (HKG50), 15..30; EEPROM-sensitive |
+| 2100 | `hc_a_room_setpoint_cool_eco` | FLOAT | RW | °C | Room setpoint cooling ECO (HKA51), 15..30; EEPROM-sensitive |
+| 2102 | `hc_b_room_setpoint_cool_eco` | FLOAT | RW | °C | Room setpoint cooling ECO (HKB51), 15..30; EEPROM-sensitive |
+| 2104 | `hc_c_room_setpoint_cool_eco` | FLOAT | RW | °C | Room setpoint cooling ECO (HKC51), 15..30; EEPROM-sensitive |
+| 2106 | `hc_d_room_setpoint_cool_eco` | FLOAT | RW | °C | Room setpoint cooling ECO (HKD51), 15..30; EEPROM-sensitive |
+| 2108 | `hc_e_room_setpoint_cool_eco` | FLOAT | RW | °C | Room setpoint cooling ECO (HKE51), 15..30; EEPROM-sensitive |
+| 2110 | `hc_f_room_setpoint_cool_eco` | FLOAT | RW | °C | Room setpoint cooling ECO (HKF51), 15..30; EEPROM-sensitive |
+| 2112 | `hc_g_room_setpoint_cool_eco` | FLOAT | RW | °C | Room setpoint cooling ECO (HKG51), 15..30; EEPROM-sensitive |
+| 2114 | `hc_a_cooling_limit` | UINT16 | RW | °C | Cooling limit (HKA58, Kühlgrenze), 0..36; 0 disables the limit; EEPROM-sensitive |
+| 2116 | `hc_b_cooling_limit` | UINT16 | RW | °C | Cooling limit (HKB58, Kühlgrenze), 0..36; 0 disables the limit; EEPROM-sensitive |
+| 2118 | `hc_c_cooling_limit` | UINT16 | RW | °C | Cooling limit (HKC58, Kühlgrenze), 0..36; 0 disables the limit; EEPROM-sensitive |
+| 2120 | `hc_d_cooling_limit` | UINT16 | RW | °C | Cooling limit (HKD58, Kühlgrenze), 0..36; 0 disables the limit; EEPROM-sensitive |
+| 2122 | `hc_e_cooling_limit` | UINT16 | RW | °C | Cooling limit (HKE58, Kühlgrenze), 0..36; 0 disables the limit; EEPROM-sensitive |
+| 2124 | `hc_f_cooling_limit` | UINT16 | RW | °C | Cooling limit (HKF58, Kühlgrenze), 0..36; 0 disables the limit; EEPROM-sensitive |
+| 2126 | `hc_g_cooling_limit` | UINT16 | RW | °C | Cooling limit (HKG58, Kühlgrenze), 0..36; 0 disables the limit; EEPROM-sensitive |
+| 2128 | `hc_a_setpoint_flow_cooling` | UINT16 | RW | °C | Cooling flow setpoint (HKA53), 8..30; EEPROM-sensitive |
+| 2130 | `hc_b_setpoint_flow_cooling` | UINT16 | RW | °C | Cooling flow setpoint (HKB53), 8..30; EEPROM-sensitive |
+| 2132 | `hc_c_setpoint_flow_cooling` | UINT16 | RW | °C | Cooling flow setpoint (HKC53), 8..30; EEPROM-sensitive |
+| 2134 | `hc_d_setpoint_flow_cooling` | UINT16 | RW | °C | Cooling flow setpoint (HKD53), 8..30; EEPROM-sensitive |
+| 2136 | `hc_e_setpoint_flow_cooling` | UINT16 | RW | °C | Cooling flow setpoint (HKE53), 8..30; EEPROM-sensitive |
+| 2138 | `hc_f_setpoint_flow_cooling` | UINT16 | RW | °C | Cooling flow setpoint (HKF53), 8..30; EEPROM-sensitive |
+| 2140 | `hc_g_setpoint_flow_cooling` | UINT16 | RW | °C | Cooling flow setpoint (HKG53), 8..30; EEPROM-sensitive |
+| 2142 | `external_demand_temp_heating` | UINT16 | RW | °C | External demand temperature heating (PH003), 20..65; EEPROM-sensitive |
+| 2144 | `external_demand_temp_cooling` | UINT16 | RW | °C | External demand temperature cooling (PC004), 10..25; EEPROM-sensitive |
+| 2146 | `bivalence_point_1_17` | INT16 | RW | °C | Bivalence point 1 (BV002), -20..20; EEPROM-sensitive |
+| 2148 | `bivalence_point_2_17` | INT16 | RW | °C | Bivalence point 2 (BV003), -20..20; EEPROM-sensitive |
+| 2150 | `solar_operating_mode_17` | UINT16 | RW | - | Solar operating mode (SC002): 0=Automatic, 1=Domestic Water, 2=Heat Storage, 3=DHW+Heat Storage, 4=Heat Source/Pool; EEPROM-sensitive |
+| 2152 | `dhw_setpoint` | UINT16 | RW | °C | Freshwater DHW setpoint (FW030, Frischwasser-Solltemperatur), 35..60; EEPROM-sensitive |
 
 Updated 1.x firmware carries a post-2016 PV supplement (iDM support
 documentation; not in the 2016 table). When the detection probe at address 74

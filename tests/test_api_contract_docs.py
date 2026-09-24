@@ -64,7 +64,7 @@ def test_register_invariants_preserve_official_protocol_facts() -> None:
         "Active heating-circuit mode A | 1498 | UCHAR",
         "next.address == previous.address + previous.size",
         "humidity sensor at `1046 FLOAT`",
-        "Navigator 1.0/1.7 is supported **read-only** as the separate",
+        "Navigator 1.0/1.7 is supported as the separate",
         "300,000 writes per register",
     ]:
         assert fact in invariants

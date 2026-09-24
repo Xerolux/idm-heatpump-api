@@ -25,6 +25,7 @@ from idm_heatpump.const import (
     MODEL_NAVIGATOR_PRO,
     MODEL_UNKNOWN,
     PUMP_STATUS_OPTIONS,
+    SOLAR_OPERATING_MODE_17_OPTIONS,
     SYSTEM_MODE_17_OPTIONS,
 )
 from idm_heatpump.registers import (
@@ -39,13 +40,30 @@ from idm_heatpump.registers import (
 from .fake_modbus import FakeModbusTransport
 
 # Official 1.x table: FC04 FLOAT block 1000-1088, status words 1500-1524.
-# Community-verified FC03/FC06 holding block (idm-heatpump-hass#319).
+# Official FC03/FC06 RW holding block 2000-2152 of ma_de_812049 Rev.1;
+# the operating modes were additionally confirmed by an FHEM capture
+# against a real Navigator 1.7 (idm-heatpump-hass#319).
 EXPECTED_HOLDING: dict[str, int] = {
     "system_mode_17": 2000,
-    "hc_a_operating_mode": 2002,
-    "hc_a_heating_limit_17": 2058,
+    "solar_operating_mode_17": 2150,
+    "external_demand_temp_heating": 2142,
+    "external_demand_temp_cooling": 2144,
+    "dhw_setpoint": 2152,
     "bivalence_point_1_17": 2146,
+    "bivalence_point_2_17": 2148,
 }
+for _idx, _letter in enumerate("abcdefg"):
+    EXPECTED_HOLDING[f"hc_{_letter}_operating_mode"] = 2002 + _idx * 2
+    EXPECTED_HOLDING[f"hc_{_letter}_room_setpoint_heat_normal"] = 2016 + _idx * 2
+    EXPECTED_HOLDING[f"hc_{_letter}_room_setpoint_heat_eco"] = 2030 + _idx * 2
+    EXPECTED_HOLDING[f"hc_{_letter}_heating_curve"] = 2044 + _idx * 2
+    EXPECTED_HOLDING[f"hc_{_letter}_heating_limit"] = 2058 + _idx * 2
+    EXPECTED_HOLDING[f"hc_{_letter}_setpoint_flow_constant"] = 2072 + _idx * 2
+    EXPECTED_HOLDING[f"hc_{_letter}_room_setpoint_cool_normal"] = 2086 + _idx * 2
+    EXPECTED_HOLDING[f"hc_{_letter}_room_setpoint_cool_eco"] = 2100 + _idx * 2
+    EXPECTED_HOLDING[f"hc_{_letter}_cooling_limit"] = 2114 + _idx * 2
+    EXPECTED_HOLDING[f"hc_{_letter}_setpoint_flow_cooling"] = 2128 + _idx * 2
+del _idx, _letter
 EXPECTED_FLOATS: dict[str, int] = {
     "outdoor_temp": 1000,
     "hp_flow_temp": 1002,
@@ -174,16 +192,14 @@ def test_navigator_17_map_matches_official_table() -> None:
 
 
 def test_navigator_17_base_map_is_read_only() -> None:
-    """Read-only everywhere except the community-verified holding modes."""
-    holding = {
-        "system_mode_17",
-        "hc_a_operating_mode",
-        "hc_a_heating_limit_17",
-        "bivalence_point_1_17",
-    }
-    for name, reg in _navigator_17_registers().items():
+    """Read-only everywhere except the official RW holding block."""
+    regs = _navigator_17_registers()
+    holding = {name for name, reg in regs.items() if reg.register_type is RegisterType.HOLDING}
+    assert holding == set(EXPECTED_HOLDING)
+    for name, reg in regs.items():
         if name in holding:
-            assert reg.register_type is RegisterType.HOLDING, name
+            assert reg.writable, name
+            assert reg.write_class.value != "forbidden", name
             continue
         assert not reg.writable, name
         assert reg.write_class.value == "forbidden", name
@@ -215,13 +231,9 @@ def test_navigator_17_pv_supplement_adds_writable_registers() -> None:
 
 
 def test_navigator_17_map_declares_family_metadata() -> None:
-    holding = {
-        "system_mode_17",
-        "hc_a_operating_mode",
-        "hc_a_heating_limit_17",
-        "bivalence_point_1_17",
-    }
-    for name, reg in _navigator_17_registers().items():
+    regs = _navigator_17_registers()
+    holding = {name for name, reg in regs.items() if reg.register_type is RegisterType.HOLDING}
+    for name, reg in regs.items():
         assert reg.supported_models == (MODEL_NAVIGATOR_17,), name
         assert reg.source == NAVIGATOR_17_REGISTER_SOURCE, name
         if name in holding:
@@ -376,7 +388,7 @@ def test_register_registry_lookups_for_1_7() -> None:
     assert registry.by_address(1046) is not None
     assert registry.by_address(1392) is None
     writable = registry.writable()
-    assert set(writable) == {"system_mode_17", "hc_a_operating_mode"}
+    assert set(writable) == set(EXPECTED_HOLDING)
     with_pv = get_register_registry(
         model_info=IdmModelInfo(
             model_name=MODEL_NAVIGATOR_17,
@@ -388,14 +400,11 @@ def test_register_registry_lookups_for_1_7() -> None:
             has_cascade=False,
         )
     )
-    assert set(with_pv.writable()) == {
+    assert set(with_pv.writable()) == set(EXPECTED_HOLDING) | {
         "pv_surplus",
         "electric_heater_power",
         "pv_production",
         "house_consumption",
-        # The holding operating modes are writable without the PV supplement too.
-        "system_mode_17",
-        "hc_a_operating_mode",
     }
 
 
@@ -580,13 +589,13 @@ def test_get_register_uses_1_7_map() -> None:
 
 
 def test_1_7_holding_block_registers() -> None:
-    """The community-verified FC03/FC06 block from 2000 exists with exact metadata.
+    """The official FC03/FC06 RW table of ma_de_812049 Rev.1, register by register.
 
-    Source: a working FHEM configuration against a real Navigator 1.7
-    (idm-heatpump-hass issue #319, September 2026). The float registers of
-    the same block (room setpoints, heating curve) are intentionally NOT
-    mapped yet: the byte order of the 2000-block floats is unverified
-    against the display, and the map's float rule is low-word-first.
+    The table types the byte-sized values as UCHAR with a whole register
+    reserved per parameter (2-register spacing); the FHEM capture read
+    clean small values at word granularity, so they map as UINT16. The
+    floats follow the map-wide low-word-first rule, which the official
+    document states explicitly in its datatype section.
     """
     regs = _navigator_17_registers()
 
@@ -600,25 +609,78 @@ def test_1_7_holding_block_registers() -> None:
     assert system_mode.supported_models == (MODEL_NAVIGATOR_17,)
     assert system_mode.last_verified == "2026-09-24"
 
-    operating_mode = regs["hc_a_operating_mode"]
-    assert operating_mode.address == 2002
-    assert operating_mode.datatype is DataType.UINT16
-    assert operating_mode.register_type is RegisterType.HOLDING
-    assert operating_mode.writable is True
-    assert operating_mode.enum_options == HC_OPERATING_MODE_17_OPTIONS
-    assert operating_mode.eeprom_sensitive is True
+    # Betriebsart Heizkreis A-G (HKA01-HKG01), one enum mode per circuit.
+    for idx, letter in enumerate("abcdefg"):
+        mode = regs[f"hc_{letter}_operating_mode"]
+        assert mode.address == 2002 + idx * 2
+        assert mode.datatype is DataType.UINT16
+        assert mode.register_type is RegisterType.HOLDING
+        assert mode.writable is True
+        assert mode.enum_options == HC_OPERATING_MODE_17_OPTIONS
+        assert mode.eeprom_sensitive is True
 
-    heating_limit = regs["hc_a_heating_limit_17"]
-    assert heating_limit.address == 2058
-    assert heating_limit.datatype is DataType.UINT16
-    assert heating_limit.register_type is RegisterType.HOLDING
-    assert heating_limit.writable is False
+    # Room setpoints: Heizen Normal 15-30, Heizen ECO 10-25, Kühlen Normal
+    # and ECO 15-30 (HKA04/HKA05/HKA50/HKA51).
+    for idx, letter in enumerate("abcdefg"):
+        normal = regs[f"hc_{letter}_room_setpoint_heat_normal"]
+        assert normal.address == 2016 + idx * 2
+        assert normal.datatype is DataType.FLOAT
+        assert (normal.min_val, normal.max_val) == (15, 30)
+        assert normal.unit == "°C"
+        eco = regs[f"hc_{letter}_room_setpoint_heat_eco"]
+        assert eco.address == 2030 + idx * 2
+        assert (eco.min_val, eco.max_val) == (10, 25)
+        cool = regs[f"hc_{letter}_room_setpoint_cool_normal"]
+        assert cool.address == 2086 + idx * 2
+        assert (cool.min_val, cool.max_val) == (15, 30)
+        cool_eco = regs[f"hc_{letter}_room_setpoint_cool_eco"]
+        assert cool_eco.address == 2100 + idx * 2
+        assert (cool_eco.min_val, cool_eco.max_val) == (15, 30)
 
-    bivalence = regs["bivalence_point_1_17"]
-    assert bivalence.address == 2146
-    assert bivalence.datatype is DataType.UINT16
-    assert bivalence.register_type is RegisterType.HOLDING
-    assert bivalence.writable is False
+    # Heizkurve (HKA10) 0.1-3.5, controller precision 0.1 like the shared family.
+    curve = regs["hc_a_heating_curve"]
+    assert curve.address == 2044
+    assert curve.datatype is DataType.FLOAT
+    assert (curve.min_val, curve.max_val) == (0.1, 3.5)
+    assert curve.step == 0.1
+    assert curve.unit is None
+
+    # Word-sized per-circuit limits and flow setpoints (HKA08/HKA03/HKA58/HKA53)
+    # plus the shared family's names: identical official ranges.
+    for name, address, min_val, max_val in [
+        ("hc_a_heating_limit", 2058, 0, 50),
+        ("hc_g_heating_limit", 2070, 0, 50),
+        ("hc_a_setpoint_flow_constant", 2072, 20, 90),
+        ("hc_g_setpoint_flow_constant", 2084, 20, 90),
+        ("hc_a_cooling_limit", 2114, 0, 36),
+        ("hc_g_cooling_limit", 2126, 0, 36),
+        ("hc_a_setpoint_flow_cooling", 2128, 8, 30),
+        ("hc_g_setpoint_flow_cooling", 2140, 8, 30),
+        ("external_demand_temp_heating", 2142, 20, 65),
+        ("external_demand_temp_cooling", 2144, 10, 25),
+        ("dhw_setpoint", 2152, 35, 60),
+    ]:
+        reg = regs[name]
+        assert reg.address == address, name
+        assert reg.datatype is DataType.UINT16, name
+        assert reg.register_type is RegisterType.HOLDING, name
+        assert (reg.min_val, reg.max_val) == (min_val, max_val), name
+        assert reg.unit == "°C", name
+        assert reg.eeprom_sensitive is True, name
+
+    # Bivalenzpunkte (BV002/BV003): signed words, -20..20 °C.
+    for name, address in (("bivalence_point_1_17", 2146), ("bivalence_point_2_17", 2148)):
+        reg = regs[name]
+        assert reg.address == address, name
+        assert reg.datatype is DataType.INT16, name
+        assert reg.writable is True, name
+        assert (reg.min_val, reg.max_val) == (-20, 20), name
+
+    # Betriebsart Solar (SC002) with its own enum table.
+    solar_mode = regs["solar_operating_mode_17"]
+    assert solar_mode.address == 2150
+    assert solar_mode.enum_options == SOLAR_OPERATING_MODE_17_OPTIONS
+    assert solar_mode.eeprom_sensitive is True
 
 
 def test_1_7_holding_enums_match_the_verified_mapping() -> None:
@@ -636,10 +698,17 @@ def test_1_7_holding_enums_match_the_verified_mapping() -> None:
         3: "ECO",
         4: "Heating Only",
     }
+    assert SOLAR_OPERATING_MODE_17_OPTIONS == {
+        0: "Automatic",
+        1: "Domestic Water",
+        2: "Heat Storage",
+        3: "Domestic Water + Heat Storage",
+        4: "Heat Source / Pool",
+    }
 
 
 def test_1_7_holding_modes_accept_writes() -> None:
-    """The operating-mode holding registers are the first writable 1.x controls."""
+    """The official holding table is the writable 1.x control surface."""
     client = IdmModbusClient("127.0.0.1")
     client.set_model_info(
         IdmModelInfo(
@@ -657,10 +726,32 @@ def test_1_7_holding_modes_accept_writes() -> None:
     assert plan.requested_value == 3
     plan = client.simulate_write("hc_a_operating_mode", 2)
     assert plan.requested_value == 2
+    plan = client.simulate_write("hc_g_operating_mode", 4)
+    assert plan.requested_value == 4
+    plan = client.simulate_write("hc_a_room_setpoint_heat_normal", 21.5)
+    assert plan.requested_value == 21.5
+    plan = client.simulate_write("hc_g_heating_curve", 1.2)
+    assert plan.requested_value == 1.2
+    plan = client.simulate_write("hc_a_heating_limit", 17)
+    assert plan.requested_value == 17
+    plan = client.simulate_write("dhw_setpoint", 48)
+    assert plan.requested_value == 48
+    # Signed bivalence words accept negative values within -20..20.
+    plan = client.simulate_write("bivalence_point_1_17", -10)
+    assert plan.requested_value == -10
+    plan = client.simulate_write("solar_operating_mode_17", 4)
+    assert plan.requested_value == 4
 
+    # Out-of-range writes are rejected by the API's write safety.
     try:
-        client.simulate_write("bivalence_point_1_17", 10)
+        client.simulate_write("hc_a_room_setpoint_heat_normal", 31.0)
     except ValueError:
         pass
     else:
-        raise AssertionError("bivalence_point_1_17 must stay read-only")
+        raise AssertionError("room setpoint above the documented range must be rejected")
+    try:
+        client.simulate_write("bivalence_point_1_17", 21)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("bivalence point above the documented range must be rejected")
