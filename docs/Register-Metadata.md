@@ -114,8 +114,11 @@ finite consumer hint in physical units, also exported as `step` by
 existing positional arguments. It does not round writes or add a new rejection
 rule. Consumers can use a known step in numeric controls; `None` means unknown.
 
-Heating curves A–G expose 0.1, matching the controller UI precision reported
-in #81 and the integration correction in Xerolux/idm-heatpump-hass#229.
+Heating curves A–G expose 0.05. The earlier 0.1 hint (from #81 and the
+integration correction in Xerolux/idm-heatpump-hass#229) was a UI assumption;
+a hardware capture on a Navigator 1.7 running firmware N1.MLj
+(Xerolux/idm-heatpump-hass#364, September 2026) observed a curve value of
+0.35 — off the 0.1 grid — and confirmed the controller UI steps by 0.05.
 The NAV10 manual documents the range 0.1–3.5, but does not explicitly specify
 a wire quantization for these registers.
 

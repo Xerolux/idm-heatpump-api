@@ -1596,10 +1596,11 @@ def _navigator_17_registers(*, has_pv: bool = False) -> dict[str, RegisterDef]:
     # Word-sized parameters: Heizgrenze (HKA08) 2058-2070, Sollvorlauftemperatur
     # Heizen for constant-flow circuits (HKA03) 2072-2084, Kühlgrenze (HKA58)
     # 2114-2126, Sollvorlauftemperatur Kühlen (HKA53) 2128-2140, externe
-    # Anforderungstemperaturen (PH003/PC004) 2142/2144, Frischwasser-
-    # Solltemperatur (FW030) 2152. The official table types them as UCHAR; a
-    # whole register is reserved per value (2-register spacing), and the FHEM
-    # capture read clean small values, so they map as UINT16.
+    # Anforderungstemperaturen (PH003/PC004) 2142/2144. The official table
+    # types them as UCHAR; a whole register is reserved per value
+    # (2-register spacing), and the FHEM capture read clean small values, so
+    # they map as UINT16. FW030 at 2152 is deliberately absent: it is a float
+    # pair (see below).
     for address, name, min_val, max_val in [
         *(
             (2058 + idx * 2, f"hc_{letter}_heating_limit", 0, 50)
@@ -1619,7 +1620,6 @@ def _navigator_17_registers(*, has_pv: bool = False) -> dict[str, RegisterDef]:
         ),
         (2142, "external_demand_temp_heating", 20, 65),
         (2144, "external_demand_temp_cooling", 10, 25),
-        (2152, "dhw_setpoint", 35, 60),
     ]:
         regs[name] = _holding(
             address,
@@ -1629,6 +1629,25 @@ def _navigator_17_registers(*, has_pv: bool = False) -> dict[str, RegisterDef]:
             min_val=min_val,
             max_val=max_val,
         )
+
+    # Frischwasser-Solltemperatur (FW030) 2152. The Rev.1 table types it as a
+    # single-byte value like the other word parameters above, but a hardware
+    # capture on firmware N1.MLj (idm-heatpump-hass issue #364, September
+    # 2026) proved the firmware-specific exception: 2152/2153 answer
+    # (0, 0x4238), which is exactly 46.0 °C as an IEEE-754 float, low word
+    # first — matching the Frischwasser-Solltemperatur shown on the
+    # controller. Reading 2152 as a word yields 0, and moving the setpoint on
+    # the controller or writing it over Modbus changes the pair accordingly,
+    # in both directions. FW030 therefore maps as a float spanning 2152-2153;
+    # the address after it (2154) times out and stays unused.
+    regs["dhw_setpoint"] = _holding(
+        2152,
+        DataType.FLOAT,
+        "dhw_setpoint",
+        unit="°C",
+        min_val=35.0,
+        max_val=60.0,
+    )
 
     # Float parameters (low word first): Raumsolltemperatur Heizen Normal
     # (HKA04) 2016-2028 and ECO (HKA05) 2030-2042, Heizkurve (HKA10)
@@ -1644,7 +1663,10 @@ def _navigator_17_registers(*, has_pv: bool = False) -> dict[str, RegisterDef]:
             for idx, letter in enumerate("abcdefg")
         ),
         *(
-            (2044 + idx * 2, f"hc_{letter}_heating_curve", 0.1, 3.5, None, {"step": 0.1})
+            # Controller precision 0.05: the capture on firmware N1.MLj
+            # (idm-heatpump-hass issue #364) shows 0.35, off the old 0.1
+            # hint grid, and the controller UI steps by 0.05.
+            (2044 + idx * 2, f"hc_{letter}_heating_curve", 0.1, 3.5, None, {"step": 0.05})
             for idx, letter in enumerate("abcdefg")
         ),
         *(
@@ -1781,7 +1803,7 @@ def get_heating_circuit_registers(
         writable=True,
         min_val=0.1,
         max_val=3.5,
-        step=0.1,  # Controller UI precision; see Register-Metadata.md.
+        step=0.05,  # Controller UI precision; see Register-Metadata.md.
         eeprom_sensitive=True,
     )
     regs[f"hc_{c}_heating_limit"] = RegisterDef(
