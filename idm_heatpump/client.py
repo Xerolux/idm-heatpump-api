@@ -9,7 +9,7 @@ import struct
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Awaitable, Callable, ClassVar, TypeVar
+from typing import Any, Awaitable, Callable, ClassVar, Sequence, TypeVar
 
 from .const import (
     DEFAULT_TIMEOUT,
@@ -473,6 +473,11 @@ class IdmModbusClient:
         self._permanently_failed_registers: set[str] = set()
         self._unsupported_registers: set[str] = set()
         self._batch_unsafe_registers: set[str] = set()
+        # Per-register record of the last read outcome (value, raw words,
+        # rejection reason) so consumers can expose what the controller
+        # actually returned — including values discarded as out of range
+        # (idm-heatpump-hass issue #364: garbage words that hide a float).
+        self._register_outcomes: dict[str, dict[str, Any]] = {}
         self._model_info: IdmModelInfo | None = None
         self._last_eeprom_writes: dict[str, float] = {}
         self._cyclic_write_deadlines: dict[str, float] = {}
@@ -1660,10 +1665,15 @@ class IdmModbusClient:
                     )
                     continue
                 value = self.decode_value(reg_slice, reg)
-                if self._is_value_suspect(reg, value):
+                reason = self._suspect_reason(reg, value)
+                if reason is not None:
                     suspect_regs.append(reg)
+                    self._record_outcome(
+                        reg, status="suspect", value=value, raw_words=reg_slice, reason=reason
+                    )
                 else:
                     data[reg.name] = value
+                    self._record_outcome(reg, status="ok", value=value, raw_words=reg_slice)
             except (ValueError, IndexError) as err:
                 _LOGGER.debug(
                     "Failed to decode register %s (address %d): %s",
@@ -1671,6 +1681,7 @@ class IdmModbusClient:
                     reg.address,
                     err,
                 )
+                self._record_outcome(reg, status="decode_error", reason="decode_error")
 
         # Some IDM controllers return inconsistent data for certain registers
         # when read as part of a large contiguous batch, even though individual
@@ -1697,21 +1708,49 @@ class IdmModbusClient:
         returned corrupt data in a large contiguous read. Registers without
         ``enum_options`` or ``min_val``/``max_val`` are never flagged.
         """
+        return IdmModbusClient._suspect_reason(reg, value) is not None
+
+    @staticmethod
+    def _suspect_reason(reg: RegisterDef, value: Any) -> str | None:
+        """Return why ``value`` violates ``reg``'s documented range, if it does.
+
+        Same rules as :meth:`_is_value_suspect`, but reports the concrete
+        reason (``below_min``/``above_max``/``not_in_enum``) so read
+        diagnostics can explain a rejection instead of only noting it.
+        """
         if value is None or isinstance(value, bool):
-            return False
+            return None
         if value in reg.sentinel_values:
-            return False
+            return None
         if reg.enum_options is not None:
             if value not in reg.enum_options:
-                return True
-            return False
+                return "not_in_enum"
+            return None
         if reg.min_val is not None and isinstance(value, (int, float)):
             if value < reg.min_val:
-                return True
+                return "below_min"
         if reg.max_val is not None and isinstance(value, (int, float)):
             if value > reg.max_val:
-                return True
-        return False
+                return "above_max"
+        return None
+
+    def _record_outcome(
+        self,
+        reg: RegisterDef,
+        *,
+        status: str,
+        value: Any = None,
+        raw_words: Sequence[int] = (),
+        reason: str | None = None,
+    ) -> None:
+        """Store the last read outcome for one register (bounded: one slot per name)."""
+        self._register_outcomes[reg.name] = {
+            "address": reg.address,
+            "status": status,
+            "value": value,
+            "raw_words": tuple(int(word) for word in raw_words),
+            "reason": reason,
+        }
 
     async def _read_individual_fallback(
         self,
@@ -1724,16 +1763,21 @@ class IdmModbusClient:
             try:
                 registers = await self._read_registers(reg.address, reg.size, reg_type)
                 value = self.decode_value(registers, reg)
-                if self._is_value_suspect(reg, value):
+                reason = self._suspect_reason(reg, value)
+                if reason is not None:
                     _LOGGER.warning(
                         "Register %s (address %d) returned an invalid value during "
                         "individual validation; omitting it from this update",
                         reg.name,
                         reg.address,
                     )
+                    self._record_outcome(
+                        reg, status="suspect", value=value, raw_words=registers, reason=reason
+                    )
                     continue
                 data[reg.name] = value
                 self._register_failures.pop(reg.name, None)
+                self._record_outcome(reg, status="ok", value=value, raw_words=registers)
             except _TRANSPORT_ERRORS:
                 _LOGGER.debug(
                     "Transport failed during individual read of %s (address %d)",
@@ -1749,6 +1793,7 @@ class IdmModbusClient:
                 # condition when optional register blocks are probed.
                 self._permanently_failed_registers.add(reg.name)
                 self._unsupported_registers.add(reg.name)
+                self._record_outcome(reg, status="unsupported", reason="illegal_address")
                 _LOGGER.debug(
                     "Register %s (address %d) is not implemented on this device "
                     "(Illegal Data Address); skipping it on future reads",
@@ -1758,6 +1803,7 @@ class IdmModbusClient:
             except IdmDeviceError as err:
                 failures = self._register_failures.get(reg.name, 0) + 1
                 self._register_failures[reg.name] = failures
+                self._record_outcome(reg, status="device_error", reason="device_error")
                 if failures >= _PERMANENT_FAILURE_THRESHOLD:
                     self._permanently_failed_registers.add(reg.name)
 
@@ -1793,6 +1839,7 @@ class IdmModbusClient:
                     reg.address,
                     err,
                 )
+                self._record_outcome(reg, status="decode_error", reason="decode_error")
         return data
 
     def reset_failed_registers(self) -> None:
@@ -1800,6 +1847,7 @@ class IdmModbusClient:
         self._permanently_failed_registers.clear()
         self._unsupported_registers.clear()
         self._register_failures.clear()
+        self._register_outcomes.clear()
         _LOGGER.info("Permanently failed registers have been reset")
 
     def get_unsupported_registers(self) -> tuple[str, ...]:
@@ -1825,6 +1873,28 @@ class IdmModbusClient:
         :meth:`read_batch` calls fetch it individually.
         """
         return tuple(sorted(self._batch_unsafe_registers))
+
+    def get_register_outcomes(self) -> dict[str, dict[str, Any]]:
+        """Return the last read outcome per register name, for diagnostics.
+
+        Each record is a plain JSON-friendly dict with the register
+        ``address``, a ``status`` (``ok`` | ``suspect`` | ``unsupported`` |
+        ``device_error`` | ``decode_error``), the last decoded ``value`` —
+        kept even when it was rejected as outside the documented range —
+        the raw 16-bit ``raw_words`` as last seen on the wire, and the
+        ``reason`` for a rejection (``below_min`` | ``above_max`` |
+        ``not_in_enum`` | ``illegal_address`` | ``device_error`` |
+        ``decode_error``). Registers never read in this session (including
+        write-only ones) have no entry. One slot per register name is kept
+        and overwritten on every poll; :meth:`reset_failed_registers` clears
+        the records along with the failure tracking.
+
+        The point of keeping rejected values and raw words is field
+        debugging: a register documented as UINT16 that actually carries the
+        low word of a 32-bit float shows up here as a constant ``0`` with a
+        suspicious neighbour instead of vanishing silently.
+        """
+        return {name: dict(record) for name, record in sorted(self._register_outcomes.items())}
 
     def mark_batch_unsafe(self, *registers: RegisterDef | str) -> None:
         """Quarantine registers from grouped reads for this client session.

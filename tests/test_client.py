@@ -1083,6 +1083,164 @@ def test_reset_failed_registers_clears_unsupported_set() -> None:
     assert client.get_unsupported_registers() == ()
 
 
+# --- register read outcomes (get_register_outcomes) ------------------------
+
+
+def test_read_outcome_records_ok_value_and_raw_words() -> None:
+    """A successful read records status, decoded value and the raw wire words."""
+    good = RegisterDef(1198, DataType.FLOAT, "good_temp", unit="°C")
+    transport = FakeModbusTransport(input_registers={1198: 0, 1199: 16968})
+    client = _make_client_with_transport(transport)
+
+    data = asyncio.run(client.read_batch([good]))
+
+    assert data == {"good_temp": 50.0}
+    outcomes = client.get_register_outcomes()
+    assert outcomes["good_temp"] == {
+        "address": 1198,
+        "status": "ok",
+        "value": 50.0,
+        "raw_words": (0, 16968),
+        "reason": None,
+    }
+
+
+def test_read_outcome_keeps_rejected_value_with_reason() -> None:
+    """An out-of-range value stays visible in the outcomes after being dropped.
+
+    Field case from idm-heatpump-hass issue #364: a register documented as
+    UINT16 35-60 reads 0 on firmware that stores a 32-bit float there — the
+    decoded 0 is rejected, but the diagnostics must still show value and raw
+    word so the maintainer can reassemble the float.
+    """
+    dhw_setpoint = RegisterDef(
+        2152,
+        DataType.UINT16,
+        "dhw_setpoint",
+        min_val=35,
+        max_val=60,
+        register_type=RegisterType.HOLDING,
+    )
+    transport = FakeModbusTransport(holding_registers={2152: 0})
+    client = _make_client_with_transport(transport)
+
+    data = asyncio.run(client.read_batch([dhw_setpoint]))
+
+    assert data == {}
+    assert client.get_register_outcomes()["dhw_setpoint"] == {
+        "address": 2152,
+        "status": "suspect",
+        "value": 0,
+        "raw_words": (0,),
+        "reason": "below_min",
+    }
+
+
+def test_read_outcome_records_enum_rejection_reason() -> None:
+    """Enum violations report not_in_enum with the offending value."""
+    status = RegisterDef(
+        1502,
+        DataType.UINT16,
+        "hc_a_status",
+        min_val=0,
+        max_val=2,
+        enum_options={0: "off", 1: "heating", 2: "water"},
+    )
+    transport = FakeModbusTransport(input_registers={1502: 47358})
+    client = _make_client_with_transport(transport)
+
+    assert asyncio.run(client.read_batch([status])) == {}
+    assert client.get_register_outcomes()["hc_a_status"] == {
+        "address": 1502,
+        "status": "suspect",
+        "value": 47358,
+        "raw_words": (47358,),
+        "reason": "not_in_enum",
+    }
+
+
+def test_read_outcome_reflects_recovered_individual_value() -> None:
+    """A suspect batch value that the individual re-read validates ends as ok."""
+    mode = RegisterDef(1001, DataType.UINT16, "mode", enum_options={0: "off", 1: "on"})
+    relay = RegisterDef(1002, DataType.UINT16, "relay")
+    transport = FakeModbusTransport(
+        input_registers={1001: 1, 1002: 0},
+        # The grouped 2-register range returns a corrupt enum word; the
+        # individual re-read of (1001, 1) hits a different key and succeeds.
+        short_reads={("input", 1001, 2): [255, 0]},
+    )
+    client = _make_client_with_transport(transport)
+
+    assert asyncio.run(client.read_batch([mode, relay])) == {"mode": 1, "relay": 0}
+    outcomes = client.get_register_outcomes()["mode"]
+    assert outcomes["status"] == "ok"
+    assert outcomes["value"] == 1
+    assert outcomes["raw_words"] == (1,)
+    assert outcomes["reason"] is None
+
+
+def test_read_outcome_records_illegal_address_as_unsupported() -> None:
+    """Registers rejected with Illegal Data Address record status unsupported."""
+    bad = RegisterDef(1200, DataType.FLOAT, "cascade_temp", unit="°C")
+    transport = FakeModbusTransport(illegal_reads={("input", 1200, 2)})
+    client = _make_client_with_transport(transport)
+
+    assert asyncio.run(client.read_batch([bad])) == {}
+    assert client.get_register_outcomes()["cascade_temp"] == {
+        "address": 1200,
+        "status": "unsupported",
+        "value": None,
+        "raw_words": (),
+        "reason": "illegal_address",
+    }
+
+
+def test_read_outcome_records_device_error() -> None:
+    """A register answered with a generic device error records device_error."""
+    flaky = RegisterDef(1210, DataType.UINT16, "flaky", min_val=0, max_val=10)
+    transport = FakeModbusTransport(error_reads={("input", 1210, 1)})
+    client = _make_client_with_transport(transport, max_retries=1)
+
+    assert asyncio.run(client.read_batch([flaky])) == {}
+    outcome = client.get_register_outcomes()["flaky"]
+    assert outcome["status"] == "device_error"
+    assert outcome["reason"] == "device_error"
+
+
+def test_read_outcomes_absent_for_never_read_registers() -> None:
+    """Write-only and never-polled registers have no outcome entry."""
+    client = IdmModbusClient("127.0.0.1")
+    assert client.get_register_outcomes() == {}
+
+
+def test_get_register_outcomes_returns_copies() -> None:
+    """Mutating a returned record must not leak into client state."""
+    good = RegisterDef(1198, DataType.FLOAT, "good_temp", unit="°C")
+    transport = FakeModbusTransport(input_registers={1198: 0, 1199: 16968})
+    client = _make_client_with_transport(transport)
+    asyncio.run(client.read_batch([good]))
+
+    outcomes = client.get_register_outcomes()
+    outcomes["good_temp"]["status"] = "tampered"
+    outcomes["injected"] = {}
+
+    assert client.get_register_outcomes()["good_temp"]["status"] == "ok"
+    assert "injected" not in client.get_register_outcomes()
+
+
+def test_reset_failed_registers_clears_outcomes() -> None:
+    """reset_failed_registers also clears the per-register read outcomes."""
+    good = RegisterDef(1198, DataType.FLOAT, "good_temp", unit="°C")
+    transport = FakeModbusTransport(input_registers={1198: 0, 1199: 16968})
+    client = _make_client_with_transport(transport)
+    asyncio.run(client.read_batch([good]))
+    assert client.get_register_outcomes()
+
+    client.reset_failed_registers()
+
+    assert client.get_register_outcomes() == {}
+
+
 class _DyingTransport(FakeModbusTransport):
     """Answers the first probe, then behaves like a link that went away."""
 
