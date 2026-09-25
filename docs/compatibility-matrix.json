@@ -249,9 +249,15 @@
     },
     {
       "api_version": "2.4.1",
+      "hass_integration_version": "0.19.0-b9",
+      "status": "beta-tested",
+      "notes": "Declares the documented MIN/MAX ranges on the Navigator 1.x status words so consumers can reject the uninitialized-memory reads of Rev.0-era firmware (idm-heatpump-hass#364)."
+    },
+    {
+      "api_version": "2.4.2",
       "hass_integration_version": "pending",
       "status": "api-prepared",
-      "notes": "Declares the documented MIN/MAX ranges on the Navigator 1.x status words so consumers can reject the uninitialized-memory reads of Rev.0-era firmware (idm-heatpump-hass#364)."
+      "notes": "Per-register read outcomes (get_register_outcomes): last value even when rejected, raw wire words, and rejection reason, for self-sufficient diagnostics exports (idm-heatpump-hass#364)."
     }
   ]
 }

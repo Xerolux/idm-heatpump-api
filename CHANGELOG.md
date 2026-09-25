@@ -22,6 +22,26 @@ prerelease is `2.0.0b1`, not `2.0.0-beta.1` — see `docs/RELEASE_PROCESS.md`.
 Sections up to `1.0.3` are German; they stay as published, because a released
 changelog is history. Everything from `2.0.0b1` on is English.
 
+## [2.4.2] - 2026-09-25
+
+### Added
+
+- **Per-register read outcomes for diagnostics: `IdmModbusClient.get_register_outcomes()`.**
+  The client now keeps one bounded record per register name describing the
+  last read: `status` (`ok` / `suspect` / `unsupported` / `device_error` /
+  `decode_error`), the last decoded `value` — retained even when it was
+  rejected as outside the documented range — the raw 16-bit `raw_words` as
+  last seen on the wire, the register `address`, and the `reason` for a
+  rejection (`below_min` / `above_max` / `not_in_enum` / `illegal_address` /
+  `device_error` / `decode_error`). Values that used to vanish silently in
+  the suspect drop path are now visible: a register documented as UINT16
+  that actually carries the low word of a 32-bit float shows up as a
+  constant `0` with its reason instead of nothing (the shape observed for
+  the freshwater DHW setpoint on Rev.0-era firmware, idm-heatpump-hass
+  issue #364). `_is_value_suspect` is unchanged; it now delegates to the
+  new `_suspect_reason`, and `reset_failed_registers()` clears the records
+  along with the failure tracking.
+
 ## [2.4.1] - 2026-09-24
 
 ### Added
