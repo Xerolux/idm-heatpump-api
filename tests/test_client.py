@@ -1161,9 +1161,7 @@ def test_read_outcome_records_enum_rejection_reason() -> None:
 
 def test_read_outcome_reflects_recovered_individual_value() -> None:
     """A suspect batch value that the individual re-read validates ends as ok."""
-    mode = RegisterDef(
-        1001, DataType.UINT16, "mode", enum_options={0: "off", 1: "on"}
-    )
+    mode = RegisterDef(1001, DataType.UINT16, "mode", enum_options={0: "off", 1: "on"})
     relay = RegisterDef(1002, DataType.UINT16, "relay")
     transport = FakeModbusTransport(
         input_registers={1001: 1, 1002: 0},
