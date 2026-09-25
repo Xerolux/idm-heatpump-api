@@ -510,7 +510,7 @@ family's enums.
 | 2146 | `bivalence_point_1_17` | INT16 | RW | °C | Bivalence point 1 (BV002), -20..20; EEPROM-sensitive |
 | 2148 | `bivalence_point_2_17` | INT16 | RW | °C | Bivalence point 2 (BV003), -20..20; EEPROM-sensitive |
 | 2150 | `solar_operating_mode_17` | UINT16 | RW | - | Solar operating mode (SC002): 0=Automatic, 1=Domestic Water, 2=Heat Storage, 3=DHW+Heat Storage, 4=Heat Source/Pool; EEPROM-sensitive |
-| 2152 | `dhw_setpoint` | UINT16 | RW | °C | Freshwater DHW setpoint (FW030, Frischwasser-Solltemperatur), 35..60; EEPROM-sensitive |
+| 2152 | `dhw_setpoint` | FLOAT | RW | °C | Freshwater DHW setpoint (FW030, Frischwasser-Solltemperatur), 35..60; EEPROM-sensitive. The Rev.1 table types it as a single-byte value, but a hardware capture (idm-heatpump-hass issue #364) proved it is an IEEE-754 float pair spanning 2152-2153, low word first |
 
 Updated 1.x firmware carries a post-2016 PV supplement (iDM support
 documentation; not in the 2016 table). When the detection probe at address 74

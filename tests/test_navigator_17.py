@@ -11,6 +11,8 @@ import asyncio
 import struct
 from typing import Any
 
+import pytest
+
 from idm_heatpump.client import (
     DataType,
     IdmModbusClient,
@@ -34,6 +36,7 @@ from idm_heatpump.registers import (
     NAVIGATOR_17_REGISTER_SOURCE_VERSION,
     _navigator_17_registers,
     build_register_map,
+    get_register,
     get_register_registry,
 )
 
@@ -637,12 +640,14 @@ def test_1_7_holding_block_registers() -> None:
         assert cool_eco.address == 2100 + idx * 2
         assert (cool_eco.min_val, cool_eco.max_val) == (15, 30)
 
-    # Heizkurve (HKA10) 0.1-3.5, controller precision 0.1 like the shared family.
+    # Heizkurve (HKA10) 0.1-3.5, controller precision 0.05: the capture on
+    # firmware N1.MLj (idm-heatpump-hass issue #364) shows 0.35, off the old
+    # 0.1 hint grid.
     curve = regs["hc_a_heating_curve"]
     assert curve.address == 2044
     assert curve.datatype is DataType.FLOAT
     assert (curve.min_val, curve.max_val) == (0.1, 3.5)
-    assert curve.step == 0.1
+    assert curve.step == 0.05
     assert curve.unit is None
 
     # Word-sized per-circuit limits and flow setpoints (HKA08/HKA03/HKA58/HKA53)
@@ -658,7 +663,6 @@ def test_1_7_holding_block_registers() -> None:
         ("hc_g_setpoint_flow_cooling", 2140, 8, 30),
         ("external_demand_temp_heating", 2142, 20, 65),
         ("external_demand_temp_cooling", 2144, 10, 25),
-        ("dhw_setpoint", 2152, 35, 60),
     ]:
         reg = regs[name]
         assert reg.address == address, name
@@ -667,6 +671,19 @@ def test_1_7_holding_block_registers() -> None:
         assert (reg.min_val, reg.max_val) == (min_val, max_val), name
         assert reg.unit == "°C", name
         assert reg.eeprom_sensitive is True, name
+
+    # Frischwasser-Solltemperatur (FW030) 2152: the Rev.1 table types it as a
+    # single-byte value, but the N1.MLj capture (idm-heatpump-hass issue
+    # #364) proved a float pair spanning 2152-2153, low word first.
+    dhw = regs["dhw_setpoint"]
+    assert dhw.address == 2152
+    assert dhw.datatype is DataType.FLOAT
+    assert dhw.size == 2
+    assert dhw.register_type is RegisterType.HOLDING
+    assert dhw.writable is True
+    assert (dhw.min_val, dhw.max_val) == (35, 60)
+    assert dhw.unit == "°C"
+    assert dhw.eeprom_sensitive is True
 
     # Bivalenzpunkte (BV002/BV003): signed words, -20..20 °C.
     for name, address in (("bivalence_point_1_17", 2146), ("bivalence_point_2_17", 2148)):
@@ -681,6 +698,29 @@ def test_1_7_holding_block_registers() -> None:
     assert solar_mode.address == 2150
     assert solar_mode.enum_options == SOLAR_OPERATING_MODE_17_OPTIONS
     assert solar_mode.eeprom_sensitive is True
+
+
+def test_1_7_dhw_setpoint_wire_format() -> None:
+    """FW030 decodes and encodes as the captured float pair (issue #364).
+
+    Firmware N1.MLj answers 2152/2153 with (0, 0x4238) for a controller
+    setpoint of 46.0 °C; a write must send the same pair back, low word
+    first, in one FC16 request covering both registers.
+    """
+    client = IdmModbusClient("127.0.0.1")
+    client.set_model_info(navigator_17_model_info())
+    register = get_register("dhw_setpoint", model_info=navigator_17_model_info())
+    assert register is not None
+
+    plan = client.simulate_write("dhw_setpoint", 46.0)
+    assert plan.encoded_registers == (0, 0x4238)
+
+    decoded = client.decode_value([0, 0x4238], register)
+    assert decoded == pytest.approx(46.0)
+
+    # Out-of-range float writes are still rejected by the documented range.
+    with pytest.raises(ValueError):
+        client.simulate_write("dhw_setpoint", 30.0)
 
 
 def test_1_7_holding_enums_match_the_verified_mapping() -> None:

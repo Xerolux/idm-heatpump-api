@@ -22,6 +22,31 @@ prerelease is `2.0.0b1`, not `2.0.0-beta.1` — see `docs/RELEASE_PROCESS.md`.
 Sections up to `1.0.3` are German; they stay as published, because a released
 changelog is history. Everything from `2.0.0b1` on is English.
 
+## [2.4.3] - 2026-09-25
+
+### Fixed
+
+- **Navigator 1.0/1.7: `dhw_setpoint` (FW030, 2152) is a float pair, not a
+  single word.** A hardware capture on firmware N1.MLj
+  (idm-heatpump-hass issue #364, September 2026) proved the
+  firmware-specific exception to the Rev.1 table: addresses 2152/2153
+  answer `(0, 0x4238)`, which is exactly 46.0 °C as an IEEE-754 float, low
+  word first — the Frischwasser-Solltemperatur the controller displays.
+  Reading 2152 as UINT16 returned the constant low word `0`, which the
+  documented 35–60 range correctly rejected (the shape 2.4.2's diagnostics
+  exposed). Moving the setpoint on the controller and writing it over
+  Modbus both change the pair, in both directions. The register is now a
+  `FLOAT` spanning 2152–2153 with the documented 35–60 range unchanged;
+  the following address (2154) times out and stays unused.
+
+### Changed
+
+- **Heating-curve step hint 0.1 → 0.05, both protocol families.** The 0.1
+  hint was a UI assumption from #81; the same N1.MLj plant runs a curve of
+  0.35, off the 0.1 grid, and its controller UI steps by 0.05. The hint is
+  a consumer presentation hint only — it never rounded writes — so every
+  previously reachable value stays reachable.
+
 ## [2.4.2] - 2026-09-25
 
 ### Added

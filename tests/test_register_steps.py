@@ -25,9 +25,9 @@ def test_heating_curve_step_keeps_protocol(circuit: str) -> None:
         2,
         RegisterType.INPUT,
     )
-    assert (reg.min_val, reg.max_val, reg.step) == (0.1, 3.5, 0.1)
+    assert (reg.min_val, reg.max_val, reg.step) == (0.1, 3.5, 0.05)
     assert reg.eeprom_sensitive
-    assert RegisterRegistry({reg.name: reg}).to_schema()[0]["step"] == 0.1
+    assert RegisterRegistry({reg.name: reg}).to_schema()[0]["step"] == 0.05
 
 
 @pytest.mark.parametrize("zone", range(1, 11))
