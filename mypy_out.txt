@@ -1,0 +1,5 @@
+idm_heatpump/client.py:812: error: Incompatible types in assignment (expression has type "Coroutine[Any, Any, list[int]]", variable has type "Coroutine[Any, Any, list[bool]]")  [assignment]
+idm_heatpump/client.py:814: error: Incompatible types in assignment (expression has type "Coroutine[Any, Any, list[int]]", variable has type "Coroutine[Any, Any, list[bool]]")  [assignment]
+idm_heatpump/client.py:816: error: Incompatible types in assignment (expression has type "list[int] | list[bool]", variable has type "list[int]")  [assignment]
+idm_heatpump/client.py:816: error: Argument 1 to "wait_for" has incompatible type "Coroutine[Any, Any, list[bool]]"; expected "Future[list[int]] | Awaitable[list[int]]"  [arg-type]
+Found 4 errors in 1 file (checked 8 source files)

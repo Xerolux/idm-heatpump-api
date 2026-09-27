@@ -1322,6 +1322,10 @@ NAVIGATOR_17_HOLDING_SOURCE_VERSION = (
     "RW holding table of ma_de_812049 Rev.1 (2016-06-13), read/write confirmed"
     " by FHEM capture (idm-heatpump-hass#319, 2026-09)"
 )
+NAVIGATOR_17_COIL_SOURCE_VERSION = (
+    "Coil table of ma_de_812049 Rev.1 (2016-06-13), read confirmed by FHEM"
+    " capture (idm-heatpump-hass#319, 2026-09)"
+)
 
 
 def _navigator_17_register(
@@ -1363,10 +1367,10 @@ def _navigator_17_registers(*, has_pv: bool = False) -> dict[str, RegisterDef]:
     are not rewritten). The per-circuit parameters reuse the shared
     family's register names because ranges and semantics are identical —
     the 2.0/10/Pro holding block is the direct successor of this table.
-    The FC01/05 coil block (3000 Störung quittieren, 3001 Anforderung
-    Heizen, 3002 Anforderung Kühlen, 3003 Anforderung Vorrangladung) is
-    documented in the same table but stays unmapped until the transport
-    implements FC01/FC05. When the detection probe at address 74 responded
+    The FC01/FC05 coil block from 3000 (Störung quittieren, Anforderung
+    Heizen/Kühlen/Vorrangladung) is mapped as COIL registers since 2.5.0;
+    reading and writing them needs a transport implementing
+    IdmCoilTransportExtension. When the detection probe at address 74 responded
     (``has_pv``), the post-2016 PV supplement is included: the writable
     PV/energy-management registers (74/76/78/82, mirroring the shared
     family's volatile writes) and the read-only power measurement at 4122.
@@ -1697,6 +1701,43 @@ def _navigator_17_registers(*, has_pv: bool = False) -> dict[str, RegisterDef]:
             unit="°C",
             min_val=-20,
             max_val=20,
+        )
+
+    # FC01/FC05 coil block from 3000 (ma_de_812049 Rev.1): Störungsmeldung
+    # quittieren (3000), Anforderung Heizen (3001), Anforderung Kühlen
+    # (3002), Anforderung Vorrangladung (3003). c3000 deliberately reuses
+    # the shared family's ``error_acknowledge`` name — the action (a
+    # write-only acknowledge pulse) is identical, and consumers (the Home
+    # Assistant acknowledge button) resolve it by name on both families.
+    # The Anforderung coils carry the ``_17`` suffix instead: they read the
+    # controller's live demand status, while the shared family's identically
+    # named 1710-1713 registers are writable GLT demand *inputs* — different
+    # semantics must not share a name. c3003 is documented read/write in the
+    # same table (Vorrangladung anfordern — the 1.x "DHW boost" bit) and a
+    # working FHEM configuration writes it daily (idm-heatpump-hass issue
+    # #319); it stays read-only here until a hardware capture confirms what
+    # writing 0 does to a running demand, because a switch entity would
+    # toggle both directions.
+    coil_specs: list[tuple[int, str]] = [
+        (3000, "error_acknowledge"),
+        (3001, "demand_heating_17"),
+        (3002, "demand_cooling_17"),
+        (3003, "demand_dhw_17"),
+    ]
+    for address, name in coil_specs:
+        write_kwargs: dict[str, Any] = (
+            {"writable": True, "write_only": True} if name == "error_acknowledge" else {}
+        )
+        regs[name] = RegisterDef(
+            address=address,
+            datatype=DataType.BOOL,
+            register_type=RegisterType.COIL,
+            binary=True,
+            name=name,
+            source=NAVIGATOR_17_REGISTER_SOURCE,
+            source_version=NAVIGATOR_17_COIL_SOURCE_VERSION,
+            supported_models=(MODEL_NAVIGATOR_17,),
+            **write_kwargs,
         )
 
     if has_pv:
@@ -2246,13 +2287,19 @@ def get_register(name: str, *, model_info: IdmModelInfo | None = None) -> Regist
     By default only the small legacy ``CORE_REGISTERS`` set is searched.
     Pass ``model_info`` (or build the full map manually) to look up any
     register.
+
+    The model map wins over ``CORE_REGISTERS`` when both define a name: the
+    Navigator 1.7 map shadows ``error_acknowledge`` with its coil c3000, and
+    resolving the name against a detected model must never hand back the
+    shared family's holding-register 1999 definition instead (which would
+    send the write to an undocumented address on a 1.x controller).
     """
+    full_map = build_register_map(model_info=model_info)
+    if name in full_map:
+        return full_map[name]
     if name in CORE_REGISTERS:
         return CORE_REGISTERS[name]
-    full_map = build_register_map(model_info=model_info)
-    if name not in full_map:
-        raise ValueError(f"Register '{name}' not found.")
-    return full_map[name]
+    raise ValueError(f"Register '{name}' not found.")
 
 
 def get_register_registry(*, model_info: IdmModelInfo | None = None) -> RegisterRegistry:

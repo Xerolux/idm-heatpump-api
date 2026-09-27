@@ -39,7 +39,11 @@ from .exceptions import (
     IdmTransportError,
     IllegalAddressError,
 )
-from .transport import IdmModbusTransport, create_pymodbus_transport
+from .transport import (
+    IdmCoilTransportExtension,
+    IdmModbusTransport,
+    create_pymodbus_transport,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -147,6 +151,7 @@ DATATYPE_SENTINEL_DEFAULTS: dict[DataType, tuple[int | float, ...]] = {
 class RegisterType(Enum):
     INPUT = "input"
     HOLDING = "holding"
+    COIL = "coil"
 
 
 class WriteClass(Enum):
@@ -348,6 +353,10 @@ class RegisterDef:
             raise ValueError(f"Invalid datatype: {self.datatype}")
         if not isinstance(self.register_type, RegisterType):
             raise ValueError(f"Invalid register type: {self.register_type}")
+        if self.register_type is RegisterType.COIL and self.datatype is not DataType.BOOL:
+            # A coil is one bit; any wider datatype cannot be transported by
+            # FC01/FC05 and would silently decode garbage from a word read.
+            raise ValueError(f"Coil register {self.name} must use DataType.BOOL")
         if self.address < 0:
             raise ValueError(f"Register address must be non-negative, got {self.address}")
         if not self.source:
@@ -641,6 +650,22 @@ class IdmModbusClient:
             raise IdmConnectionError(f"Not connected to {self._host}:{self._port}")
         return self._transport
 
+    def _require_coil_transport(self) -> IdmCoilTransportExtension:
+        """Return the transport as a coil-capable one, or raise clearly.
+
+        Coil access (FC01/FC05) is an optional transport extension so that
+        transports written against the original 1.0 boundary keep working for
+        word registers. When a coil register is read or written through such a
+        transport, fail with an actionable error instead of an AttributeError.
+        """
+        transport = self._require_client()
+        if isinstance(transport, IdmCoilTransportExtension):
+            return transport
+        raise IdmTransportError(
+            "The injected transport does not implement coil access (FC01/FC05);"
+            " add read_coils/write_coil (IdmCoilTransportExtension) to it"
+        )
+
     async def _retry_command(
         self,
         operation: str,
@@ -756,21 +781,48 @@ class IdmModbusClient:
         max_retries: int | None = None,
         request_timeout: float | None = None,
     ) -> list[int]:
-        """Read registers with retries and exponential backoff."""
+        """Read registers (or coils, as 0/1 words) with retries and backoff.
+
+        Coil reads (``reg_type=COIL``) go through the transport's optional
+        FC01 extension and are normalised to ``list[int]`` of 0/1 so the
+        shared batch/decode machinery treats them like one-bit words.
+        """
+        coil_transport: IdmCoilTransportExtension | None = None
+        if reg_type is RegisterType.COIL:
+            # Capability check outside the retry loop: a transport without
+            # FC01/FC05 support will never succeed, so retrying (and
+            # reconnecting) would only add noise before the same failure.
+            coil_transport = self._require_coil_transport()
 
         async def _command() -> list[int]:
             transport = self._require_client()
-            if reg_type == RegisterType.HOLDING:
-                read_task = transport.read_holding_registers(address=address, count=count)
+            if reg_type is RegisterType.COIL:
+                assert coil_transport is not None
+                coil_task = coil_transport.read_coils(address=address, count=count)
+                # ``asyncio.wait_for`` preserves the per-request timeout used
+                # for model detection; the transport itself is timeout-agnostic.
+                bits = (
+                    await asyncio.wait_for(coil_task, timeout=request_timeout)
+                    if request_timeout is not None
+                    else await coil_task
+                )
+                # Same normalisation as every other transport: raw booleans
+                # become 0/1 words so decode_value() handles them uniformly.
+                result: list[int] = [1 if bit else 0 for bit in bits]
+            elif reg_type == RegisterType.HOLDING:
+                word_task = transport.read_holding_registers(address=address, count=count)
+                result = list(
+                    await asyncio.wait_for(word_task, timeout=request_timeout)
+                    if request_timeout is not None
+                    else await word_task
+                )
             else:
-                read_task = transport.read_input_registers(address=address, count=count)
-            # ``asyncio.wait_for`` preserves the per-request timeout used for
-            # model detection; the transport itself is timeout-agnostic.
-            result = (
-                await asyncio.wait_for(read_task, timeout=request_timeout)
-                if request_timeout is not None
-                else await read_task
-            )
+                word_task = transport.read_input_registers(address=address, count=count)
+                result = list(
+                    await asyncio.wait_for(word_task, timeout=request_timeout)
+                    if request_timeout is not None
+                    else await word_task
+                )
             # The transport contract guarantees raw register words, but the
             # requested count is a client-side invariant that every transport
             # (default and injected) must satisfy. Validate centrally so a
@@ -826,6 +878,22 @@ class IdmModbusClient:
             address,
             len(values),
             RegisterType.HOLDING,
+            _command,
+        )
+
+    async def _write_coil(self, address: int, value: bool) -> None:
+        """Write a single coil (FC05) with retries and exponential backoff."""
+
+        coil_transport = self._require_coil_transport()
+
+        async def _command() -> None:
+            await coil_transport.write_coil(address=address, value=bool(value))
+
+        await self._retry_command(
+            "write",
+            address,
+            1,
+            RegisterType.COIL,
             _command,
         )
 
@@ -1379,7 +1447,10 @@ class IdmModbusClient:
             allow_custom_register=allow_custom_register,
         )
         await self._ensure_connected()
-        await self._write_registers(reg.address, list(plan.encoded_registers))
+        if reg.register_type is RegisterType.COIL:
+            await self._write_coil(reg.address, bool(plan.encoded_registers[0]))
+        else:
+            await self._write_registers(reg.address, list(plan.encoded_registers))
         self._record_successful_write(reg)
 
     async def read_value(self, key: str) -> Any:
@@ -1393,7 +1464,10 @@ class IdmModbusClient:
         plan = self.simulate_write(reg, value, dry_run=dry_run)
         if not dry_run:
             await self._ensure_connected()
-            await self._write_registers(reg.address, list(plan.encoded_registers))
+            if reg.register_type is RegisterType.COIL:
+                await self._write_coil(reg.address, bool(plan.encoded_registers[0]))
+            else:
+                await self._write_registers(reg.address, list(plan.encoded_registers))
             self._record_successful_write(reg)
         return plan
 

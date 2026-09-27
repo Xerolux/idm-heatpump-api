@@ -22,6 +22,49 @@ prerelease is `2.0.0b1`, not `2.0.0-beta.1` — see `docs/RELEASE_PROCESS.md`.
 Sections up to `1.0.3` are German; they stay as published, because a released
 changelog is history. Everything from `2.0.0b1` on is English.
 
+## [2.5.0] - 2026-09-27
+
+### Added
+
+- **Navigator 1.0/1.7: the official FC01/FC05 coil block (3000–3003) is
+  mapped.** `c3000` (Störungsmeldung quittieren) becomes the 1.x
+  `error_acknowledge` — a write-only COIL register — so consumers resolve the
+  acknowledge by name on every family and the 1.x mechanism no longer falls
+  back to the shared family's undocumented holding register 1999. The demand
+  coils map as read-only binary registers: `demand_heating_17` (c3001,
+  Anforderung Heizen), `demand_cooling_17` (c3002, Anforderung Kühlen) and
+  `demand_dhw_17` (c3003, Anforderung Vorrangladung). They carry the `_17`
+  suffix because the shared family's identically named registers at
+  1710–1713 are writable GLT demand *inputs*, while the 1.x coils report the
+  controller's live demand *status*. `c3003` is documented read/write
+  (Vorrangladung anfordern) and a working FHEM configuration writes it daily
+  (idm-heatpump-hass issue #319), but it stays read-only until a hardware
+  capture confirms what writing `0` does to a running demand — a switch
+  entity would toggle both directions.
+- **Optional coil extension on the transport boundary.** `IdmCoilTransportExtension`
+  adds `read_coils` (FC01) and `write_coil` (FC05) beside the existing word
+  methods; the built-in Pymodbus transport implements it. The extension is
+  deliberately not part of `IdmModbusTransport`, so injected transports
+  written against the original 1.0 boundary keep satisfying the base
+  protocol and the client's constructor validation. The client detects the
+  extension at call time and raises an actionable error naming it when a
+  coil register is read or written through a transport without coil
+  support. Coil reads flow through the existing batching, retry,
+  Illegal-Data-Address quarantine and suspect-value machinery, normalised
+  to 0/1 words; `RegisterType.COIL` registers are guarded to
+  `DataType.BOOL` at construction.
+
+### Fixed
+
+- **`get_register` now resolves the model map before the legacy
+  `CORE_REGISTERS` short-circuit.** Previously `error_acknowledge` resolved
+  to the shared family's holding register 1999 even with a detected
+  Navigator 1.7, although the 1.x map defines no such register — a
+  model-scoped lookup must never hand back a definition the detected model
+  does not have. The default (no model) path is unchanged: the default map
+  contains every CORE register with identical addresses, so only 1.x-family
+  name shadows behave differently — exactly the intended fix.
+
 ## [2.4.3] - 2026-09-25
 
 ### Fixed

@@ -79,7 +79,11 @@ from .registers import (
     get_register_registry,
     get_zone_module_registers,
 )
-from .transport import IdmModbusTransport, quiet_pymodbus_logging
+from .transport import (
+    IdmCoilTransportExtension,
+    IdmModbusTransport,
+    quiet_pymodbus_logging,
+)
 from .web import (
     NAVIGATOR10_DHW_DEMAND_REASON_BITS,
     NAVIGATOR10_HEATING_DEMAND_REASON_BITS,
@@ -173,6 +177,7 @@ __all__ = [
     "IdmNavigator20WebClient",
     "IdmModelInfo",
     "IdmModbusClient",
+    "IdmCoilTransportExtension",
     "IdmModbusTransport",
     "IdmConnectionError",
     "IdmDeviceError",

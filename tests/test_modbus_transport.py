@@ -21,7 +21,13 @@ import pytest
 
 from idm_heatpump.client import IdmModbusClient, IllegalAddressError, RegisterType
 from idm_heatpump.exceptions import IdmConnectionError, IdmDeviceError, IdmTransportError
-from idm_heatpump.transport import IdmModbusTransport, _PymodbusTransport, check_transport_response
+from idm_heatpump.transport import (
+    IdmCoilTransportExtension,
+    IdmModbusTransport,
+    _PymodbusTransport,
+    check_coil_response,
+    check_transport_response,
+)
 
 from .fake_modbus import FakeModbusTransport
 
@@ -322,6 +328,78 @@ def test_check_transport_response_maps_other_errors_to_modbus_exception() -> Non
 def test_check_transport_response_returns_registers_on_success() -> None:
     response = type("R", (), {"isError": lambda self: False, "registers": [1, 2, 3]})()
     assert check_transport_response(response, 1000, operation="reading") == [1, 2, 3]
+
+
+# ---------------------------------------------------------------------------
+# Coil extension protocol (FC01/FC05)
+# ---------------------------------------------------------------------------
+
+
+def test_fake_transport_satisfies_coil_extension() -> None:
+    assert isinstance(FakeModbusTransport(), IdmCoilTransportExtension)
+
+
+def test_default_pymodbus_transport_satisfies_coil_extension() -> None:
+    transport = _PymodbusTransport(
+        host="127.0.0.1",
+        port=502,
+        timeout=1.0,
+        retries=0,
+        slave_id=1,
+        slave_param="slave",
+    )
+    assert isinstance(transport, IdmModbusTransport)
+    assert isinstance(transport, IdmCoilTransportExtension)
+
+
+def test_word_only_transport_still_satisfies_base_protocol() -> None:
+    """A transport written against the pre-2.5.0 boundary keeps passing the
+    constructor validation; only the coil extension check rejects it."""
+
+    class WordOnlyTransport:
+        def __init__(self) -> None:
+            self.connected = True
+
+        async def connect(self) -> None: ...
+
+        async def close(self) -> None: ...
+
+        async def read_input_registers(self, *, address: int, count: int) -> list[int]:
+            return [0] * count
+
+        async def read_holding_registers(self, *, address: int, count: int) -> list[int]:
+            return [0] * count
+
+        async def write_registers(self, *, address: int, values: list[int]) -> None: ...
+
+    word_only = WordOnlyTransport()
+    assert isinstance(word_only, IdmModbusTransport)
+    assert not isinstance(word_only, IdmCoilTransportExtension)
+    # The client accepts it for word registers as before.
+    client = IdmModbusClient("127.0.0.1", transport=word_only)
+    assert client.is_connected is True
+
+
+def test_check_coil_response_maps_code_2_to_illegal_address() -> None:
+    response = type("R", (), {"isError": lambda self: True, "exception_code": 2})()
+    with pytest.raises(IllegalAddressError):
+        check_coil_response(response, 3001, operation="reading coils")
+
+
+def test_check_coil_response_maps_other_errors_to_modbus_exception() -> None:
+    response = type("R", (), {"isError": lambda self: True, "exception_code": 6})()
+    with pytest.raises(IdmDeviceError):
+        check_coil_response(response, 3001, operation="reading coils")
+
+
+def test_check_coil_response_returns_bits_on_success() -> None:
+    response = type("R", (), {"isError": lambda self: False, "bits": [True, False, True]})()
+    assert check_coil_response(response, 3001, operation="reading coils") == [True, False, True]
+
+
+def test_check_coil_response_tolerates_response_without_bits() -> None:
+    response = type("R", (), {"isError": lambda self: False})()
+    assert check_coil_response(response, 3001, operation="reading coils") == []
 
 
 # ---------------------------------------------------------------------------

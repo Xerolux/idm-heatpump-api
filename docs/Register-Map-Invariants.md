@@ -131,9 +131,18 @@ families — except the holding block's per-circuit parameters, which reuse
 the shared family's register names because the official ranges are
 identical (the 2.0/10/Pro holding block is the direct successor of the 1.x
 table). The holding modes' enum tables stay separate because their value
-sets differ from the shared family's enums. The FC01/05 coil block (3000+)
-is documented in the same table but stays unmapped until the transport
-implements FC01/FC05; every 1.7 register outside the holding block and the
+sets differ from the shared family's enums. The FC01/05 coil block
+(3000-3003: Störung quittieren, Anforderung Heizen/Kühlen/Vorrangladung) is
+mapped since 2.5.0 as `RegisterType.COIL` registers with `DataType.BOOL`;
+reading and writing them requires a transport implementing
+`IdmCoilTransportExtension`. `c3000` reuses the shared family's
+`error_acknowledge` name because the acknowledge action is identical on both
+families; the Anforderung coils carry the `_17` suffix because the shared
+family's identically named registers at 1710-1713 are writable GLT demand
+*inputs*, while the 1.x coils are the controller's read-only demand *status*.
+`c3003` is documented read/write (Vorrangladung anfordern) but stays
+read-only until a hardware capture confirms what writing 0 does to a running
+demand. Every 1.7 register outside the holding block, the coil block and the
 PV supplement is `writable=False` and
 `detect_model` classifies the family through its Illegal-Data-Address
 signature (core block responds, shared-family addresses rejected) before the
