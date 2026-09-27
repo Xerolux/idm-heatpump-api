@@ -36,6 +36,22 @@ a raw frame without a client. Navigator 10 only — the Navigator 2.0 HTTP
 interface has no home controller. Reason slugs are stable API strings;
 presentation labels belong to the consumer.
 
+### Error-code database
+
+`get_error_code_info(code)` returns an `ErrorCodeInfo` for the vendor's
+controller error numbering, or `None` for codes outside the database. The
+data is read-only metadata decoded from the Windows service tool
+configuration (NAV10 protocol session, 2026-09-27) and packaged as
+`error_codes.json`; `scripts/generate_error_codes.py` regenerates it from a
+capture that is deliberately not committed. `ErrorCodeInfo.display_text`
+joins the affected component and the error kind exactly as the controller
+display does (for example "Wärmepumpenvorlauf Maximaltemperatur");
+`is_warning` marks warnings, and `user_description` / `service_description`
+carry the vendor's German remediation texts where available. Codes 20–999 are
+the controller message range the Modbus `internal_message` register reports;
+the 10000+ blocks belong to attached devices. Texts are German only — the
+vendor ships no English translations for these enums.
+
 The package root `__all__` list is the public import contract. It is protected
 by `tests/test_public_api.py`.
 

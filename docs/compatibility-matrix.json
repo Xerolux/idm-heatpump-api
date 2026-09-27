@@ -270,6 +270,12 @@
       "hass_integration_version": "0.20.0-b1",
       "status": "api-prepared",
       "notes": "Navigator 1.x FC01/FC05 coil block (c3000-c3003 of ma_de_812049 Rev.1) plus the optional IdmCoilTransportExtension on the transport boundary; get_register resolves model-map registers before the legacy CORE short-circuit (idm-heatpump-hass#319)."
+    },
+    {
+      "api_version": "2.6.0",
+      "hass_integration_version": "pending",
+      "status": "api-prepared",
+      "notes": "Read-only error-code database (get_error_code_info / ErrorCodeInfo): 2005 vendor codes with German texts, packaged as package data; no changes to registers, wire encoding or write validation."
     }
   ]
 }

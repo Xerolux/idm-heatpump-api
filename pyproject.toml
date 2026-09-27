@@ -8,11 +8,11 @@ include = ["idm_heatpump*"]
 exclude = ["custom_components*", "images*", "docs*", "tests*", "*.egg-info*"]
 
 [tool.setuptools.package-data]
-idm_heatpump = ["py.typed"]
+idm_heatpump = ["py.typed", "error_codes.json"]
 
 [project]
 name = "idm-heatpump-api"
-version = "2.5.0"
+version = "2.6.0"
 authors = [
   { name="Basti (Xerolux)", email="git@xerolux.de" },
 ]
