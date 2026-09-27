@@ -74,7 +74,7 @@ def test_typed_package_marker_is_shipped() -> None:
     assert (ROOT / "idm_heatpump" / "py.typed").is_file()
 
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    assert 'idm_heatpump = ["py.typed"]' in pyproject
+    assert 'idm_heatpump = ["py.typed", "error_codes.json"]' in pyproject
 
 
 def test_mypy_configuration_is_strict() -> None:

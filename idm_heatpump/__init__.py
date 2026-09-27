@@ -61,6 +61,10 @@ from .const import (
     VARIABLE_INPUT_OPTIONS,
     ZONE_MODULE_MODE_OPTIONS,
 )
+from .error_codes import (
+    ErrorCodeInfo,
+    get_error_code_info,
+)
 from .exceptions import (
     IdmConnectionError,
     IdmDeviceError,
@@ -169,6 +173,7 @@ __all__ = [
     "BinaryValue",
     "ConnectionError",
     "CsrfError",
+    "ErrorCodeInfo",
     "AdaptiveBackoff",
     "DataType",
     "FeatureFlags",
@@ -226,6 +231,7 @@ __all__ = [
     "get_all_registers",
     "get_binary_register_metadata",
     "get_detection_registers",
+    "get_error_code_info",
     "get_heating_circuit_registers",
     "get_register",
     "get_register_registry",

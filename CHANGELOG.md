@@ -22,6 +22,31 @@ prerelease is `2.0.0b1`, not `2.0.0-beta.1` — see `docs/RELEASE_PROCESS.md`.
 Sections up to `1.0.3` are German; they stay as published, because a released
 changelog is history. Everything from `2.0.0b1` on is English.
 
+## [2.6.0] - 2026-09-27
+
+### Added
+
+- **Read-only error-code database** (`get_error_code_info()` returning an
+  `ErrorCodeInfo`): 2005 controller error codes decoded from the
+  configuration of the Windows service tool ("IDM Smart Navigator" 2.3.118,
+  NAV10 protocol session of 2026-09-27). The controller message range 20–999
+  — the range the Modbus `internal_message` register reports — carries
+  German texts for 343 codes; every one of the 90 hand-collected codes of the
+  Home Assistant integration's `internal_messages.py` table matched the
+  database one-to-one, which validates the numbering as the same namespace.
+  The 10000+ blocks cover device-side errors (20000 display, 30000+ outdoor
+  unit, inverter, fan, EVD, Carel peripherals, cascade devices). Each entry
+  carries the affected component (`text`, "Wärmepumpenvorlauf") and, where
+  the vendor has one, the error kind (`info`, "Maximaltemperatur");
+  `display_text` joins both exactly as the controller display does. Where
+  shipped, German user and service remediation texts are included (1160 and
+  1346 entries respectively). Texts are German only — the vendor translation
+  table has no English for these enums. The data is packaged as
+  `error_codes.json` (one entry per line for reviewable diffs) and can be
+  regenerated with `scripts/generate_error_codes.py` from a capture; the
+  capture itself stays out of the repository because it also contains
+  plant-identifying data.
+
 ## [2.5.0] - 2026-09-27
 
 ### Added
