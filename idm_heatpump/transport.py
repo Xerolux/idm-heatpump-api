@@ -15,6 +15,14 @@ Two implementations ship in-tree:
   Assistant integration routes raw I/O through ``modbus-connection``/``tmodbus``
   without subclassing the client and overriding private hooks.
 
+Coil access (Modbus FC01/FC05, needed for the Navigator 1.x coil block from
+address 3000) is an *optional* extension: :class:`IdmCoilTransportExtension`.
+It is deliberately not part of :class:`IdmModbusTransport` so that injected
+transports written against the 1.0 boundary keep satisfying the base protocol
+and keep passing the client's ``isinstance`` validation. The client detects
+the extension at call time and raises an actionable error when a coil register
+is touched through a transport that does not implement it.
+
 The transport owns **only** connection lifecycle and raw register words. It
 must surface device-side Modbus exception code 2 (Illegal Data Address) by
 raising :class:`IllegalAddressError` so the library retry loop can short-
@@ -47,7 +55,9 @@ if TYPE_CHECKING:  # pragma: no cover - typing only, never imported at runtime
     from pymodbus.client import AsyncModbusTcpClient
 
 __all__ = [
+    "IdmCoilTransportExtension",
     "IdmModbusTransport",
+    "check_coil_response",
     "check_transport_response",
     "create_pymodbus_transport",
     "quiet_pymodbus_logging",
@@ -132,6 +142,34 @@ class IdmModbusTransport(Protocol):
         ...
 
 
+@runtime_checkable
+class IdmCoilTransportExtension(Protocol):
+    """Optional coil extension (FC01/FC05) for :class:`IdmModbusTransport`.
+
+    Implemented by the built-in Pymodbus adapter and by injected transports
+    that can read and write discrete coils — required for the Navigator
+    1.0/1.7 coil block (``c3000`` Störung quittieren, ``c3001``–``c3003``
+    Anforderung bits of ma_de_812049). Transports that predate this extension
+    keep satisfying the base protocol; the client raises a clear error only
+    when a coil register is actually read or written through them.
+
+    The error mapping rules of the base protocol apply unchanged:
+    exception code 2 must surface as :class:`IllegalAddressError`, any other
+    device-side refusal as :class:`IdmDeviceError`. ``read_coils`` must return
+    exactly ``count`` booleans; a short answer is a transport error.
+    """
+
+    __slots__ = ()
+
+    async def read_coils(self, *, address: int, count: int) -> list[bool]:
+        """Read ``count`` coils (FC01) starting at ``address``."""
+        ...
+
+    async def write_coil(self, *, address: int, value: bool) -> None:
+        """Write one coil (FC05) at ``address`` to ``value``."""
+        ...
+
+
 def check_transport_response(result: Any, address: int, *, operation: str) -> list[int]:
     """Validate a pymodbus-shaped response and return its register words.
 
@@ -163,6 +201,31 @@ def check_transport_response(result: Any, address: int, *, operation: str) -> li
     registers_obj = getattr(result, "registers", None)
     registers = list(registers_obj) if registers_obj is not None else []
     return registers
+
+
+def check_coil_response(result: Any, address: int, *, operation: str) -> list[bool]:
+    """Validate a pymodbus-shaped coil response and return its bits.
+
+    Coil twin of :func:`check_transport_response`: the same device-side error
+    mapping (exception code 2 -> :class:`IllegalAddressError`, any other
+    ``isError()`` -> :class:`IdmDeviceError`), but the payload is the
+    response's ``bits`` list. Length validation is left to the caller — the
+    client treats a short coil answer like a short register answer
+    (:class:`IdmDeviceError`) so the batch fallback can isolate the address.
+    """
+    if result.isError():
+        exception_code = getattr(result, "exception_code", None)
+        code = int(exception_code) if isinstance(exception_code, int) else None
+        if code == 2:
+            raise IllegalAddressError(
+                f"Illegal Data Address {operation} address {address}: {result}"
+            )
+        raise IdmDeviceError(
+            f"Modbus error {operation} address {address}: {result}",
+            exception_code=code,
+        )
+    bits_obj = getattr(result, "bits", None)
+    return [bool(bit) for bit in bits_obj] if bits_obj is not None else []
 
 
 def quiet_pymodbus_logging(level: str | int = "WARNING") -> None:
@@ -357,6 +420,40 @@ class _PymodbusTransport:
 
     async def read_holding_registers(self, *, address: int, count: int) -> list[int]:
         return await self._read(address, count, holding=True)
+
+    async def read_coils(self, *, address: int, count: int) -> list[bool]:
+        """Read ``count`` coils (FC01); see :class:`IdmCoilTransportExtension`."""
+        client = self._require_client()
+        kwargs: Any = {self._slave_param: self._slave_id}
+        try:
+            result = await client.read_coils(address=address, count=count, **kwargs)
+        except Exception as err:
+            translated = _translate_pymodbus_error(err, operation="reading coils", address=address)
+            if translated is None:
+                raise
+            raise translated from err
+        bits = check_coil_response(result, address, operation="reading coils")
+        # pymodbus pads the bit payload up to byte boundaries; hand the client
+        # exactly the requested count so its central length check is honest.
+        if len(bits) < count:
+            raise IdmTransportError(
+                f"Incomplete coil response at address {address}: "
+                f"got {len(bits)} coils, expected {count}"
+            )
+        return bits[:count]
+
+    async def write_coil(self, *, address: int, value: bool) -> None:
+        """Write one coil (FC05); see :class:`IdmCoilTransportExtension`."""
+        client = self._require_client()
+        kwargs: Any = {self._slave_param: self._slave_id}
+        try:
+            result = await client.write_coil(address=address, value=bool(value), **kwargs)
+        except Exception as err:
+            translated = _translate_pymodbus_error(err, operation="writing coil", address=address)
+            if translated is None:
+                raise
+            raise translated from err
+        check_transport_response(result, address, operation="writing coil")
 
     async def write_registers(self, *, address: int, values: list[int]) -> None:
         client = self._require_client()

@@ -1,0 +1,54 @@
+I001 [*] Import block is un-sorted or un-formatted
+  --> tests/test_navigator_17.py:8:1
+   |
+ 6 |   """
+ 7 |
+ 8 | / from __future__ import annotations
+ 9 | |
+10 | | import asyncio
+11 | | import struct
+12 | | from typing import Any
+13 | |
+14 | | import pytest
+15 | |
+16 | | from idm_heatpump.client import (
+17 | |     DataType,
+18 | |     IdmModbusClient,
+19 | |     IdmModelInfo,
+20 | |     RegisterType,
+21 | | )
+22 | | from idm_heatpump.exceptions import IdmTransportError
+23 | | from idm_heatpump.const import (
+24 | |     HC_OPERATING_MODE_17_OPTIONS,
+25 | |     MODEL_NAVIGATOR_10,
+26 | |     MODEL_NAVIGATOR_17,
+27 | |     MODEL_NAVIGATOR_20,
+28 | |     MODEL_NAVIGATOR_PRO,
+29 | |     MODEL_UNKNOWN,
+30 | |     PUMP_STATUS_OPTIONS,
+31 | |     SOLAR_OPERATING_MODE_17_OPTIONS,
+32 | |     SYSTEM_MODE_17_OPTIONS,
+33 | | )
+34 | | from idm_heatpump.registers import (
+35 | |     NAVIGATOR_17_COIL_SOURCE_VERSION,
+36 | |     NAVIGATOR_17_HOLDING_SOURCE_VERSION,
+37 | |     NAVIGATOR_17_REGISTER_SOURCE,
+38 | |     NAVIGATOR_17_REGISTER_SOURCE_VERSION,
+39 | |     _navigator_17_registers,
+40 | |     build_register_map,
+41 | |     get_register,
+42 | |     get_register_registry,
+43 | | )
+44 | |
+45 | | from .fake_modbus import FakeModbusTransport
+   | |____________________________________________^
+46 |
+47 |   # Official 1.x table: FC04 FLOAT block 1000-1088, status words 1500-1524.
+   |
+help: Organize imports
+
+Found 1 error.
+[*] 1 fixable with the `--fix` option.
+Would reformat: idm_heatpump/transport.py
+Would reformat: tests/fake_modbus.py
+2 files would be reformatted, 26 files already formatted

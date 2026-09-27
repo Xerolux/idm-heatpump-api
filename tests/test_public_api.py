@@ -58,6 +58,7 @@ EXPECTED_PUBLIC_API = [
     "IdmNavigator20WebClient",
     "IdmModelInfo",
     "IdmModbusClient",
+    "IdmCoilTransportExtension",
     "IdmModbusTransport",
     "IdmConnectionError",
     "IdmDeviceError",

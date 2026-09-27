@@ -30,7 +30,9 @@ from idm_heatpump.const import (
     SOLAR_OPERATING_MODE_17_OPTIONS,
     SYSTEM_MODE_17_OPTIONS,
 )
+from idm_heatpump.exceptions import IdmTransportError
 from idm_heatpump.registers import (
+    NAVIGATOR_17_COIL_SOURCE_VERSION,
     NAVIGATOR_17_HOLDING_SOURCE_VERSION,
     NAVIGATOR_17_REGISTER_SOURCE,
     NAVIGATOR_17_REGISTER_SOURCE_VERSION,
@@ -188,25 +190,32 @@ def _float_words(value: float) -> list[int]:
 def test_navigator_17_map_matches_official_table() -> None:
     regs = _navigator_17_registers()
 
-    expected = {**EXPECTED_FLOATS, **EXPECTED_STATUS, **EXPECTED_HOLDING}
+    expected = {**EXPECTED_FLOATS, **EXPECTED_STATUS, **EXPECTED_HOLDING, **EXPECTED_COILS}
     assert set(regs) == set(expected), sorted(set(regs) ^ set(expected))
     for name, address in expected.items():
         assert regs[name].address == address, name
 
 
 def test_navigator_17_base_map_is_read_only() -> None:
-    """Read-only everywhere except the official RW holding block."""
+    """Read-only everywhere except the official RW holding block and the
+    write-only acknowledge coil."""
     regs = _navigator_17_registers()
     holding = {name for name, reg in regs.items() if reg.register_type is RegisterType.HOLDING}
+    coils = {name for name, reg in regs.items() if reg.register_type is RegisterType.COIL}
     assert holding == set(EXPECTED_HOLDING)
+    assert coils == set(EXPECTED_COILS)
     for name, reg in regs.items():
         if name in holding:
             assert reg.writable, name
             assert reg.write_class.value != "forbidden", name
             continue
+        if name == "error_acknowledge":
+            assert reg.writable, name
+            assert reg.write_only, name
+            continue
         assert not reg.writable, name
         assert reg.write_class.value == "forbidden", name
-        assert reg.register_type is RegisterType.INPUT, name
+        assert reg.register_type in (RegisterType.INPUT, RegisterType.COIL), name
 
 
 def test_navigator_17_pv_supplement_adds_writable_registers() -> None:
@@ -236,11 +245,14 @@ def test_navigator_17_pv_supplement_adds_writable_registers() -> None:
 def test_navigator_17_map_declares_family_metadata() -> None:
     regs = _navigator_17_registers()
     holding = {name for name, reg in regs.items() if reg.register_type is RegisterType.HOLDING}
+    coils = {name for name, reg in regs.items() if reg.register_type is RegisterType.COIL}
     for name, reg in regs.items():
         assert reg.supported_models == (MODEL_NAVIGATOR_17,), name
         assert reg.source == NAVIGATOR_17_REGISTER_SOURCE, name
         if name in holding:
             assert reg.source_version == NAVIGATOR_17_HOLDING_SOURCE_VERSION, name
+        elif name in coils:
+            assert reg.source_version == NAVIGATOR_17_COIL_SOURCE_VERSION, name
         else:
             assert reg.source_version == NAVIGATOR_17_REGISTER_SOURCE_VERSION, name
 
@@ -390,8 +402,10 @@ def test_register_registry_lookups_for_1_7() -> None:
     assert registry.get("system_mode") is None
     assert registry.by_address(1046) is not None
     assert registry.by_address(1392) is None
+    assert registry.by_address(3001, "coil") is not None
+    assert registry.by_address(3001) is None  # coils live in their own namespace
     writable = registry.writable()
-    assert set(writable) == set(EXPECTED_HOLDING)
+    assert set(writable) == set(EXPECTED_HOLDING) | {"error_acknowledge"}
     with_pv = get_register_registry(
         model_info=IdmModelInfo(
             model_name=MODEL_NAVIGATOR_17,
@@ -404,6 +418,7 @@ def test_register_registry_lookups_for_1_7() -> None:
         )
     )
     assert set(with_pv.writable()) == set(EXPECTED_HOLDING) | {
+        "error_acknowledge",
         "pv_surplus",
         "electric_heater_power",
         "pv_production",
@@ -835,3 +850,211 @@ def test_1_7_status_words_carry_documented_ranges() -> None:
     assert regs["error_number"].max_val is None
     assert regs["hp_operating_mode"].min_val is None
     assert regs["hp_operating_mode"].max_val is None
+
+
+# ---------------------------------------------------------------------------
+# FC01/FC05 coil block (3000-3003) of ma_de_812049 Rev.1
+# ---------------------------------------------------------------------------
+
+EXPECTED_COILS: dict[str, int] = {
+    "error_acknowledge": 3000,  # Störungsmeldung quittieren
+    "demand_heating_17": 3001,  # Anforderung Heizen (status, not GLT input)
+    "demand_cooling_17": 3002,  # Anforderung Kühlen
+    "demand_dhw_17": 3003,  # Anforderung Vorrangladung
+}
+
+
+def test_1_7_coil_block_registers() -> None:
+    """The coil block maps as COIL/BOOL registers; c3000 is the write-only
+    acknowledge (same semantics and name as the shared family's holding
+    register 1999), the Anforderung coils are read-only binary signals."""
+    regs = _navigator_17_registers()
+    assert set(EXPECTED_COILS) <= set(regs)
+
+    for name, address in EXPECTED_COILS.items():
+        reg = regs[name]
+        assert reg.address == address, name
+        assert reg.datatype is DataType.BOOL, name
+        assert reg.register_type is RegisterType.COIL, name
+        assert reg.binary is True, name
+        assert reg.size == 1, name
+
+    acknowledge = regs["error_acknowledge"]
+    assert acknowledge.writable is True
+    assert acknowledge.write_only is True
+    for name in ("demand_heating_17", "demand_cooling_17", "demand_dhw_17"):
+        assert regs[name].writable is False, name
+        assert regs[name].write_only is False, name
+
+
+def test_coil_datatype_is_guarded_to_bool() -> None:
+    """A COIL register with a word datatype cannot be transported by FC01/FC05
+    and must be rejected at construction instead of decoding garbage."""
+    from idm_heatpump.client import RegisterDef
+
+    with pytest.raises(ValueError, match="DataType.BOOL"):
+        RegisterDef(
+            address=3001,
+            datatype=DataType.UINT16,
+            register_type=RegisterType.COIL,
+            name="bad_coil",
+            source="test",
+            source_version="test",
+            supported_models=(MODEL_NAVIGATOR_17,),
+        )
+
+
+def test_coils_are_absent_from_the_shared_family_map() -> None:
+    """The 1.x coil names (except the shared acknowledge) and addresses never
+    leak into the 2.0/10/Pro map; its identically named demand registers are
+    the writable GLT inputs at 1710-1713, not the 1.x status coils."""
+    model_info = IdmModelInfo(
+        model_name=MODEL_NAVIGATOR_10,
+        active_heating_circuits=list("ABCDEFG"),
+        zone_modules=0,
+        has_solar=False,
+        has_isc=False,
+        has_pv=False,
+        has_cascade=False,
+    )
+    regs = build_register_map(model_info)
+    for name in EXPECTED_COILS:
+        if name == "error_acknowledge":
+            # The shared family has its own acknowledge at 1999 - a word
+            # register (not a coil), so the two mechanisms stay distinct.
+            assert regs[name].address == 1999
+            assert regs[name].register_type is not RegisterType.COIL
+            continue
+        if name in ("demand_heating", "demand_cooling"):
+            # Same names, different semantics: writable GLT demand inputs.
+            assert regs[name].address in (1710, 1711)
+            assert regs[name].writable is True
+            continue
+        if name == "demand_dhw":
+            # The shared family spells its GLT DHW input differently; the
+            # 1.x status coil name must not collide with anything.
+            assert name not in regs
+            continue
+        assert name not in regs, name
+
+
+def test_1_7_coil_read_batch_uses_fc01() -> None:
+    """read_batch groups the demand coils into one FC01 request and decodes
+    them as booleans."""
+    fake = FakeModbusTransport(coils={3001: True, 3003: True})
+    client = IdmModbusClient("127.0.0.1", transport=fake)
+    client.set_model_info(navigator_17_model_info())
+
+    async def run() -> dict[str, Any]:
+        return await client.read_batch(
+            [
+                client._get_register_by_key(name)
+                for name in ("demand_heating_17", "demand_cooling_17", "demand_dhw_17")
+            ]
+        )
+
+    data = asyncio.run(run())
+    assert data == {"demand_heating_17": True, "demand_cooling_17": False, "demand_dhw_17": True}
+    # One contiguous FC01 request covering 3001-3003, no word reads.
+    assert fake.coil_read_calls == [(3001, 3)]
+    assert fake.read_calls == []
+
+
+def test_1_7_acknowledge_writes_coil_3000_via_fc05() -> None:
+    """The acknowledge goes out as an FC05 single-coil write of ON, never as
+    a holding-register write (the shared family's 1999 mechanism)."""
+    fake = FakeModbusTransport()
+    client = IdmModbusClient("127.0.0.1", transport=fake)
+    client.set_model_info(navigator_17_model_info())
+
+    async def run() -> None:
+        await client.write_register(client._get_register_by_key("error_acknowledge"), 1)
+
+    asyncio.run(run())
+    assert fake.coil_write_calls == [(3000, True)]
+    assert fake.write_calls == []
+
+
+def test_coil_access_without_transport_support_raises_actionably() -> None:
+    """A transport written against the pre-2.5.0 boundary (no FC01/FC05)
+    keeps satisfying the base protocol, but coil reads and writes fail with
+    an error naming the missing extension instead of an AttributeError."""
+
+    class WordOnlyTransport(FakeModbusTransport):
+        # Genuinely absent, not None: the protocol check is attribute presence.
+        def __getattr__(self, name: str) -> Any:  # pragma: no cover - defensive
+            raise AttributeError(name)
+
+    # A subclass still carries the inherited coil methods, so build the
+    # word-only double from scratch (mirrors a real pre-2.5.0 transport).
+    class LegacyTransport:
+        def __init__(self) -> None:
+            self.connected = True
+            self.read_calls: list[tuple[str, int, int]] = []
+            self.write_calls: list[tuple[int, list[int]]] = []
+
+        async def connect(self) -> None: ...
+
+        async def close(self) -> None: ...
+
+        async def read_input_registers(self, *, address: int, count: int) -> list[int]:
+            self.read_calls.append(("input", address, count))
+            return [0] * count
+
+        async def read_holding_registers(self, *, address: int, count: int) -> list[int]:
+            self.read_calls.append(("holding", address, count))
+            return [0] * count
+
+        async def write_registers(self, *, address: int, values: list[int]) -> None:
+            self.write_calls.append((address, list(values)))
+
+    legacy = LegacyTransport()
+    from idm_heatpump.transport import IdmCoilTransportExtension, IdmModbusTransport
+
+    assert isinstance(legacy, IdmModbusTransport)
+    assert not isinstance(legacy, IdmCoilTransportExtension)
+
+    client = IdmModbusClient("127.0.0.1", transport=legacy)
+    client.set_model_info(navigator_17_model_info())
+    demand = client._get_register_by_key("demand_heating_17")
+    acknowledge = client._get_register_by_key("error_acknowledge")
+
+    async def run() -> None:
+        await client.read_register(demand)
+
+    with pytest.raises(IdmTransportError, match="IdmCoilTransportExtension"):
+        asyncio.run(run())
+
+    async def run_write() -> None:
+        await client.write_register(acknowledge, 1)
+
+    with pytest.raises(IdmTransportError, match="IdmCoilTransportExtension"):
+        asyncio.run(run_write())
+
+
+def test_coil_write_only_register_is_not_readable() -> None:
+    client = IdmModbusClient("127.0.0.1", transport=FakeModbusTransport())
+    client.set_model_info(navigator_17_model_info())
+
+    async def run() -> None:
+        await client.read_value("error_acknowledge")
+
+    with pytest.raises(ValueError, match="write-only"):
+        asyncio.run(run())
+
+
+def test_coil_write_is_safety_validated() -> None:
+    """Coil writes go through the same validation as word writes: boolean
+    values only, model availability enforced."""
+    client = IdmModbusClient("127.0.0.1", transport=FakeModbusTransport())
+    client.set_model_info(navigator_17_model_info())
+
+    # True and 1 are legal boolean coil values and must pass validation.
+    client.simulate_write("error_acknowledge", True)
+    client.simulate_write("error_acknowledge", 1)
+    with pytest.raises(ValueError):
+        client.simulate_write("error_acknowledge", 5)
+    with pytest.raises(ValueError):
+        client.simulate_write("error_acknowledge", "on")
+    with pytest.raises(ValueError):
+        client.simulate_write("demand_heating_17", 1)
