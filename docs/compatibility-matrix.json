@@ -288,6 +288,12 @@
       "hass_integration_version": "pending",
       "status": "api-prepared",
       "notes": "WebSocket writes (Phase 4 slice 1): set_system_mode (home/save, Modbus-compatible numbering, validated 0-5), acknowledge_all_notifications / acknowledge_notification (notification/save), read_home_overview (systemMode state), all with capture-confirmed success/danger note semantics. Explicit opt-in methods; the client stays read-only unless called."
+    },
+    {
+      "api_version": "2.10.0",
+      "hass_integration_version": "pending",
+      "status": "api-prepared",
+      "notes": "WebSocket writes slice 3: read_heatingcircuit (full circuit state incl. mode chooselist, normal/eco room setpoints with device-declared ranges, room temperature, pump, available circuits) and save_heatingcircuit_parameter (system.heatingcircuit/save, range-validated)."
     }
   ]
 }
