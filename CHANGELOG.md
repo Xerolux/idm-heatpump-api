@@ -22,6 +22,23 @@ prerelease is `2.0.0b1`, not `2.0.0-beta.1` — see `docs/RELEASE_PROCESS.md`.
 Sections up to `1.0.3` are German; they stay as published, because a released
 changelog is history. Everything from `2.0.0b1` on is English.
 
+## [2.9.0] - 2026-09-28
+
+### Added
+
+- **WebSocket writes, slice 2 - validated setpoints.**
+  - `read_setting_parameter(setting_id)` / `IdmWebSettingParameter` /
+    `parse_navigator_setting_parameter()`: one settings-tree parameter with
+    the device's own declared min/max/increment, type, unit, current value
+    and the `param` alias linking it to the `system.*` controllers.
+  - `save_freshwater_parameter(parameter_id, value, setting_id=...)`:
+    writes `system.freshwater/save {parameterId, value}` like the official
+    UI, validated against the device-declared range when the settings-tree
+    item is given - the register write safety applied to the web interface.
+  - `save_dhw_setpoint(celsius)`: the domestic-hot-water setpoint (setting
+    13256 / parameter FW030 on the confirmed firmware; 30-60 degC in 0.5
+    steps as declared by the device). Rejected writes raise.
+
 ## [2.8.0] - Unreleased
 
 ### Added
