@@ -39,7 +39,7 @@ changelog is history. Everything from `2.0.0b1` on is English.
     13256 / parameter FW030 on the confirmed firmware; 30-60 degC in 0.5
     steps as declared by the device). Rejected writes raise.
 
-## [2.8.0] - Unreleased
+## [2.8.0] - 2026-09-28
 
 ### Added
 
