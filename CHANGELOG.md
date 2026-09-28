@@ -22,6 +22,23 @@ prerelease is `2.0.0b1`, not `2.0.0-beta.1` — see `docs/RELEASE_PROCESS.md`.
 Sections up to `1.0.3` are German; they stay as published, because a released
 changelog is history. Everything from `2.0.0b1` on is English.
 
+## [2.10.0] - 2026-09-28
+
+### Added
+
+- **WebSocket writes, slice 3 - heating circuits.**
+  - `read_heatingcircuit(hc_id)` / `IdmWebHeatingCircuit` (with
+    `IdmWebHeatingCircuitRef`, `IdmWebHeatingCircuitChoice`,
+    `IdmWebHeatingCircuitValue`): one `system.heatingcircuit/detail` frame
+    with the whole circuit state - the operating mode (chooselist keys with
+    the device's own options), the normal and eco room setpoints with their
+    device-declared ranges, the room temperature, the pump state and the
+    list of every configured circuit.
+  - `save_heatingcircuit_parameter(parameter_id, value, min_value=,
+    max_value=)`: writes `system.heatingcircuit/save {parameterId, value}`
+    validated against the device-declared bounds - the register write
+    safety applied to the web interface.
+
 ## [2.9.0] - 2026-09-28
 
 ### Added

@@ -1339,6 +1339,174 @@ def parse_navigator_save_response(raw_response: str, response_key: str) -> str:
 
 
 @dataclass(frozen=True)
+class IdmWebHeatingCircuitRef:
+    """One entry of the heating-circuit list (id, display name, mode)."""
+
+    hc_id: str
+    display_name: str | None = None
+    mode: int | None = None
+
+
+@dataclass(frozen=True)
+class IdmWebHeatingCircuitChoice:
+    """One chooselist option of a heating-circuit parameter."""
+
+    key: int
+    name: str | None = None
+
+
+@dataclass(frozen=True)
+class IdmWebHeatingCircuitValue:
+    """One writable heating-circuit value with its device-declared range."""
+
+    parameter_id: str
+    value: float | int | None = None
+    min_value: float | None = None
+    max_value: float | None = None
+    increment: str | None = None
+
+
+@dataclass(frozen=True)
+class IdmWebHeatingCircuit:
+    """Read-only Navigator 10 ``system.heatingcircuit/detail`` snapshot.
+
+    One frame carries the whole circuit state: the operating mode (with the
+    device's own chooselist), the normal and eco room setpoints (with their
+    device-declared ranges), the room and flow temperatures, the pump state
+    and the list of every configured circuit. Parameter ids follow the
+    ``HK<x>NN`` scheme (``HKD04`` is circuit D's normal room setpoint).
+    """
+
+    hc_id: str
+    display_name: str | None = None
+    mode_value: int | None = None
+    mode_parameter_id: str | None = None
+    mode_options: tuple[IdmWebHeatingCircuitChoice, ...] = ()
+    setpoint_normal: IdmWebHeatingCircuitValue | None = None
+    setpoint_eco: IdmWebHeatingCircuitValue | None = None
+    room_temperature: float | None = None
+    pump_active: bool | None = None
+    available_circuits: tuple[IdmWebHeatingCircuitRef, ...] = ()
+    raw_response: str | None = None
+
+
+def _parse_hc_value(block: object) -> IdmWebHeatingCircuitValue | None:
+    if not isinstance(block, dict):
+        return None
+    parameter_id = block.get("id")
+    if not isinstance(parameter_id, str) or not parameter_id:
+        return None
+    return IdmWebHeatingCircuitValue(
+        parameter_id=parameter_id,
+        value=_optional_number(block.get("value")),
+        min_value=_optional_number(block.get("min")),
+        max_value=_optional_number(block.get("max")),
+        increment=_optional_str(block.get("increment")),
+    )
+
+
+def parse_navigator_heatingcircuit_response(
+    raw_response: str,
+    *,
+    include_raw: bool = False,
+) -> IdmWebHeatingCircuit:
+    """Parse a Navigator 10 ``system.heatingcircuit/detail`` response."""
+    try:
+        payload = json.loads(raw_response)
+    except json.JSONDecodeError as exc:
+        raise IdmWebResponseError("Navigator 10 heatingcircuit response is not valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise IdmWebResponseError("Navigator 10 heatingcircuit response is not a JSON object")
+    detail = payload.get("heatingcircuitDetail")
+    if not isinstance(detail, dict):
+        raise IdmWebResponseError("Navigator 10 response does not contain heatingcircuitDetail")
+    hc_id = detail.get("id")
+    if not isinstance(hc_id, str) or not hc_id:
+        raise IdmWebResponseError("Navigator 10 heatingcircuitDetail carries no id")
+
+    mode_block = detail.get("mode")
+    mode_value: int | None = None
+    mode_parameter_id: str | None = None
+    mode_options: tuple[IdmWebHeatingCircuitChoice, ...] = ()
+    if isinstance(mode_block, dict):
+        mode_parameter_id = _optional_str(mode_block.get("id"))
+        mode_value_raw = _optional_number(mode_block.get("value"))
+        mode_value = int(mode_value_raw) if mode_value_raw is not None else None
+        raw_types = mode_block.get("types")
+        if isinstance(raw_types, list):
+            options = []
+            for entry in raw_types:
+                if not isinstance(entry, dict):
+                    continue
+                key = _optional_number(entry.get("key"))
+                if key is None:
+                    continue
+                options.append(
+                    IdmWebHeatingCircuitChoice(key=int(key), name=_optional_str(entry.get("name")))
+                )
+            mode_options = tuple(options)
+
+    temperatures = detail.get("temperatures")
+    setpoint_normal = None
+    setpoint_eco = None
+    if isinstance(temperatures, dict):
+        heating = temperatures.get("heating")
+        if isinstance(heating, dict):
+            setpoint_normal = _parse_hc_value(heating.get("normal"))
+            setpoint_eco = _parse_hc_value(heating.get("eco"))
+
+    room = detail.get("room")
+    room_temperature: float | None = None
+    if isinstance(room, dict):
+        room_temperatures = room.get("temperatures")
+        if isinstance(room_temperatures, dict):
+            raw_actual = room_temperatures.get("actual")
+            if isinstance(raw_actual, str):
+                try:
+                    room_temperature = float(raw_actual)
+                except ValueError:
+                    room_temperature = None
+            else:
+                room_temperature = _optional_number(raw_actual)
+
+    available = detail.get("availableHeatingCircuits")
+    available_circuits: tuple[IdmWebHeatingCircuitRef, ...] = ()
+    if isinstance(available, list):
+        refs = []
+        for entry in available:
+            if not isinstance(entry, dict):
+                continue
+            entry_id = entry.get("id")
+            if not isinstance(entry_id, str) or not entry_id:
+                continue
+            refs.append(
+                IdmWebHeatingCircuitRef(
+                    hc_id=entry_id,
+                    display_name=_optional_str(entry.get("displayName")),
+                    mode=(lambda m: int(m) if m is not None else None)(
+                        _optional_number(entry.get("mode"))
+                    ),
+                )
+            )
+        available_circuits = tuple(refs)
+
+    pump = detail.get("pumpActive")
+    return IdmWebHeatingCircuit(
+        hc_id=hc_id,
+        display_name=_optional_str(detail.get("displayName")),
+        mode_value=mode_value,
+        mode_parameter_id=mode_parameter_id,
+        mode_options=mode_options,
+        setpoint_normal=setpoint_normal,
+        setpoint_eco=setpoint_eco,
+        room_temperature=room_temperature,
+        pump_active=pump if isinstance(pump, bool) else None,
+        available_circuits=available_circuits,
+        raw_response=raw_response if include_raw else None,
+    )
+
+
+@dataclass(frozen=True)
 class IdmWebSettingParameter:
     """One parameter of the Navigator 10 settings tree.
 
@@ -1883,6 +2051,64 @@ class IdmNavigator10WebClient:
             celsius,
             setting_id=NAVIGATOR10_DHW_SETPOINT_SETTING_ID,
         )
+
+    async def read_heatingcircuit(self, hc_id: str) -> IdmWebHeatingCircuit:
+        """Read one heating circuit's state through ``system.heatingcircuit``.
+
+        The frame carries the operating mode with the device's own option
+        list, the normal and eco room setpoints with their declared ranges,
+        the room temperature, the pump state and the list of every
+        configured circuit.
+        """
+        clean_id = str(hc_id).strip().upper()
+        if not clean_id:
+            raise ValueError("hc_id must not be empty")
+        await self.connect()
+        raw = await self._send_json_and_receive_text(
+            {
+                "controller": "system.heatingcircuit",
+                "command": "detail",
+                "data": {"hcId": clean_id},
+            }
+        )
+        circuit = parse_navigator_heatingcircuit_response(raw)
+        self._last_success_monotonic = time.monotonic()
+        return circuit
+
+    async def save_heatingcircuit_parameter(
+        self,
+        parameter_id: str,
+        value: float | int,
+        *,
+        min_value: float | None = None,
+        max_value: float | None = None,
+    ) -> None:
+        """Write one ``system.heatingcircuit`` parameter, range-validated.
+
+        The bounds are the device-declared range as delivered by
+        :meth:`read_heatingcircuit` (``setpoint_normal.min_value`` etc.) or
+        the mode chooselist keys — the register write safety applied to the
+        web interface. The write goes through
+        ``system.heatingcircuit/save {parameterId, value}``.
+        """
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"value must be a number, got {value!r}")
+        clean_parameter = str(parameter_id).strip()
+        if not clean_parameter:
+            raise ValueError("parameter_id must not be empty")
+        if min_value is not None and value < min_value:
+            raise ValueError(f"value {value} is below the device-declared minimum {min_value}")
+        if max_value is not None and value > max_value:
+            raise ValueError(f"value {value} is above the device-declared maximum {max_value}")
+        await self.connect()
+        raw = await self._send_json_and_receive_text(
+            {
+                "controller": "system.heatingcircuit",
+                "command": "save",
+                "data": {"parameterId": clean_parameter, "value": value},
+            }
+        )
+        parse_navigator_save_response(raw, "heatingcircuitSave")
 
     def get_cached_data(self) -> IdmWebData | None:
         """Return the last valid Navigator 10 data snapshot, if one exists."""
