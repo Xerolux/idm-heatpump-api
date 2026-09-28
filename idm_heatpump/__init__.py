@@ -90,6 +90,8 @@ from .transport import (
 )
 from .web import (
     NAVIGATOR10_DHW_DEMAND_REASON_BITS,
+    NAVIGATOR10_DHW_SETPOINT_PARAM,
+    NAVIGATOR10_DHW_SETPOINT_SETTING_ID,
     NAVIGATOR10_HEATING_DEMAND_REASON_BITS,
     NAVIGATOR10_STATISTIC_EMEH,
     NAVIGATOR10_STATISTIC_EMHP,
@@ -130,6 +132,7 @@ from .web import (
     IdmWebPinRejectedError,
     IdmWebProtocolError,
     IdmWebResponseError,
+    IdmWebSettingParameter,
     IdmWebStatus,
     IdmWebSystemMode,
     IdmWebTimeoutError,
@@ -147,6 +150,7 @@ from .web import (
     parse_navigator_home_overview_response,
     parse_navigator_home_response,
     parse_navigator_save_response,
+    parse_navigator_setting_parameter,
     parse_navigator_status_response,
     web_pin_configured,
 )
@@ -226,6 +230,7 @@ __all__ = [
     "IdmWebHomeDetail",
     "IdmWebHomeOverview",
     "IdmWebStatus",
+    "IdmWebSettingParameter",
     "IdmWebSystemMode",
     "IdmWebNotification",
     "IdmWebNotifications",
@@ -264,7 +269,10 @@ __all__ = [
     "NAVIGATOR10_SYSTEM_MODE_HOT_WATER_ONLY",
     "NAVIGATOR10_SYSTEM_MODE_STANDBY",
     "NAVIGATOR10_WRITABLE_SYSTEM_MODES",
+    "NAVIGATOR10_DHW_SETPOINT_PARAM",
+    "NAVIGATOR10_DHW_SETPOINT_SETTING_ID",
     "parse_navigator_home_overview_response",
+    "parse_navigator_setting_parameter",
     "parse_navigator_save_response",
     "WEB_VALUE_DESCRIPTIONS",
     "decode_navigator10_demand_reason",
