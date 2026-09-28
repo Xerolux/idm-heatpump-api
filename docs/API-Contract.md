@@ -36,6 +36,23 @@ a raw frame without a client. Navigator 10 only — the Navigator 2.0 HTTP
 interface has no home controller. Reason slugs are stable API strings;
 presentation labels belong to the consumer.
 
+### Navigator 10 status and freshwater frames (2.7.0)
+
+`IdmNavigator10WebClient.read_status_overview()` returns an `IdmWebStatus`
+(`json_version`, `userlevel`, `language`, `notification_count`,
+`timestamp_ms` — the controller clock in epoch milliseconds —,
+`frost_protection_active`, `network`, `authentication_enabled`).
+`IdmNavigator10WebClient.read_freshwater_overview()` returns an
+`IdmWebFreshwater` (`circulation_active`, `status`, `system_mode`,
+`temperature_top` / `temperature_bottom` as `IdmWebValue` in `°C`). Both are
+backed by exported parsers (`parse_navigator_status_response` /
+`parse_navigator_freshwater_response`) and parse defensively: keys the
+firmware omits stay `None` instead of failing the snapshot. Navigator 10
+only. The `statistic/detail` selectors are exported as
+`NAVIGATOR10_STATISTIC_*` constants (statistic type and period), verified
+frame by frame on a live controller; `read_statistics()` keeps its generic
+`(statistic_type, period_type, prefix)` signature.
+
 ### Error-code database
 
 `get_error_code_info(code)` returns an `ErrorCodeInfo` for the vendor's
