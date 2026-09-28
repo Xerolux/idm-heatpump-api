@@ -92,6 +92,14 @@ NAVIGATOR10_SYSTEM_MODE_HOT_WATER_ONLY = 4
 NAVIGATOR10_SYSTEM_MODE_HEATING_COOLING_ONLY = 5
 NAVIGATOR10_WRITABLE_SYSTEM_MODES = frozenset(range(0, 6))
 
+# Domestic-hot-water setpoint (tap temperature). The settings-tree item and
+# its system.freshwater parameter alias were confirmed on a live Navigator 10
+# (jsonVersion 11, September 2026); the device declares the value range
+# itself (30..60 degrees Celsius in increments of 0.5 there) and the write is
+# validated against exactly that declaration.
+NAVIGATOR10_DHW_SETPOINT_SETTING_ID = "13256"
+NAVIGATOR10_DHW_SETPOINT_PARAM = "FW030"
+
 _NAVIGATOR10_STATUS_REQUEST = {
     "controller": "status",
     "command": "overview",
@@ -1330,6 +1338,74 @@ def parse_navigator_save_response(raw_response: str, response_key: str) -> str:
     return note_text if isinstance(note_text, str) and note_text else "success"
 
 
+@dataclass(frozen=True)
+class IdmWebSettingParameter:
+    """One parameter of the Navigator 10 settings tree.
+
+    ``setting/detail`` answers with the parameter's definition: the device's
+    own min/max/increment, its type and unit, the current value, and — where
+    the parameter also exists as a ``system.*`` sub-controller value — the
+    ``param`` alias (for example ``FW030`` for the hot-water setpoint).
+    """
+
+    setting_id: str
+    name: str | None = None
+    param: str | None = None
+    type: str | None = None
+    value: float | int | str | None = None
+    min_value: float | None = None
+    max_value: float | None = None
+    increment: str | None = None
+    unit: str | None = None
+    default: float | int | str | None = None
+
+
+def _optional_number(value: object) -> float | int | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return value
+
+
+def parse_navigator_setting_parameter(raw_response: str) -> IdmWebSettingParameter:
+    """Parse a Navigator 10 ``setting/detail`` parameter answer.
+
+    Every field is read defensively; an answer without a ``settingDetail``
+    object raises, unknown fields stay ``None``.
+    """
+    try:
+        payload = json.loads(raw_response)
+    except json.JSONDecodeError as exc:
+        raise IdmWebResponseError("Navigator 10 setting response is not valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise IdmWebResponseError("Navigator 10 setting response is not a JSON object")
+    detail = payload.get("settingDetail")
+    if not isinstance(detail, dict):
+        raise IdmWebResponseError("Navigator 10 response does not contain settingDetail")
+    setting_id = detail.get("id")
+    if not isinstance(setting_id, str) or not setting_id:
+        raise IdmWebResponseError("Navigator 10 settingDetail carries no id")
+    raw_value = detail.get("value")
+    value: float | int | str | None
+    if isinstance(raw_value, bool) or raw_value is None:
+        value = raw_value if isinstance(raw_value, str) else None
+    elif isinstance(raw_value, (int, float)):
+        value = raw_value
+    else:
+        value = str(raw_value)
+    return IdmWebSettingParameter(
+        setting_id=setting_id,
+        name=_optional_str(detail.get("name")),
+        param=_optional_str(detail.get("param")),
+        type=_optional_str(detail.get("type")),
+        value=value,
+        min_value=_optional_number(detail.get("min")),
+        max_value=_optional_number(detail.get("max")),
+        increment=_optional_str(detail.get("increment")),
+        unit=_optional_str(detail.get("unit")),
+        default=detail.get("def") if isinstance(detail.get("def"), (int, float, str)) else None,
+    )
+
+
 def parse_navigator_freshwater_response(
     raw_response: str,
     *,
@@ -1730,6 +1806,83 @@ class IdmNavigator10WebClient:
             }
         )
         parse_navigator_save_response(raw, "notificationSave")
+
+    async def read_setting_parameter(self, setting_id: str) -> IdmWebSettingParameter:
+        """Read one parameter definition from the settings tree.
+
+        The device answers with its own min/max/increment, the type and unit
+        and the current value — the validation basis for writes.
+        """
+        clean_id = str(setting_id).strip()
+        if not clean_id:
+            raise ValueError("setting_id must not be empty")
+        await self.connect()
+        raw = await self._send_json_and_receive_text(
+            {
+                "controller": "setting",
+                "command": "detail",
+                "data": {"settingId": clean_id},
+            }
+        )
+        return parse_navigator_setting_parameter(raw)
+
+    async def save_freshwater_parameter(
+        self,
+        parameter_id: str,
+        value: float | int,
+        *,
+        setting_id: str | None = None,
+    ) -> None:
+        """Write one ``system.freshwater`` parameter, range-validated.
+
+        When ``setting_id`` names the settings-tree item of the parameter
+        (``detail.param`` links both), the device's own definition is read
+        first and the value is checked against the declared min/max —
+        exactly the write safety of the register path, applied to the web
+        interface. The write itself goes through
+        ``system.freshwater/save {parameterId, value}`` like the official UI.
+        """
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"value must be a number, got {value!r}")
+        clean_parameter = str(parameter_id).strip()
+        if not clean_parameter:
+            raise ValueError("parameter_id must not be empty")
+        if setting_id is not None:
+            definition = await self.read_setting_parameter(setting_id)
+            if definition.param is not None and definition.param != clean_parameter:
+                raise ValueError(
+                    f"setting {setting_id} is parameter {definition.param}, not {clean_parameter}"
+                )
+            if definition.min_value is not None and value < definition.min_value:
+                raise ValueError(
+                    f"value {value} is below the device-declared minimum {definition.min_value}"
+                )
+            if definition.max_value is not None and value > definition.max_value:
+                raise ValueError(
+                    f"value {value} is above the device-declared maximum {definition.max_value}"
+                )
+        await self.connect()
+        raw = await self._send_json_and_receive_text(
+            {
+                "controller": "system.freshwater",
+                "command": "save",
+                "data": {"parameterId": clean_parameter, "value": value},
+            }
+        )
+        parse_navigator_save_response(raw, "freshwaterSave")
+
+    async def save_dhw_setpoint(self, celsius: float) -> None:
+        """Set the domestic-hot-water setpoint (tap temperature).
+
+        Validates against the device's own declared range (setting 13256 /
+        parameter FW030 on the confirmed firmware) and writes through
+        ``system.freshwater/save``; a rejected write raises.
+        """
+        await self.save_freshwater_parameter(
+            NAVIGATOR10_DHW_SETPOINT_PARAM,
+            celsius,
+            setting_id=NAVIGATOR10_DHW_SETPOINT_SETTING_ID,
+        )
 
     def get_cached_data(self) -> IdmWebData | None:
         """Return the last valid Navigator 10 data snapshot, if one exists."""
