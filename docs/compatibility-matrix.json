@@ -276,6 +276,12 @@
       "hass_integration_version": "pending",
       "status": "api-prepared",
       "notes": "Read-only error-code database (get_error_code_info / ErrorCodeInfo): 2005 vendor codes with German texts, packaged as package data; no changes to registers, wire encoding or write validation."
+    },
+    {
+      "api_version": "2.7.0",
+      "hass_integration_version": "pending",
+      "status": "api-prepared",
+      "notes": "WebSocket read expansion: read_status_overview / read_freshwater_overview with parsers and dataclasses, and live-verified statistic/detail selector constants (statisticType/periodType). No register, wire-encoding or write-validation changes."
     }
   ]
 }

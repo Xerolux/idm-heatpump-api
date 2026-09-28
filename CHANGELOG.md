@@ -22,6 +22,43 @@ prerelease is `2.0.0b1`, not `2.0.0-beta.1` — see `docs/RELEASE_PROCESS.md`.
 Sections up to `1.0.3` are German; they stay as published, because a released
 changelog is history. Everything from `2.0.0b1` on is English.
 
+## [2.7.0] - Unreleased
+
+### Added (tooling)
+
+- `scripts/ws_capture.py`: a logging WebSocket proxy for maintainer capture
+  sessions (WebSocket-first roadmap, Phase 3). Pure standard library, no
+  dependencies; relays every frame between the browser and the controller
+  into a JSONL file with the PIN redacted (it lives only in the handshake
+  URL). Reads HTTP heads byte-wise so the controller's first
+  `{"authorized": true}` frame — which arrives in the same TCP segment as
+  the 101 response — is never swallowed. Live-verified read-only against a
+  Navigator 10 through the API's own web client. Companion wiki section on
+  the protocol page (EN + DE) documents the capture procedure and the
+  sanitization rules.
+
+### Added
+
+- **Navigator 10 WebSocket read expansion** (live-verified on jsonVersion 11,
+  September 2026, strictly read-only):
+  - `read_status_overview()` / `parse_navigator_status_response()` /
+    `IdmWebStatus`: the `status/overview` frame with `jsonVersion`, active
+    `userlevel`, language, notification count, controller clock (`timestamp`,
+    epoch milliseconds), frost-protection flag and network flag. Every field
+    parses defensively; absent keys stay `None`.
+  - `read_freshwater_overview()` / `parse_navigator_freshwater_response()` /
+    `IdmWebFreshwater`: the `system.freshwater/overview` frame with the DHW
+    circulation-pump state, the numeric status info, the DHW system mode and
+    the two tank temperatures (as `IdmWebValue`, `°C`).
+  - `NAVIGATOR10_STATISTIC_*` constants: the `statisticType` selector values
+    (0 heat-pump runtimes, 2 bivalence runtime, 3 EM heat pump, 4 EM heating
+    element, 5 energy flow, 6 heat quantities; 1 is answered "not available")
+    and the `periodType` aggregation values (0 daily rows, 1 today, 7 lifetime
+    totals), so consumers no longer hardcode unverified numbers.
+
+No register, wire-encoding or write-validation changes. The web clients stay
+read-only by design.
+
 ## [2.6.0] - 2026-09-27
 
 ### Added

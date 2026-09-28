@@ -75,6 +75,34 @@ _NAVIGATOR10_HOME_REQUEST = {
     "command": "detail",
 }
 
+_NAVIGATOR10_STATUS_REQUEST = {
+    "controller": "status",
+    "command": "overview",
+}
+
+_NAVIGATOR10_FRESHWATER_REQUEST = {
+    "controller": "system.freshwater",
+    "command": "overview",
+}
+
+# Navigator 10 statistic/detail selectors, verified against a live controller
+# (jsonVersion 11, September 2026). ``statisticType`` selects the value block:
+# 0 heat-pump runtimes (heating / DHW "priority" / defrost), 2 second-stage
+# bivalence runtime, 3 energy-management heat pump, 4 energy-management
+# heating element, 5 energy flow, 6 heat quantities (heating / DHW). Type 1
+# was reported by the web UI analysis but the controller answers "not
+# available" on this firmware. ``periodType`` selects the aggregation: 0 the
+# daily history rows, 1 today plus the key dictionary, 7 lifetime totals.
+NAVIGATOR10_STATISTIC_RUNTIME_HEATPUMP = 0
+NAVIGATOR10_STATISTIC_RUNTIME_BIVALENCE = 2
+NAVIGATOR10_STATISTIC_EMHP = 3
+NAVIGATOR10_STATISTIC_EMEH = 4
+NAVIGATOR10_STATISTIC_ENERGY_FLOW = 5
+NAVIGATOR10_STATISTIC_HEAT_QUANTITIES = 6
+NAVIGATOR10_STATISTIC_PERIOD_DAILY = 0
+NAVIGATOR10_STATISTIC_PERIOD_TODAY = 1
+NAVIGATOR10_STATISTIC_PERIOD_TOTAL = 7
+
 
 def _parse_auth_response(text: str) -> tuple[bool, bool | None]:
     """Parse a Navigator 10 auth response once.
@@ -822,6 +850,14 @@ def parse_navigator_statistic_response(
                 name = f"{prefix}_current_year_{key}"
                 values[name] = IdmWebValue(name=name, value=str(value), raw_key=key)
 
+    today = data.get("today")
+    if isinstance(today, dict):
+        for key, value in today.items():
+            if key in {"date", "idx", "typeDict", "groupDict"}:
+                continue
+            name = f"{prefix}_today_{key}"
+            values[name] = IdmWebValue(name=name, value=str(value), raw_key=key)
+
     return values
 
 
@@ -1049,6 +1085,162 @@ def parse_navigator_home_response(
         demand_reasons=tuple(demand_reasons),
         pv_power=pv_power,
         grid_power=grid_power,
+        raw_response=raw_response if include_raw else None,
+    )
+
+
+@dataclass(frozen=True)
+class IdmWebStatus:
+    """Read-only Navigator 10 status/overview snapshot.
+
+    The frame the web UI consults for connection-level facts: the firmware's
+    JSON protocol version, the active user level, the controller clock and the
+    frost-protection flag. Fields the firmware does not deliver stay ``None``.
+    """
+
+    json_version: int | None = None
+    userlevel: int | None = None
+    language: str | None = None
+    notification_count: int | None = None
+    timestamp_ms: int | None = None
+    frost_protection_active: bool | None = None
+    network: bool | None = None
+    authentication_enabled: bool | None = None
+    raw_response: str | None = None
+
+
+def _optional_int(value: object) -> int | None:
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    return None
+
+
+def _optional_bool(value: object) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    return None
+
+
+def _optional_str(value: object) -> str | None:
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
+def parse_navigator_status_response(
+    raw_response: str,
+    *,
+    include_raw: bool = False,
+) -> IdmWebStatus:
+    """Parse a Navigator 10 status/overview response.
+
+    Every field is read defensively: firmwares differ in which keys they
+    deliver, and a support-relevant fact must never turn a whole snapshot
+    unusable.
+    """
+    try:
+        payload = json.loads(raw_response)
+    except json.JSONDecodeError as exc:
+        raise IdmWebResponseError("Navigator 10 status response is not valid JSON") from exc
+
+    if not isinstance(payload, dict):
+        raise IdmWebResponseError("Navigator 10 status response is not a JSON object")
+    status = payload.get("status")
+    if not isinstance(status, dict):
+        raise IdmWebResponseError("Navigator 10 response does not contain a status object")
+
+    frost = status.get("frostProtectionInfo")
+    frost_active = None
+    if isinstance(frost, dict):
+        frost_active = _optional_bool(frost.get("active"))
+
+    return IdmWebStatus(
+        json_version=_optional_int(status.get("jsonVersion")),
+        userlevel=_optional_int(status.get("userlevel")),
+        language=_optional_str(status.get("language")),
+        notification_count=_optional_int(status.get("notificationCount")),
+        timestamp_ms=_optional_int(status.get("timestamp")),
+        frost_protection_active=frost_active,
+        network=_optional_bool(status.get("network")),
+        authentication_enabled=_optional_bool(status.get("authenticationEnabled")),
+        raw_response=raw_response if include_raw else None,
+    )
+
+
+@dataclass(frozen=True)
+class IdmWebFreshwater:
+    """Read-only Navigator 10 system.freshwater/overview snapshot.
+
+    Domestic-hot-water detail the controller renders on its freshwater page:
+    the circulation-pump state, the numeric status info, the DHW system mode
+    and the two tank temperatures as delivered by the web interface.
+    """
+
+    circulation_active: bool | None = None
+    status: int | None = None
+    system_mode: int | None = None
+    temperature_top: IdmWebValue | None = None
+    temperature_bottom: IdmWebValue | None = None
+    raw_response: str | None = None
+
+
+def _parse_freshwater_temperature(value: object, name: str) -> IdmWebValue | None:
+    if value is None:
+        return None
+    try:
+        numeric = float(str(value))
+    except ValueError:
+        numeric = None
+    return IdmWebValue(
+        name=name,
+        value=str(value),
+        raw_key=name,
+        unit="°C",
+        numeric_value=numeric,
+    )
+
+
+def parse_navigator_freshwater_response(
+    raw_response: str,
+    *,
+    include_raw: bool = False,
+) -> IdmWebFreshwater:
+    """Parse a Navigator 10 system.freshwater/overview response."""
+    try:
+        payload = json.loads(raw_response)
+    except json.JSONDecodeError as exc:
+        raise IdmWebResponseError("Navigator 10 freshwater response is not valid JSON") from exc
+
+    if not isinstance(payload, dict):
+        raise IdmWebResponseError("Navigator 10 freshwater response is not a JSON object")
+    freshwater = payload.get("freshwater")
+    if not isinstance(freshwater, dict):
+        raise IdmWebResponseError("Navigator 10 response does not contain a freshwater object")
+
+    circulation = freshwater.get("circulation")
+    circulation_active = None
+    if isinstance(circulation, dict):
+        circulation_active = _optional_bool(circulation.get("active"))
+    status_info = freshwater.get("statusInfo")
+    status = None
+    if isinstance(status_info, dict):
+        status = _optional_int(status_info.get("status"))
+    temperatures = freshwater.get("temperatures")
+
+    return IdmWebFreshwater(
+        circulation_active=circulation_active,
+        status=status,
+        system_mode=_optional_int(freshwater.get("systemMode")),
+        temperature_top=(
+            _parse_freshwater_temperature(temperatures.get("top"), "freshwater_temp_top")
+            if isinstance(temperatures, dict)
+            else None
+        ),
+        temperature_bottom=(
+            _parse_freshwater_temperature(temperatures.get("bottom"), "freshwater_temp_bottom")
+            if isinstance(temperatures, dict)
+            else None
+        ),
         raw_response=raw_response if include_raw else None,
     )
 
@@ -1314,6 +1506,32 @@ class IdmNavigator10WebClient:
         detail = parse_navigator_home_response(raw, include_raw=include_raw)
         self._last_success_monotonic = time.monotonic()
         return detail
+
+    async def read_status_overview(self, *, include_raw: bool = False) -> IdmWebStatus:
+        """Read the Navigator 10 status/overview frame (jsonVersion, userlevel).
+
+        The frame is connection-level metadata rather than plant telemetry, so
+        callers may read it less often than :meth:`read_data`. Strictly
+        read-only like every client method.
+        """
+        await self.connect()
+        raw = await self._send_json_and_receive_text(_NAVIGATOR10_STATUS_REQUEST)
+        status = parse_navigator_status_response(raw, include_raw=include_raw)
+        self._last_success_monotonic = time.monotonic()
+        return status
+
+    async def read_freshwater_overview(self, *, include_raw: bool = False) -> IdmWebFreshwater:
+        """Read the Navigator 10 domestic-hot-water detail (system.freshwater).
+
+        Covers the circulation state and the numeric status info that the
+        Modbus map does not expose. Sub-controllers of the ``system.*`` family
+        key their responses by their own name, not by ``settingId``.
+        """
+        await self.connect()
+        raw = await self._send_json_and_receive_text(_NAVIGATOR10_FRESHWATER_REQUEST)
+        freshwater = parse_navigator_freshwater_response(raw, include_raw=include_raw)
+        self._last_success_monotonic = time.monotonic()
+        return freshwater
 
     def get_cached_data(self) -> IdmWebData | None:
         """Return the last valid Navigator 10 data snapshot, if one exists."""
