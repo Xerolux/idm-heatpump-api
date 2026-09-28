@@ -75,6 +75,23 @@ _NAVIGATOR10_HOME_REQUEST = {
     "command": "detail",
 }
 
+_NAVIGATOR10_HOME_OVERVIEW_REQUEST = {
+    "controller": "home",
+    "command": "overview",
+}
+
+# Operating-mode values of ``home/save`` — identical to the Modbus system_mode
+# register numbering, confirmed frame by frame on a live Navigator 10
+# (jsonVersion 11, September 2026). ``-1`` (unknown) appears in the device's
+# option list but is never a write target.
+NAVIGATOR10_SYSTEM_MODE_STANDBY = 0
+NAVIGATOR10_SYSTEM_MODE_AUTOMATIC = 1
+NAVIGATOR10_SYSTEM_MODE_AWAY = 2
+NAVIGATOR10_SYSTEM_MODE_HOLIDAY = 3
+NAVIGATOR10_SYSTEM_MODE_HOT_WATER_ONLY = 4
+NAVIGATOR10_SYSTEM_MODE_HEATING_COOLING_ONLY = 5
+NAVIGATOR10_WRITABLE_SYSTEM_MODES = frozenset(range(0, 6))
+
 _NAVIGATOR10_STATUS_REQUEST = {
     "controller": "status",
     "command": "overview",
@@ -1200,6 +1217,119 @@ def _parse_freshwater_temperature(value: object, name: str) -> IdmWebValue | Non
     )
 
 
+@dataclass(frozen=True)
+class IdmWebSystemMode:
+    """The operating-mode widget of the Navigator 10 home screen."""
+
+    value: int | None = None
+    options: tuple[int, ...] = ()
+    cooling_configured: bool | None = None
+
+
+@dataclass(frozen=True)
+class IdmWebHomeOverview:
+    """Read-only Navigator 10 home/overview snapshot.
+
+    The frame renders the home screen tiles; the operating-mode tile carries
+    the current ``systemMode`` and the controller's own list of selectable
+    values. Tiles the firmware omits stay empty.
+    """
+
+    system_mode: IdmWebSystemMode | None = None
+    raw_response: str | None = None
+
+
+def parse_navigator_home_overview_response(
+    raw_response: str,
+    *,
+    include_raw: bool = False,
+) -> IdmWebHomeOverview:
+    """Parse a Navigator 10 home/overview response.
+
+    Walks the payload for the ``systemMode`` block; unknown tile shapes are
+    ignored rather than failing the snapshot.
+    """
+    try:
+        payload = json.loads(raw_response)
+    except json.JSONDecodeError as exc:
+        raise IdmWebResponseError("Navigator 10 home/overview response is not valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise IdmWebResponseError("Navigator 10 home/overview response is not a JSON object")
+
+    system_mode: IdmWebSystemMode | None = None
+
+    def walk(node: object) -> None:
+        nonlocal system_mode
+        if system_mode is not None:
+            return
+        if isinstance(node, dict):
+            mode = node.get("systemMode")
+            if isinstance(mode, dict) and ("value" in mode or "options" in mode):
+                raw_value = mode.get("value")
+                value = (
+                    raw_value
+                    if isinstance(raw_value, int) and not isinstance(raw_value, bool)
+                    else None
+                )
+                raw_options = mode.get("options")
+                options = (
+                    tuple(
+                        item
+                        for item in (
+                            opt.get("value") for opt in raw_options if isinstance(opt, dict)
+                        )
+                        if isinstance(item, int) and not isinstance(item, bool)
+                    )
+                    if isinstance(raw_options, list)
+                    else ()
+                )
+                cooling = mode.get("coolingConfigured")
+                system_mode = IdmWebSystemMode(
+                    value=value,
+                    options=options,
+                    cooling_configured=cooling if isinstance(cooling, bool) else None,
+                )
+                return
+            for child in node.values():
+                walk(child)
+        elif isinstance(node, list):
+            for child in node:
+                walk(child)
+
+    walk(payload)
+    return IdmWebHomeOverview(
+        system_mode=system_mode,
+        raw_response=raw_response if include_raw else None,
+    )
+
+
+def parse_navigator_save_response(raw_response: str, response_key: str) -> str:
+    """Parse a ``<controller>Save`` answer and return the success note text.
+
+    Every write is answered with exactly one frame keyed by the controller
+    name plus ``Save`` carrying a ``note`` object (capture-confirmed
+    2026-09-28). The note types follow the read-side convention, so a
+    rejected write raises :class:`IdmWebResponseError` and can never be
+    mistaken for a confirmed one.
+    """
+    try:
+        payload = json.loads(raw_response)
+    except json.JSONDecodeError as exc:
+        raise IdmWebResponseError("Navigator 10 save response is not valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise IdmWebResponseError("Navigator 10 save response is not a JSON object")
+    block = payload.get(response_key)
+    if not isinstance(block, dict):
+        raise IdmWebResponseError(f"Navigator 10 response does not contain {response_key}")
+    note = block.get("note")
+    note_type = note.get("type") if isinstance(note, dict) else None
+    note_text = note.get("text") if isinstance(note, dict) else None
+    if note_type != "success":
+        detail = note_text if isinstance(note_text, str) and note_text else str(note_type)
+        raise IdmWebResponseError(f"Navigator 10 rejected the write: {detail}")
+    return note_text if isinstance(note_text, str) and note_text else "success"
+
+
 def parse_navigator_freshwater_response(
     raw_response: str,
     *,
@@ -1532,6 +1662,74 @@ class IdmNavigator10WebClient:
         freshwater = parse_navigator_freshwater_response(raw, include_raw=include_raw)
         self._last_success_monotonic = time.monotonic()
         return freshwater
+
+    async def read_home_overview(self, *, include_raw: bool = False) -> IdmWebHomeOverview:
+        """Read the Navigator 10 home screen overview (operating mode state).
+
+        The frame carries the ``systemMode`` tile: the current operating mode
+        and the controller's own selectable values — the numbering matches
+        the Modbus ``system_mode`` register.
+        """
+        await self.connect()
+        raw = await self._send_json_and_receive_text(_NAVIGATOR10_HOME_OVERVIEW_REQUEST)
+        overview = parse_navigator_home_overview_response(raw, include_raw=include_raw)
+        self._last_success_monotonic = time.monotonic()
+        return overview
+
+    async def set_system_mode(self, mode: int) -> None:
+        """Set the operating mode through the local web interface.
+
+        Explicitly a write, on an otherwise read-only client: nothing calls
+        it unless the consumer asks for it. The values are the Modbus
+        ``system_mode`` numbering (0 standby, 1 automatic, 2 away, 3 holiday,
+        4 hot-water-only, 5 heating/cooling-only); ``-1`` (unknown) is not
+        writable. The answer frame must confirm with a success note — a
+        rejected write raises :class:`IdmWebResponseError`.
+        """
+        if (
+            isinstance(mode, bool)
+            or not isinstance(mode, int)
+            or mode not in NAVIGATOR10_WRITABLE_SYSTEM_MODES
+        ):
+            raise ValueError(
+                f"mode must be one of {sorted(NAVIGATOR10_WRITABLE_SYSTEM_MODES)}, got {mode!r}"
+            )
+        await self.connect()
+        raw = await self._send_json_and_receive_text(
+            {
+                "controller": "home",
+                "command": "save",
+                "data": {"systemMode": {"value": mode}},
+            }
+        )
+        parse_navigator_save_response(raw, "homeSave")
+
+    async def acknowledge_all_notifications(self) -> None:
+        """Acknowledge every active Navigator message (``quitAll``)."""
+        await self.connect()
+        raw = await self._send_json_and_receive_text(
+            {
+                "controller": "notification",
+                "command": "save",
+                "data": {"quitAll": True},
+            }
+        )
+        parse_navigator_save_response(raw, "notificationSave")
+
+    async def acknowledge_notification(self, code: str, *, remind_me_later: bool = False) -> None:
+        """Acknowledge one Navigator message by its code."""
+        clean_code = str(code).strip()
+        if not clean_code:
+            raise ValueError("code must not be empty")
+        await self.connect()
+        raw = await self._send_json_and_receive_text(
+            {
+                "controller": "notification",
+                "command": "save",
+                "data": {"code": clean_code, "remindMeLater": bool(remind_me_later)},
+            }
+        )
+        parse_navigator_save_response(raw, "notificationSave")
 
     def get_cached_data(self) -> IdmWebData | None:
         """Return the last valid Navigator 10 data snapshot, if one exists."""

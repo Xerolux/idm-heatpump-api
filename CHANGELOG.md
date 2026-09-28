@@ -22,6 +22,30 @@ prerelease is `2.0.0b1`, not `2.0.0-beta.1` — see `docs/RELEASE_PROCESS.md`.
 Sections up to `1.0.3` are German; they stay as published, because a released
 changelog is history. Everything from `2.0.0b1` on is English.
 
+## [2.8.0] - Unreleased
+
+### Added
+
+- **WebSocket writes, slice 1** (Phase 4 of the consumer's WebSocket-first
+  roadmap; payloads and response frames capture-confirmed on 2026-09-28).
+  The Navigator 10 client gains explicit, validated write methods — it stays
+  read-only unless one of them is called:
+  - `set_system_mode(mode)`: operating mode through `home/save`, validated
+    against the Modbus `system_mode` numbering (0 standby, 1 automatic,
+    2 away, 3 holiday, 4 hot-water-only, 5 heating/cooling-only); `-1`
+    (unknown) is not writable. Constants exported as
+    `NAVIGATOR10_SYSTEM_MODE_*` / `NAVIGATOR10_WRITABLE_SYSTEM_MODES`.
+  - `acknowledge_all_notifications()` / `acknowledge_notification(code,
+    remind_me_later=False)`: message acknowledgement through
+    `notification/save` (`quitAll`, or one code).
+  - Every write must be answered by a `<controller>Save` frame with a
+    `success` note; a `danger` note raises `IdmWebResponseError`, so a
+    rejected write can never be mistaken for a confirmed one
+    (`parse_navigator_save_response` is exported for consumers).
+- `read_home_overview()` / `IdmWebHomeOverview` / `IdmWebSystemMode`: the
+  `home/overview` frame's operating-mode tile — current value plus the
+  controller's own selectable values.
+
 ## [2.7.0] - Unreleased
 
 ### Added (tooling)
