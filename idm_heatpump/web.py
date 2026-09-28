@@ -850,6 +850,14 @@ def parse_navigator_statistic_response(
                 name = f"{prefix}_current_year_{key}"
                 values[name] = IdmWebValue(name=name, value=str(value), raw_key=key)
 
+    today = data.get("today")
+    if isinstance(today, dict):
+        for key, value in today.items():
+            if key in {"date", "idx", "typeDict", "groupDict"}:
+                continue
+            name = f"{prefix}_today_{key}"
+            values[name] = IdmWebValue(name=name, value=str(value), raw_key=key)
+
     return values
 
 

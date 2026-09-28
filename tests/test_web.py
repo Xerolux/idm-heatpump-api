@@ -174,6 +174,25 @@ def test_parse_navigator_setting_response_rejects_invalid_json() -> None:
         parse_navigator_setting_response("not json")
 
 
+def test_parse_navigator_statistic_response_extracts_today_values() -> None:
+    payload = {
+        "statisticDetail": {
+            "name": "N2_HEATQUANTITIES",
+            "type": 6,
+            "data": {
+                "today": {"heating": 7.15, "priority": 0},
+                "typeDict": {"heating": "N2_HEATING", "priority": "N2_HOTWATER"},
+            },
+        }
+    }
+
+    values = parse_navigator_statistic_response(json.dumps(payload), "hq")
+
+    assert values["hq_today_heating"].value == "7.15"
+    assert values["hq_today_priority"].value == "0"
+    assert "hq_today_typeDict" not in values
+
+
 def test_parse_navigator_statistic_response_extracts_total_and_latest_year() -> None:
     raw = json.dumps(
         {
