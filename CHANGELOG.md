@@ -24,6 +24,19 @@ changelog is history. Everything from `2.0.0b1` on is English.
 
 ## [2.7.0] - Unreleased
 
+### Added (tooling)
+
+- `scripts/ws_capture.py`: a logging WebSocket proxy for maintainer capture
+  sessions (WebSocket-first roadmap, Phase 3). Pure standard library, no
+  dependencies; relays every frame between the browser and the controller
+  into a JSONL file with the PIN redacted (it lives only in the handshake
+  URL). Reads HTTP heads byte-wise so the controller's first
+  `{"authorized": true}` frame — which arrives in the same TCP segment as
+  the 101 response — is never swallowed. Live-verified read-only against a
+  Navigator 10 through the API's own web client. Companion wiki section on
+  the protocol page (EN + DE) documents the capture procedure and the
+  sanitization rules.
+
 ### Added
 
 - **Navigator 10 WebSocket read expansion** (live-verified on jsonVersion 11,
