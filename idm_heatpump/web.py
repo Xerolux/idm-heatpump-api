@@ -1385,6 +1385,7 @@ class IdmWebHeatingCircuit:
     setpoint_normal: IdmWebHeatingCircuitValue | None = None
     setpoint_eco: IdmWebHeatingCircuitValue | None = None
     room_temperature: float | None = None
+    flow_setpoint: float | None = None
     pump_active: bool | None = None
     available_circuits: tuple[IdmWebHeatingCircuitRef, ...] = ()
     raw_response: str | None = None
@@ -1455,6 +1456,17 @@ def parse_navigator_heatingcircuit_response(
             setpoint_normal = _parse_hc_value(heating.get("normal"))
             setpoint_eco = _parse_hc_value(heating.get("eco"))
 
+    flow_setpoint: float | None = None
+    if isinstance(temperatures, dict):
+        raw_set = temperatures.get("set")
+        if isinstance(raw_set, (int, float)) and not isinstance(raw_set, bool):
+            flow_setpoint = float(raw_set)
+        elif isinstance(raw_set, str):
+            try:
+                flow_setpoint = float(raw_set)
+            except ValueError:
+                flow_setpoint = None
+
     room = detail.get("room")
     room_temperature: float | None = None
     if isinstance(room, dict):
@@ -1500,6 +1512,7 @@ def parse_navigator_heatingcircuit_response(
         setpoint_normal=setpoint_normal,
         setpoint_eco=setpoint_eco,
         room_temperature=room_temperature,
+        flow_setpoint=flow_setpoint,
         pump_active=pump if isinstance(pump, bool) else None,
         available_circuits=available_circuits,
         raw_response=raw_response if include_raw else None,
