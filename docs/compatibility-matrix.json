@@ -318,6 +318,12 @@
       "hass_integration_version": "pending",
       "status": "api-prepared",
       "notes": "Fixture scrub: documentation addresses instead of live plant values in tests and tool examples."
+    },
+    {
+      "api_version": "2.13.0",
+      "hass_integration_version": "0.20.0-b17",
+      "status": "tested",
+      "notes": "Navigator 1.x coil rework (idm-heatpump-hass #319): c3003 Vorrangladung becomes a write-only command, momentary demand coils c3001/c3002 leave the map."
     }
   ]
 }
