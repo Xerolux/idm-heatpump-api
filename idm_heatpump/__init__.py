@@ -89,6 +89,7 @@ from .transport import (
     quiet_pymodbus_logging,
 )
 from .web import (
+    NAVIGATOR10_DATETIME_SETTING_ID,
     NAVIGATOR10_DHW_DEMAND_REASON_BITS,
     NAVIGATOR10_DHW_SETPOINT_PARAM,
     NAVIGATOR10_DHW_SETPOINT_SETTING_ID,
@@ -150,6 +151,7 @@ from .web import (
     create_optional_navigator10_web_client,
     create_optional_navigator20_web_client,
     decode_navigator10_demand_reason,
+    parse_navigator20_statistics_response,
     parse_navigator_freshwater_response,
     parse_navigator_heatingcircuit_response,
     parse_navigator_home_overview_response,
@@ -280,6 +282,8 @@ __all__ = [
     "NAVIGATOR10_SYSTEM_MODE_STANDBY",
     "NAVIGATOR10_WRITABLE_SYSTEM_MODES",
     "NAVIGATOR10_DHW_SETPOINT_PARAM",
+    "NAVIGATOR10_DATETIME_SETTING_ID",
+    "parse_navigator20_statistics_response",
     "NAVIGATOR10_DHW_SETPOINT_SETTING_ID",
     "parse_navigator_home_overview_response",
     "parse_navigator_setting_parameter",

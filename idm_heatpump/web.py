@@ -10,6 +10,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from html import unescape
 from html.parser import HTMLParser
 from types import TracebackType
@@ -52,6 +53,30 @@ DEFAULT_NAVIGATOR20_PATHS = (
     "/data/status.php",
     "/data/values.php",
 )
+
+# Navigator 2.0 statistics pages: one URL per statistics type (runtime,
+# generated heat, electrical energy consumption). The pages answer with JSON
+# carrying a unitTotal scale and a localized category list.
+NAVIGATOR20_STATISTICS_PATHS: tuple[tuple[str, str], ...] = (
+    ("runtime", "/data/statistics.php?type=heatpump"),
+    ("genheat", "/data/statistics.php?type=amountofheat"),
+    ("elcons", "/data/statistics.php?type=baenergyhp"),
+)
+
+# Localized category names of the statistics JSON (confirmed German and
+# English firmwares); mapped onto the stable English slugs.
+_STATISTICS_CATEGORY_NAMES: dict[str, str] = {
+    "heizen": "heating",
+    "kühlen": "cooling",
+    "kühlung": "cooling",
+    "warmwasser": "hotwater",
+    "abtauung": "defrost",
+    "heating": "heating",
+    "cooling": "cooling",
+    "hot water": "hotwater",
+    "domestic hot water": "hotwater",
+    "defrost": "defrost",
+}
 
 _NAVIGATOR10_SETTING_REQUEST = {
     "controller": "setting",
@@ -98,6 +123,7 @@ NAVIGATOR10_WRITABLE_SYSTEM_MODES = frozenset(range(0, 6))
 # itself (30..60 degrees Celsius in increments of 0.5 there) and the write is
 # validated against exactly that declaration.
 NAVIGATOR10_DHW_SETPOINT_SETTING_ID = "13256"
+NAVIGATOR10_DATETIME_SETTING_ID = "4537"
 NAVIGATOR10_DHW_SETPOINT_PARAM = "FW030"
 
 _NAVIGATOR10_STATUS_REQUEST = {
@@ -2065,6 +2091,26 @@ class IdmNavigator10WebClient:
             setting_id=NAVIGATOR10_DHW_SETPOINT_SETTING_ID,
         )
 
+    async def set_datetime(self, value: datetime) -> None:
+        """Set the controller clock through the local web interface.
+
+        Capture-confirmed on a live Navigator 10: setting item 4537
+        (``N2_SETDATETIME``, type ``setdt``) written through
+        ``setting/save`` with the value in ISO-8601 form including the
+        millisecond ``.000Z`` suffix the interface submits.
+        """
+        if not isinstance(value, datetime):
+            raise ValueError("value must be a datetime")
+        await self.connect()
+        raw = await self._send_json_and_receive_text(
+            {
+                "controller": "setting",
+                "command": "save",
+                "data": {"settingId": NAVIGATOR10_DATETIME_SETTING_ID, "value": value.isoformat()},
+            }
+        )
+        parse_navigator_save_response(raw, "settingSave")
+
     async def read_heatingcircuit(self, hc_id: str) -> IdmWebHeatingCircuit:
         """Read one heating circuit's state through ``system.heatingcircuit``.
 
@@ -2229,6 +2275,63 @@ class IdmNavigator10WebClient:
         if str(message_type) in {"258", "ERROR", "WSMsgType.ERROR"}:
             return True
         return _AIOHTTP_WS_ERROR is not None and bool(message_type == _AIOHTTP_WS_ERROR)
+
+
+def parse_navigator20_statistics_response(
+    raw_response: str, stat_type: str
+) -> dict[str, IdmWebValue]:
+    """Parse one Navigator 2.0 ``statistics.php`` JSON answer.
+
+    The page carries a ``unitTotal`` scale (Wh/kWh/MWh/GWh, or h/min for
+    runtime) and a localized ``total`` list by category. Values are
+    normalized to kWh (energy) or hours (runtime) and keyed
+    ``stat_<type>_total_<category>``.
+    """
+    try:
+        payload = json.loads(raw_response)
+    except json.JSONDecodeError as exc:
+        raise IdmWebResponseError("Navigator 2.0 statistics response is not valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise IdmWebResponseError("Navigator 2.0 statistics response is not a JSON object")
+
+    unit = payload.get("unitTotal")
+    factor = 1.0
+    if isinstance(unit, str):
+        unit_clean = unit.strip().strip('",')
+        factors = {
+            "Wh": 0.001,
+            "kWh": 1.0,
+            "MWh": 1000.0,
+            "GWh": 1000000.0,
+            "h": 1.0,
+            "min": 1.0 / 60.0,
+        }
+        factor = factors.get(unit_clean, 1.0)
+
+    values: dict[str, IdmWebValue] = {}
+    total = payload.get("total")
+    if not isinstance(total, list):
+        return values
+    for entry in total:
+        if not isinstance(entry, dict):
+            continue
+        raw_name = entry.get("name")
+        raw_value = entry.get("value")
+        if not isinstance(raw_name, str) or not isinstance(raw_value, (int, float)):
+            continue
+        category = _STATISTICS_CATEGORY_NAMES.get(raw_name.strip().casefold())
+        if category is None:
+            continue
+        value = float(raw_value) * factor
+        name = f"stat_{stat_type}_total_{category}"
+        values[name] = IdmWebValue(
+            name=name,
+            value=f"{value:g}",
+            raw_key=raw_name,
+            unit="h" if stat_type == "runtime" else "kWh",
+            numeric_value=value,
+        )
+    return values
 
 
 class IdmNavigator20WebClient:
@@ -2427,6 +2530,76 @@ class IdmNavigator20WebClient:
     async def read_extra_data(self) -> dict[str, Any]:
         data = await self.read_data()
         return data.simple_values
+
+    async def read_statistics(self, *, include_raw: bool = False) -> IdmWebData:
+        """Read the Navigator 2.0 statistics pages (runtime, heat, energy).
+
+        Fetches ``/data/statistics.php`` for the runtime, generated-heat and
+        electrical-energy types and normalizes the totals to hours/kWh. Pages
+        a firmware does not answer are skipped; an empty result raises only
+        when no page answered at all.
+        """
+        await self.login()
+        values: dict[str, IdmWebValue] = {}
+        answered = 0
+        for stat_type, path in NAVIGATOR20_STATISTICS_PATHS:
+            try:
+                raw = await self._request_text("GET", path)
+            except IdmWebError:
+                _LOGGER.debug("Navigator 2.0 statistics page %s unavailable", path)
+                continue
+            answered += 1
+            try:
+                values.update(parse_navigator20_statistics_response(raw, stat_type))
+            except IdmWebResponseError:
+                _LOGGER.debug("Navigator 2.0 statistics page %s unparseable", path, exc_info=True)
+        if not answered:
+            raise IdmWebResponseError("Navigator 2.0 answered none of the statistics pages")
+        data = IdmWebData(model="Navigator 2.0 Web", values=values)
+        self._last_success_monotonic = time.monotonic()
+        return data
+
+    async def set_datetime(self, value: datetime) -> None:
+        """Set the controller clock through the local settings page.
+
+        The interface expects the ``SSETDATETIME`` settings item as the PUT
+        body, with the value in ISO-8601 form — the same shape the settings
+        page submits for its date/time editor.
+        """
+        if not isinstance(value, datetime):
+            raise ValueError("value must be a datetime")
+        await self.login()
+        if self._session is None:  # pragma: no cover - login() guarantees a session
+            raise IdmWebResponseError("Navigator 2.0 HTTP session is not connected")
+        payload = (
+            '{"edesc":"_SETDATETIME","id":"SSETDATETIME","index":3,'
+            '"name":"Date/time","type":"setdt","value":"' + value.isoformat() + '"}'
+        )
+        headers = {"Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest"}
+        if self._csrf_token:
+            headers["CSRF-Token"] = self._csrf_token
+            headers["X-CSRF-Token"] = self._csrf_token
+        url = f"http://{self._url_host}/index.php"
+        try:
+            async with self._session.put(
+                url, data=payload.encode("utf-8"), headers=headers, timeout=self._timeout
+            ) as response:
+                text = str(await response.text())
+                if response.status in (401, 403):
+                    raise IdmWebPinRejectedError("Navigator 2.0 rejected the PIN or session")
+                if "invalid csrf token" in text.lower():
+                    raise IdmWebCsrfError("Navigator 2.0 CSRF token was rejected")
+                if response.status != 200:
+                    raise IdmWebResponseError(
+                        f"Navigator 2.0 clock setting returned HTTP {response.status}"
+                    )
+        except builtins.TimeoutError as exc:
+            raise IdmWebTimeoutError("Navigator 2.0 clock setting timed out") from exc
+        except _NAV2_TRANSPORT_ERRORS as exc:
+            raise IdmWebConnectionError(
+                f"Navigator 2.0 clock setting failed: {type(exc).__name__}"
+            ) from exc
+        self._last_success_monotonic = time.monotonic()
 
     def get_cached_data(self) -> IdmWebData | None:
         """Return the last valid Navigator 2.0 web data snapshot, if one exists."""
