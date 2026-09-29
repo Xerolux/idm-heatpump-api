@@ -136,6 +136,32 @@ _NAVIGATOR10_FRESHWATER_REQUEST = {
     "command": "overview",
 }
 
+# System-level read controllers the SPA uses for the performance page, the
+# weather tile, the iON cloud-optimization status and the energy-flow widget
+# (controller/command pairs capture-confirmed on a live Navigator 10,
+# jsonVersion 11, September 2026). All four are read-only: none of them has
+# a save command in the shipped frontend except ``ion``, whose write side is
+# deliberately not wrapped here.
+_NAVIGATOR10_PERFORMANCE_REQUEST = {
+    "controller": "system.heatpump.performance",
+    "command": "detail",
+}
+
+_NAVIGATOR10_WEATHER_REQUEST = {
+    "controller": "weather",
+    "command": "detail",
+}
+
+_NAVIGATOR10_ION_REQUEST = {
+    "controller": "ion",
+    "command": "overview",
+}
+
+_NAVIGATOR10_ENERGYFLOW_REQUEST = {
+    "controller": "energyflow",
+    "command": "overview",
+}
+
 # Navigator 10 statistic/detail selectors, verified against a live controller
 # (jsonVersion 11, September 2026). ``statisticType`` selects the value block:
 # 0 heat-pump runtimes (heating / DHW "priority" / defrost), 2 second-stage
@@ -1178,6 +1204,20 @@ def _optional_str(value: object) -> str | None:
     return None
 
 
+def _optional_float(value: object) -> float | None:
+    """Accept the controller's mixed numeric spellings (``"0.0"``, ``5.9``, ``0``)."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value.strip())
+        except ValueError:
+            return None
+    return None
+
+
 def parse_navigator_status_response(
     raw_response: str,
     *,
@@ -1677,6 +1717,285 @@ class IdmWebDiagnostics:
     cached: bool = False
 
 
+@dataclass(frozen=True)
+class IdmWebPerformance:
+    """Read-only Navigator 10 system.heatpump.performance/detail snapshot.
+
+    The performance page's live power figures: electrical consumption and
+    source-side (environment) power plus the flow temperature the controller
+    reports for the production side. ``source`` is the controller's own
+    measurement-origin code; fields the firmware omits stay ``None``.
+    """
+
+    consumption_power: float | None = None
+    consumption_source: int | None = None
+    consumption_battery: bool | None = None
+    environment_power: float | None = None
+    environment_source: int | None = None
+    environment_temperature_in: float | None = None
+    production_flow_temperature: float | None = None
+    heating_rod: bool | None = None
+    mode: int | None = None
+    system_mode: int | None = None
+    raw_response: str | None = None
+
+
+def _nested_float(node: object, dict_key: str, value_key: str) -> float | None:
+    if not isinstance(node, dict):
+        return None
+    inner = node.get(dict_key)
+    if not isinstance(inner, dict):
+        return None
+    return _optional_float(inner.get(value_key))
+
+
+def parse_navigator_performance_response(
+    raw_response: str,
+    *,
+    include_raw: bool = False,
+) -> IdmWebPerformance:
+    """Parse a Navigator 10 system.heatpump.performance/detail response.
+
+    Every field is optional on the wire; a frame that lacks the
+    ``performanceDetail`` object entirely is a protocol error.
+    """
+    try:
+        payload = json.loads(raw_response)
+    except json.JSONDecodeError as exc:
+        raise IdmWebResponseError("Navigator 10 performance response is not valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise IdmWebResponseError("Navigator 10 performance response is not a JSON object")
+    detail = payload.get("performanceDetail")
+    if not isinstance(detail, dict):
+        raise IdmWebResponseError(
+            "Navigator 10 response does not contain a performanceDetail object"
+        )
+
+    consumption = detail.get("consumption")
+    environment = detail.get("environment")
+    production = detail.get("production")
+
+    return IdmWebPerformance(
+        consumption_power=(
+            _optional_float(consumption.get("power")) if isinstance(consumption, dict) else None
+        ),
+        consumption_source=(
+            _optional_int(consumption.get("source")) if isinstance(consumption, dict) else None
+        ),
+        consumption_battery=(
+            _optional_bool(consumption.get("battery")) if isinstance(consumption, dict) else None
+        ),
+        environment_power=(
+            _optional_float(environment.get("power")) if isinstance(environment, dict) else None
+        ),
+        environment_source=(
+            _optional_int(environment.get("source")) if isinstance(environment, dict) else None
+        ),
+        environment_temperature_in=_nested_float(environment, "temperatures", "in"),
+        production_flow_temperature=_nested_float(production, "temperatures", "flow"),
+        heating_rod=_optional_bool(detail.get("heatingRod")),
+        mode=_optional_int(detail.get("mode")),
+        system_mode=_optional_int(detail.get("systemMode")),
+        raw_response=raw_response if include_raw else None,
+    )
+
+
+@dataclass(frozen=True)
+class IdmWebWeatherDay:
+    """One day of the Navigator 10 controller-side weather forecast.
+
+    ``sun`` arrives as an integer amount that matches the day's daylight
+    budget in seconds; ``symbol`` is the controller's weather symbol code
+    (``sym_w50``). ``temperature_avg_label`` only exists on ``today`` and is
+    kept as the controller's formatted string (``"14°C/16.0h"``).
+    """
+
+    date: str | None = None
+    day_of_week: str | None = None
+    cloud_cover: float | None = None
+    rain_probability: float | None = None
+    sun_seconds: int | None = None
+    symbol: int | None = None
+    temperature: float | None = None
+    temperature_min: float | None = None
+    temperature_max: float | None = None
+    temperature_avg_label: str | None = None
+    wind_speed_min: float | None = None
+    wind_speed_max: float | None = None
+
+
+@dataclass(frozen=True)
+class IdmWebWeatherDetail:
+    """Read-only Navigator 10 weather/detail snapshot.
+
+    The controller pulls its own forecast (myiDM service) and serves it on
+    the local web interface: ``today`` plus up to six forecast days. Fields
+    the firmware omits stay ``None``; forecast days arrive in
+    ``forecast1``…``forecast6`` order.
+    """
+
+    today: IdmWebWeatherDay | None = None
+    forecasts: tuple[IdmWebWeatherDay, ...] = ()
+    raw_response: str | None = None
+
+
+def _parse_weather_day(node: object) -> IdmWebWeatherDay:
+    if not isinstance(node, dict):
+        return IdmWebWeatherDay()
+    temperature = node.get("temperature")
+    wind = node.get("windSpeed")
+    return IdmWebWeatherDay(
+        date=_optional_str(node.get("date")),
+        day_of_week=_optional_str(node.get("dayofweek")),
+        cloud_cover=_optional_float(node.get("cloudCover")),
+        rain_probability=_optional_float(node.get("rainProbability")),
+        sun_seconds=_optional_int(node.get("sun")),
+        symbol=_optional_int(node.get("sym_w50")),
+        temperature=_optional_float(
+            temperature.get("act") if isinstance(temperature, dict) else None
+        ),
+        temperature_min=_optional_float(
+            temperature.get("min") if isinstance(temperature, dict) else None
+        ),
+        temperature_max=_optional_float(
+            temperature.get("max") if isinstance(temperature, dict) else None
+        ),
+        temperature_avg_label=_optional_str(
+            temperature.get("avg") if isinstance(temperature, dict) else None
+        ),
+        wind_speed_min=_optional_float(wind.get("min") if isinstance(wind, dict) else None),
+        wind_speed_max=_optional_float(wind.get("max") if isinstance(wind, dict) else None),
+    )
+
+
+def parse_navigator_weather_response(
+    raw_response: str,
+    *,
+    include_raw: bool = False,
+) -> IdmWebWeatherDetail:
+    """Parse a Navigator 10 weather/detail response.
+
+    A frame without the ``weatherDetail`` object is a protocol error; missing
+    individual days are simply absent from ``forecasts``.
+    """
+    try:
+        payload = json.loads(raw_response)
+    except json.JSONDecodeError as exc:
+        raise IdmWebResponseError("Navigator 10 weather response is not valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise IdmWebResponseError("Navigator 10 weather response is not a JSON object")
+    detail = payload.get("weatherDetail")
+    if not isinstance(detail, dict):
+        raise IdmWebResponseError("Navigator 10 response does not contain a weatherDetail object")
+
+    forecasts = []
+    for index in range(1, 7):
+        day_node = detail.get(f"forecast{index}")
+        if day_node is None:
+            continue
+        forecasts.append(_parse_weather_day(day_node))
+
+    today_node = detail.get("today")
+    return IdmWebWeatherDetail(
+        today=_parse_weather_day(today_node) if today_node is not None else None,
+        forecasts=tuple(forecasts),
+        raw_response=raw_response if include_raw else None,
+    )
+
+
+@dataclass(frozen=True)
+class IdmWebIon:
+    """Read-only Navigator 10 ion/overview snapshot.
+
+    iON is IDM's cloud energy-optimization subscription. The frame reports
+    whether optimization is currently steering the plant, the state of the
+    enable setting (``CE001`` chooselist on the captured firmware) and the
+    subscription status (``-1`` observed while not subscribed).
+    """
+
+    active: bool | None = None
+    enabled_setting_id: str | None = None
+    enabled_value: int | None = None
+    subscription_status: int | None = None
+    raw_response: str | None = None
+
+
+def parse_navigator_ion_response(
+    raw_response: str,
+    *,
+    include_raw: bool = False,
+) -> IdmWebIon:
+    """Parse a Navigator 10 ion/overview response."""
+    try:
+        payload = json.loads(raw_response)
+    except json.JSONDecodeError as exc:
+        raise IdmWebResponseError("Navigator 10 ion response is not valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise IdmWebResponseError("Navigator 10 ion response is not a JSON object")
+    ion = payload.get("ion")
+    if not isinstance(ion, dict):
+        raise IdmWebResponseError("Navigator 10 response does not contain an ion object")
+
+    enabled = ion.get("enabled")
+    return IdmWebIon(
+        active=_optional_bool(ion.get("active")),
+        enabled_setting_id=_optional_str(enabled.get("id")) if isinstance(enabled, dict) else None,
+        enabled_value=_optional_int(enabled.get("value")) if isinstance(enabled, dict) else None,
+        subscription_status=_optional_int(ion.get("ionSubscriptionStatus")),
+        raw_response=raw_response if include_raw else None,
+    )
+
+
+@dataclass(frozen=True)
+class IdmWebEnergyflow:
+    """Read-only Navigator 10 energyflow/overview snapshot.
+
+    The energy-flow widget's instantaneous powers. Firmware
+    ``T_NAV10_20.24-1580`` removed the ``house`` channel from this frame, so
+    ``house_power`` stays ``None`` there and is only populated on older
+    firmwares that still deliver it.
+    """
+
+    grid_power: float | None = None
+    pv_power: float | None = None
+    house_power: float | None = None
+    signal: int | None = None
+    type: int | None = None
+    raw_response: str | None = None
+
+
+def parse_navigator_energyflow_response(
+    raw_response: str,
+    *,
+    include_raw: bool = False,
+) -> IdmWebEnergyflow:
+    """Parse a Navigator 10 energyflow/overview response."""
+    try:
+        payload = json.loads(raw_response)
+    except json.JSONDecodeError as exc:
+        raise IdmWebResponseError("Navigator 10 energyflow response is not valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise IdmWebResponseError("Navigator 10 energyflow response is not a JSON object")
+    flow = payload.get("energyflow")
+    if not isinstance(flow, dict):
+        raise IdmWebResponseError("Navigator 10 response does not contain an energyflow object")
+
+    def channel_power(name: str) -> float | None:
+        node = flow.get(name)
+        if not isinstance(node, dict):
+            return None
+        return _optional_float(node.get("value"))
+
+    return IdmWebEnergyflow(
+        grid_power=channel_power("grid"),
+        pv_power=channel_power("pv"),
+        house_power=channel_power("house"),
+        signal=_optional_int(flow.get("signal")),
+        type=_optional_int(flow.get("type")),
+        raw_response=raw_response if include_raw else None,
+    )
+
+
 class IdmNavigator10WebClient:
     """Read-only async client for the Navigator 10 local WebSocket interface."""
 
@@ -1932,6 +2251,58 @@ class IdmNavigator10WebClient:
         status = parse_navigator_status_response(raw, include_raw=include_raw)
         self._last_success_monotonic = time.monotonic()
         return status
+
+    async def read_performance(self, *, include_raw: bool = False) -> IdmWebPerformance:
+        """Read the Navigator 10 performance detail (live power figures).
+
+        ``system.heatpump.performance/detail`` carries the electrical
+        consumption power, the source-side (environment) power and the
+        production flow temperature — the numbers the performance page
+        renders. Read-only like every client method.
+        """
+        await self.connect()
+        raw = await self._send_json_and_receive_text(_NAVIGATOR10_PERFORMANCE_REQUEST)
+        performance = parse_navigator_performance_response(raw, include_raw=include_raw)
+        self._last_success_monotonic = time.monotonic()
+        return performance
+
+    async def read_weather(self, *, include_raw: bool = False) -> IdmWebWeatherDetail:
+        """Read the Navigator 10 controller-side weather forecast.
+
+        The controller pulls its own forecast through the myiDM service and
+        serves it locally: today plus up to six forecast days with
+        temperature, cloud cover, rain probability, sunshine and wind.
+        """
+        await self.connect()
+        raw = await self._send_json_and_receive_text(_NAVIGATOR10_WEATHER_REQUEST)
+        weather = parse_navigator_weather_response(raw, include_raw=include_raw)
+        self._last_success_monotonic = time.monotonic()
+        return weather
+
+    async def read_ion(self, *, include_raw: bool = False) -> IdmWebIon:
+        """Read the Navigator 10 iON cloud-optimization status.
+
+        Reports whether iON is currently steering the plant, the enable
+        setting's state and the subscription status. Strictly read-only: the
+        ``ion/save`` write side is intentionally not wrapped.
+        """
+        await self.connect()
+        raw = await self._send_json_and_receive_text(_NAVIGATOR10_ION_REQUEST)
+        ion = parse_navigator_ion_response(raw, include_raw=include_raw)
+        self._last_success_monotonic = time.monotonic()
+        return ion
+
+    async def read_energyflow(self, *, include_raw: bool = False) -> IdmWebEnergyflow:
+        """Read the Navigator 10 energy-flow widget state (grid/PV power).
+
+        Firmware ``T_NAV10_20.24-1580`` removed the ``house`` channel; the
+        field stays ``None`` there so older firmwares keep working unchanged.
+        """
+        await self.connect()
+        raw = await self._send_json_and_receive_text(_NAVIGATOR10_ENERGYFLOW_REQUEST)
+        energyflow = parse_navigator_energyflow_response(raw, include_raw=include_raw)
+        self._last_success_monotonic = time.monotonic()
+        return energyflow
 
     async def read_freshwater_overview(self, *, include_raw: bool = False) -> IdmWebFreshwater:
         """Read the Navigator 10 domestic-hot-water detail (system.freshwater).
