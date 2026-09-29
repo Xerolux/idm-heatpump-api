@@ -22,6 +22,14 @@ prerelease is `2.0.0b1`, not `2.0.0-beta.1` — see `docs/RELEASE_PROCESS.md`.
 Sections up to `1.0.3` are German; they stay as published, because a released
 changelog is history. Everything from `2.0.0b1` on is English.
 
+## [2.10.1] - 2026-09-29
+
+### Added
+
+- `IdmWebHeatingCircuit.flow_setpoint`: the current flow setpoint of the
+  circuit (`temperatures.set` of the detail frame) — the missing input for
+  the consumer's flow-deviation calculation in web-only operation.
+
 ## [2.10.0] - 2026-09-28
 
 ### Added

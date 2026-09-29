@@ -294,6 +294,12 @@
       "hass_integration_version": "pending",
       "status": "api-prepared",
       "notes": "WebSocket writes slice 3: read_heatingcircuit (full circuit state incl. mode chooselist, normal/eco room setpoints with device-declared ranges, room temperature, pump, available circuits) and save_heatingcircuit_parameter (system.heatingcircuit/save, range-validated)."
+    },
+    {
+      "api_version": "2.10.1",
+      "hass_integration_version": "pending",
+      "status": "api-prepared",
+      "notes": "Additive: IdmWebHeatingCircuit.flow_setpoint (temperatures.set)."
     }
   ]
 }
