@@ -104,7 +104,11 @@ ENERGYFLOW_OVERVIEW = json.dumps(
 
 ENERGYFLOW_WITH_HOUSE = json.dumps(
     {
-        "energyflow": {"grid": {"value": "0.0240"}, "house": {"value": "0.4690"}, "pv": {"value": "0.4930"}},
+        "energyflow": {
+            "grid": {"value": "0.0240"},
+            "house": {"value": "0.4690"},
+            "pv": {"value": "0.4930"},
+        },
     }
 )
 

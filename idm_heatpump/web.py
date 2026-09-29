@@ -1762,9 +1762,7 @@ def parse_navigator_performance_response(
     try:
         payload = json.loads(raw_response)
     except json.JSONDecodeError as exc:
-        raise IdmWebResponseError(
-            "Navigator 10 performance response is not valid JSON"
-        ) from exc
+        raise IdmWebResponseError("Navigator 10 performance response is not valid JSON") from exc
     if not isinstance(payload, dict):
         raise IdmWebResponseError("Navigator 10 performance response is not a JSON object")
     detail = payload.get("performanceDetail")
@@ -1865,12 +1863,8 @@ def _parse_weather_day(node: object) -> IdmWebWeatherDay:
         temperature_avg_label=_optional_str(
             temperature.get("avg") if isinstance(temperature, dict) else None
         ),
-        wind_speed_min=_optional_float(
-            wind.get("min") if isinstance(wind, dict) else None
-        ),
-        wind_speed_max=_optional_float(
-            wind.get("max") if isinstance(wind, dict) else None
-        ),
+        wind_speed_min=_optional_float(wind.get("min") if isinstance(wind, dict) else None),
+        wind_speed_max=_optional_float(wind.get("max") if isinstance(wind, dict) else None),
     )
 
 
@@ -1887,16 +1881,12 @@ def parse_navigator_weather_response(
     try:
         payload = json.loads(raw_response)
     except json.JSONDecodeError as exc:
-        raise IdmWebResponseError(
-            "Navigator 10 weather response is not valid JSON"
-        ) from exc
+        raise IdmWebResponseError("Navigator 10 weather response is not valid JSON") from exc
     if not isinstance(payload, dict):
         raise IdmWebResponseError("Navigator 10 weather response is not a JSON object")
     detail = payload.get("weatherDetail")
     if not isinstance(detail, dict):
-        raise IdmWebResponseError(
-            "Navigator 10 response does not contain a weatherDetail object"
-        )
+        raise IdmWebResponseError("Navigator 10 response does not contain a weatherDetail object")
 
     forecasts = []
     for index in range(1, 7):
@@ -1983,16 +1973,12 @@ def parse_navigator_energyflow_response(
     try:
         payload = json.loads(raw_response)
     except json.JSONDecodeError as exc:
-        raise IdmWebResponseError(
-            "Navigator 10 energyflow response is not valid JSON"
-        ) from exc
+        raise IdmWebResponseError("Navigator 10 energyflow response is not valid JSON") from exc
     if not isinstance(payload, dict):
         raise IdmWebResponseError("Navigator 10 energyflow response is not a JSON object")
     flow = payload.get("energyflow")
     if not isinstance(flow, dict):
-        raise IdmWebResponseError(
-            "Navigator 10 response does not contain an energyflow object"
-        )
+        raise IdmWebResponseError("Navigator 10 response does not contain an energyflow object")
 
     def channel_power(name: str) -> float | None:
         node = flow.get(name)
