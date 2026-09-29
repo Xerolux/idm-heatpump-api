@@ -158,7 +158,7 @@ def test_client_read_home_detail_sends_the_documented_frame() -> None:
             captured.append(payload)
             return frame
 
-    client = _StubClient(host="192.168.178.103", pin="0000")
+    client = _StubClient(host="192.0.2.10", pin="0000")
     detail = asyncio.run(client.read_home_detail())
 
     assert captured == [{"controller": "home", "command": "detail"}]

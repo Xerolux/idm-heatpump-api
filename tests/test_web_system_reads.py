@@ -22,7 +22,7 @@ from idm_heatpump import (
 
 PERFORMANCE_DETAIL = json.dumps(
     {
-        "remoteSessionId": "dfe17e1c97b14ae5883af3b3ea59bf64",
+        "remoteSessionId": "x",
         "performanceDetail": {
             "consumption": {"battery": False, "power": "1.45", "source": 2},
             "environment": {
@@ -40,7 +40,7 @@ PERFORMANCE_DETAIL = json.dumps(
 
 WEATHER_DETAIL = json.dumps(
     {
-        "remoteSessionId": "dfe17e1c97b14ae5883af3b3ea59bf64",
+        "remoteSessionId": "x",
         "weatherDetail": {
             "forecast1": {
                 "cloudCover": 5.940800189971924,
@@ -75,7 +75,7 @@ WEATHER_DETAIL = json.dumps(
 
 ION_OVERVIEW = json.dumps(
     {
-        "remoteSessionId": "dfe17e1c97b14ae5883af3b3ea59bf64",
+        "remoteSessionId": "x",
         "ion": {
             "active": False,
             "enabled": {
@@ -92,7 +92,7 @@ ION_OVERVIEW = json.dumps(
 
 ENERGYFLOW_OVERVIEW = json.dumps(
     {
-        "remoteSessionId": "dfe17e1c97b14ae5883af3b3ea59bf64",
+        "remoteSessionId": "x",
         "energyflow": {
             "grid": {"value": "12.9970"},
             "pv": {"value": "5.6940"},
