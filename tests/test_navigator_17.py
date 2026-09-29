@@ -209,7 +209,7 @@ def test_navigator_17_base_map_is_read_only() -> None:
             assert reg.writable, name
             assert reg.write_class.value != "forbidden", name
             continue
-        if name == "error_acknowledge":
+        if name in ("error_acknowledge", "demand_dhw_17"):
             assert reg.writable, name
             assert reg.write_only, name
             continue
@@ -402,10 +402,11 @@ def test_register_registry_lookups_for_1_7() -> None:
     assert registry.get("system_mode") is None
     assert registry.by_address(1046) is not None
     assert registry.by_address(1392) is None
-    assert registry.by_address(3001, "coil") is not None
-    assert registry.by_address(3001) is None  # coils live in their own namespace
+    assert registry.by_address(3003, "coil") is not None
+    assert registry.by_address(3003) is None  # coils live in their own namespace
+    assert registry.by_address(3001, "coil") is None
     writable = registry.writable()
-    assert set(writable) == set(EXPECTED_HOLDING) | {"error_acknowledge"}
+    assert set(writable) == set(EXPECTED_HOLDING) | {"error_acknowledge", "demand_dhw_17"}
     with_pv = get_register_registry(
         model_info=IdmModelInfo(
             model_name=MODEL_NAVIGATOR_17,
@@ -419,6 +420,7 @@ def test_register_registry_lookups_for_1_7() -> None:
     )
     assert set(with_pv.writable()) == set(EXPECTED_HOLDING) | {
         "error_acknowledge",
+        "demand_dhw_17",
         "pv_surplus",
         "electric_heater_power",
         "pv_production",
@@ -858,16 +860,22 @@ def test_1_7_status_words_carry_documented_ranges() -> None:
 
 EXPECTED_COILS: dict[str, int] = {
     "error_acknowledge": 3000,  # Störungsmeldung quittieren
-    "demand_heating_17": 3001,  # Anforderung Heizen (status, not GLT input)
-    "demand_cooling_17": 3002,  # Anforderung Kühlen
-    "demand_dhw_17": 3003,  # Anforderung Vorrangladung
+    "demand_dhw_17": 3003,  # Anforderung Vorrangladung (momentary command bit)
 }
 
 
 def test_1_7_coil_block_registers() -> None:
     """The coil block maps as COIL/BOOL registers; c3000 is the write-only
     acknowledge (same semantics and name as the shared family's holding
-    register 1999), the Anforderung coils are read-only binary signals."""
+    register 1999) and c3003 is the write-only Vorrangladung command.
+
+    The Anforderung coils c3001/c3002 are momentary command bits, not status
+    signals (issue #319 of idm-heatpump-hass, verified on real 1.7 hardware:
+    the controller executes the request the moment the bit is set and the bit
+    falls back to 0), so they are not mapped at all. c3003 shares the
+    momentary semantics but is documented read/write - it is the 1.x DHW
+    priority-charge request, written ON once by the integration's button and
+    never reset by it."""
     regs = _navigator_17_registers()
     assert set(EXPECTED_COILS) <= set(regs)
 
@@ -879,12 +887,13 @@ def test_1_7_coil_block_registers() -> None:
         assert reg.binary is True, name
         assert reg.size == 1, name
 
-    acknowledge = regs["error_acknowledge"]
-    assert acknowledge.writable is True
-    assert acknowledge.write_only is True
-    for name in ("demand_heating_17", "demand_cooling_17", "demand_dhw_17"):
-        assert regs[name].writable is False, name
-        assert regs[name].write_only is False, name
+    for name in ("error_acknowledge", "demand_dhw_17"):
+        assert regs[name].writable is True, name
+        assert regs[name].write_only is True, name
+
+    # The demand coils are command bits, not readable state.
+    assert "demand_heating_17" not in regs
+    assert "demand_cooling_17" not in regs
 
 
 def test_coil_datatype_is_guarded_to_bool() -> None:
@@ -939,22 +948,42 @@ def test_coils_are_absent_from_the_shared_family_map() -> None:
 
 
 def test_1_7_coil_read_batch_uses_fc01() -> None:
-    """read_batch groups the demand coils into one FC01 request and decodes
-    them as booleans."""
+    """read_batch groups contiguous coil registers into one FC01 request and
+    decodes them as booleans.
+
+    The 1.x map no longer ships readable coils (its coils are write-only
+    momentary commands), so the batching mechanics are exercised with
+    synthetic coil definitions - a firmware exposing readable coils would go
+    through exactly this path."""
+    from idm_heatpump.client import RegisterDef
+
     fake = FakeModbusTransport(coils={3001: True, 3003: True})
     client = IdmModbusClient("127.0.0.1", transport=fake)
     client.set_model_info(navigator_17_model_info())
 
+    def synthetic_coil(address: int, name: str) -> RegisterDef:
+        return RegisterDef(
+            address=address,
+            datatype=DataType.BOOL,
+            register_type=RegisterType.COIL,
+            binary=True,
+            name=name,
+            source="test",
+            source_version="test",
+            supported_models=(MODEL_NAVIGATOR_17,),
+        )
+
     async def run() -> dict[str, Any]:
         return await client.read_batch(
             [
-                client._get_register_by_key(name)
-                for name in ("demand_heating_17", "demand_cooling_17", "demand_dhw_17")
+                synthetic_coil(3001, "coil_heating"),
+                synthetic_coil(3002, "coil_cooling"),
+                synthetic_coil(3003, "coil_dhw"),
             ]
         )
 
     data = asyncio.run(run())
-    assert data == {"demand_heating_17": True, "demand_cooling_17": False, "demand_dhw_17": True}
+    assert data == {"coil_heating": True, "coil_cooling": False, "coil_dhw": True}
     # One contiguous FC01 request covering 3001-3003, no word reads.
     assert fake.coil_read_calls == [(3001, 3)]
     assert fake.read_calls == []
@@ -1014,13 +1043,24 @@ def test_coil_access_without_transport_support_raises_actionably() -> None:
     assert isinstance(legacy, IdmModbusTransport)
     assert not isinstance(legacy, IdmCoilTransportExtension)
 
+    from idm_heatpump.client import RegisterDef
+
     client = IdmModbusClient("127.0.0.1", transport=legacy)
     client.set_model_info(navigator_17_model_info())
-    demand = client._get_register_by_key("demand_heating_17")
+    readable_coil = RegisterDef(
+        address=3001,
+        datatype=DataType.BOOL,
+        register_type=RegisterType.COIL,
+        binary=True,
+        name="synthetic_coil",
+        source="test",
+        source_version="test",
+        supported_models=(MODEL_NAVIGATOR_17,),
+    )
     acknowledge = client._get_register_by_key("error_acknowledge")
 
     async def run() -> None:
-        await client.read_register(demand)
+        await client.read_register(readable_coil)
 
     with pytest.raises(IdmTransportError, match="IdmCoilTransportExtension"):
         asyncio.run(run())
@@ -1049,12 +1089,14 @@ def test_coil_write_is_safety_validated() -> None:
     client = IdmModbusClient("127.0.0.1", transport=FakeModbusTransport())
     client.set_model_info(navigator_17_model_info())
 
-    # True and 1 are legal boolean coil values and must pass validation.
+    # True and 1 are legal boolean coil values and must pass validation,
+    # on both write-only command coils of the 1.x map.
     client.simulate_write("error_acknowledge", True)
     client.simulate_write("error_acknowledge", 1)
+    client.simulate_write("demand_dhw_17", True)
     with pytest.raises(ValueError):
         client.simulate_write("error_acknowledge", 5)
     with pytest.raises(ValueError):
         client.simulate_write("error_acknowledge", "on")
     with pytest.raises(ValueError):
-        client.simulate_write("demand_heating_17", 1)
+        client.simulate_write("demand_dhw_17", 5)
