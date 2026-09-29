@@ -22,6 +22,29 @@ prerelease is `2.0.0b1`, not `2.0.0-beta.1` — see `docs/RELEASE_PROCESS.md`.
 Sections up to `1.0.3` are German; they stay as published, because a released
 changelog is history. Everything from `2.0.0b1` on is English.
 
+## [2.13.0] - 2026-09-29
+
+### Changed
+
+- **Navigator 1.0/1.7 coil block: the Anforderung coils are momentary command
+  bits, not status signals** (idm-heatpump-hass issue #319, verified on real
+  1.7 hardware): the controller executes a request the moment the bit is set
+  and the bit immediately falls back to 0, so the read-only binary registers
+  `demand_heating_17` (c3001) and `demand_cooling_17` (c3002) are removed
+  from the 1.x map. Requesting heating or cooling is what the operating-mode
+  holding registers are for; the operating state is input register 1501
+  (`hp_operating_mode`).
+
+### Added
+
+- **`demand_dhw_17` (c3003, Anforderung Vorrangladung) becomes a write-only
+  command register.** The official table (ma_de_812049 Rev.1) documents it
+  read/write as the 1.x DHW priority-charge request, and a working FHEM
+  configuration writes it daily. It is now writable and write-only like the
+  acknowledge coil c3000: boolean values are validated as before and reads
+  are rejected like every write-only register. The Home Assistant
+  integration exposes it as a button writing ON exactly once.
+
 ## [2.12.1] - 2026-09-29
 
 ### Fixed

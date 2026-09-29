@@ -1368,9 +1368,10 @@ def _navigator_17_registers(*, has_pv: bool = False) -> dict[str, RegisterDef]:
     family's register names because ranges and semantics are identical —
     the 2.0/10/Pro holding block is the direct successor of this table.
     The FC01/FC05 coil block from 3000 (Störung quittieren, Anforderung
-    Heizen/Kühlen/Vorrangladung) is mapped as COIL registers since 2.5.0;
-    reading and writing them needs a transport implementing
-    IdmCoilTransportExtension. When the detection probe at address 74 responded
+    Vorrangladung) is mapped as write-only COIL commands since 2.5.0
+    (readable status coils were removed in 2.13.0 — they are momentary
+    command bits, not state); reading and writing them needs a transport
+    implementing IdmCoilTransportExtension. When the detection probe at address 74 responded
     (``has_pv``), the post-2016 PV supplement is included: the writable
     PV/energy-management registers (74/76/78/82, mirroring the shared
     family's volatile writes) and the read-only power measurement at 4122.
@@ -1704,30 +1705,29 @@ def _navigator_17_registers(*, has_pv: bool = False) -> dict[str, RegisterDef]:
         )
 
     # FC01/FC05 coil block from 3000 (ma_de_812049 Rev.1): Störungsmeldung
-    # quittieren (3000), Anforderung Heizen (3001), Anforderung Kühlen
-    # (3002), Anforderung Vorrangladung (3003). c3000 deliberately reuses
-    # the shared family's ``error_acknowledge`` name — the action (a
-    # write-only acknowledge pulse) is identical, and consumers (the Home
-    # Assistant acknowledge button) resolve it by name on both families.
-    # The Anforderung coils carry the ``_17`` suffix instead: they read the
-    # controller's live demand status, while the shared family's identically
-    # named 1710-1713 registers are writable GLT demand *inputs* — different
-    # semantics must not share a name. c3003 is documented read/write in the
-    # same table (Vorrangladung anfordern — the 1.x "DHW boost" bit) and a
-    # working FHEM configuration writes it daily (idm-heatpump-hass issue
-    # #319); it stays read-only here until a hardware capture confirms what
-    # writing 0 does to a running demand, because a switch entity would
-    # toggle both directions.
+    # quittieren (3000) and Anforderung Vorrangladung (3003). c3000
+    # deliberately reuses the shared family's ``error_acknowledge`` name —
+    # the action (a write-only acknowledge pulse) is identical, and consumers
+    # (the Home Assistant acknowledge button) resolve it by name on both
+    # families. c3003 carries the ``_17`` suffix instead, because the shared
+    # family's identically named demand registers are writable GLT demand
+    # *inputs* — different semantics must not share a name.
+    #
+    # The coils are momentary command bits, not status signals: the
+    # controller executes a request the moment the bit is set and the bit
+    # immediately falls back to 0 (idm-heatpump-hass issue #319, verified on
+    # real 1.7 hardware). Anforderung Heizen/Kühlen (3001/3002) are therefore
+    # not mapped at all — requesting heating or cooling is what the
+    # operating-mode holding registers are for. c3003 is documented
+    # read/write (Vorrangladung anfordern — the 1.x "DHW boost" bit, written
+    # daily by a working FHEM configuration, idm-heatpump-hass issue #319)
+    # and becomes a write-only command here: the integration's button writes
+    # ON exactly once, and nothing may ever write 0 to a running demand.
     coil_specs: list[tuple[int, str]] = [
         (3000, "error_acknowledge"),
-        (3001, "demand_heating_17"),
-        (3002, "demand_cooling_17"),
         (3003, "demand_dhw_17"),
     ]
     for address, name in coil_specs:
-        write_kwargs: dict[str, Any] = (
-            {"writable": True, "write_only": True} if name == "error_acknowledge" else {}
-        )
         regs[name] = RegisterDef(
             address=address,
             datatype=DataType.BOOL,
@@ -1737,7 +1737,8 @@ def _navigator_17_registers(*, has_pv: bool = False) -> dict[str, RegisterDef]:
             source=NAVIGATOR_17_REGISTER_SOURCE,
             source_version=NAVIGATOR_17_COIL_SOURCE_VERSION,
             supported_models=(MODEL_NAVIGATOR_17,),
-            **write_kwargs,
+            writable=True,
+            write_only=True,
         )
 
     if has_pv:
