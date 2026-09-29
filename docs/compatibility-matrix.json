@@ -300,6 +300,12 @@
       "hass_integration_version": "pending",
       "status": "api-prepared",
       "notes": "Additive: IdmWebHeatingCircuit.flow_setpoint (temperatures.set)."
+    },
+    {
+      "api_version": "2.11.0",
+      "hass_integration_version": "pending",
+      "status": "api-prepared",
+      "notes": "Navigator 2.0 statistics pages (runtime/generated heat/electrical energy as normalized totals) and set_datetime on both web clients (Nav2 HTTP PUT SSETDATETIME, Nav10 setting/save 4537)."
     }
   ]
 }

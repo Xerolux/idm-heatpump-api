@@ -22,6 +22,21 @@ prerelease is `2.0.0b1`, not `2.0.0-beta.1` — see `docs/RELEASE_PROCESS.md`.
 Sections up to `1.0.3` are German; they stay as published, because a released
 changelog is history. Everything from `2.0.0b1` on is English.
 
+## [2.11.0] - 2026-09-29
+
+### Added
+
+- **Navigator 2.0 statistics pages**: `read_statistics()` /
+  `parse_navigator20_statistics_response()` read
+  `/data/statistics.php` for the three statistics types (runtime, generated
+  heat, electrical energy consumption) and normalize the totals to hours or
+  kWh using the page's own `unitTotal` scale. Categories follow the
+  localized names (heating, cooling, hot water, defrost).
+- **Controller clock setting**: `set_datetime(value)` on both web clients —
+  the Navigator 2.0 settings item `SSETDATETIME` via HTTP PUT and the
+  Navigator 10 setting item 4537 (capture-confirmed `setting/save` with an
+  ISO-8601 value).
+
 ## [2.10.1] - 2026-09-29
 
 ### Added
