@@ -22,6 +22,34 @@ prerelease is `2.0.0b1`, not `2.0.0-beta.1` — see `docs/RELEASE_PROCESS.md`.
 Sections up to `1.0.3` are German; they stay as published, because a released
 changelog is history. Everything from `2.0.0b1` on is English.
 
+## [2.12.0] - 2026-09-29
+
+### Added
+
+- **Navigator 10 performance detail**: `read_performance()` /
+  `parse_navigator_performance_response()` expose the live power figures of
+  `system.heatpump.performance/detail` — electrical consumption power,
+  source-side (environment) power and temperatures, the production flow
+  temperature, the heating-rod flag and the performance mode.
+- **Navigator 10 weather forecast**: `read_weather()` /
+  `parse_navigator_weather_response()` expose the controller-side forecast
+  (myiDM service) — today plus up to six forecast days with temperature
+  min/max/act, cloud cover, rain probability, sunshine seconds, weather
+  symbol and wind speed.
+- **Navigator 10 iON status**: `read_ion()` /
+  `parse_navigator_ion_response()` expose the cloud energy-optimization
+  state — active flag, enable setting (`CE001` chooselist) and subscription
+  status. Read-only; the `ion/save` write side is deliberately not wrapped.
+- **Navigator 10 energy flow**: `read_energyflow()` /
+  `parse_navigator_energyflow_response()` expose the energy-flow widget
+  state — grid and PV power plus the signal/type codes. Firmware
+  `T_NAV10_20.24-1580` removed the `house` channel; the field stays `None`
+  there and keeps working on older firmwares.
+
+All controller/command pairs and frame shapes were capture-confirmed on a
+live Navigator 10 (jsonVersion 11, firmware `T_NAV10_20.24-1580`,
+September 2026); the shipped frontend was the source of the protocol map.
+
 ## [2.11.0] - 2026-09-29
 
 ### Added
