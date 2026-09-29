@@ -22,6 +22,16 @@ prerelease is `2.0.0b1`, not `2.0.0-beta.1` — see `docs/RELEASE_PROCESS.md`.
 Sections up to `1.0.3` are German; they stay as published, because a released
 changelog is history. Everything from `2.0.0b1` on is English.
 
+## [2.12.1] - 2026-09-29
+
+### Fixed
+
+- Test fixtures and tool examples no longer contain real plant values: the
+  live host address and web PIN used by the ws-capture tool and its tests,
+  the live host in the home-detail fixture and a captured WebSocket session
+  id in the system-read fixtures are replaced with documentation addresses
+  and placeholder credentials. No functional change.
+
 ## [2.12.0] - 2026-09-29
 
 ### Added

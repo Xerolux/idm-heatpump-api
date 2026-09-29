@@ -13,7 +13,7 @@ that is installed on the machine with browser access.
 
 Usage::
 
-    python scripts/ws_capture.py --host 192.168.178.103 --pin 2634
+    python scripts/ws_capture.py --host 192.0.2.10 --pin 0000
     # then open the Navigator web UI at http://127.0.0.1:61221/
     # (the proxy rewrites the WebSocket URL of the page it serves a redirect
     #  for; simplest manual step: open the UI as usual and re-point its
@@ -279,7 +279,7 @@ def _serve_one_session(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
-        "--host", required=True, help="Navigator host (for example 192.168.178.103)"
+        "--host", required=True, help="Navigator host (for example 192.0.2.10)"
     )
     parser.add_argument("--pin", required=True, help="local web PIN (SYSLPIN); never logged")
     parser.add_argument(

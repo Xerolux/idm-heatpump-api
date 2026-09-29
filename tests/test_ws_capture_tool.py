@@ -57,9 +57,9 @@ def test_accept_key_matches_rfc6455_example() -> None:
 
 def test_logger_redacts_the_pin_and_parses_json(tmp_path: Path) -> None:
     log = tmp_path / "capture.jsonl"
-    logger = FrameLogger(log, redactions=("2634",))
+    logger = FrameLogger(log, redactions=("9999",))
 
-    logger.log("c2s", 1, b'{"controller": "setting", "command": "save", "data": {"pin": "2634"}}')
+    logger.log("c2s", 1, b'{"controller": "setting", "command": "save", "data": {"pin": "9999"}}')
 
     entry = json.loads(log.read_text(encoding="utf-8"))
     assert entry["dir"] == "c2s"

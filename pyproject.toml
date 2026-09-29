@@ -12,7 +12,7 @@ idm_heatpump = ["py.typed", "error_codes.json"]
 
 [project]
 name = "idm-heatpump-api"
-version = "2.12.0"
+version = "2.12.1"
 authors = [
   { name="Basti (Xerolux)", email="git@xerolux.de" },
 ]
