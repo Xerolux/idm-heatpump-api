@@ -49,6 +49,10 @@ jobs:
     if: github.ref == 'refs/heads/main'
     permissions:
       contents: write
+      # Opening and (with RELEASE_TOKEN) auto-merging the version-bump pull
+      # request, and dispatching the PyPI publish.
+      pull-requests: write
+      actions: write
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -264,11 +268,14 @@ jobs:
           print("with [pymodbus] extra: OK")
           PY
 
-      - name: Commit and tag
+      - name: Commit, tag and land the bump
         if: steps.tagcheck.outputs.exists != 'true'
         working-directory: ${{ github.workspace }}
         env:
-          GH_TOKEN: ${{ github.token }}
+          # RELEASE_TOKEN (a PAT with contents and pull-requests write) is
+          # optional: with it the bump pull request behaves like a human's,
+          # CI runs on it and auto-merge finishes the release unattended.
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
         run: |
           NEW="${{ steps.version.outputs.version }}"
           git config user.name "github-actions[bot]"
@@ -281,7 +288,44 @@ jobs:
           fi
           git tag "v${NEW}"
           gh auth setup-git
-          git push origin HEAD:main --tags
+          # The tag is not branch-protected: it goes out directly, and the
+          # GitHub release and the PyPI publish below build from that tree.
+          if ! git push origin "refs/tags/v${NEW}"; then
+            echo "::error::Could not push tag v${NEW}"
+            exit 1
+          fi
+          # Required status checks on main refuse every push a workflow can
+          # make - the built-in token can never satisfy them, and
+          # enforce_admins extends that to maintainer tokens. Try the direct
+          # landing anyway (it works the day github-actions[bot] becomes an
+          # allowed push actor of the protection rule); otherwise carry the
+          # bump through a pull request, exactly like dependency-update.yml
+          # in idm-heatpump-hass lands its changes.
+          if git push origin HEAD:refs/heads/main; then
+            echo "Bump landed directly on main." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "Direct push to main refused (required status checks); landing the bump through a pull request." >> "$GITHUB_STEP_SUMMARY"
+          BRANCH="release/bump-v${NEW}"
+          git push origin "HEAD:refs/heads/${BRANCH}"
+          PR_URL="$(gh pr create --base main --head "${BRANCH}" \
+            --title "chore: bump version to ${NEW}" \
+            --body "Lands the pyproject version bump of the v${NEW} release on main. The Release workflow's direct push is refused by the required status checks; the tag v${NEW} is already out and the GitHub release exists. Everything this repository validates for a release has already passed in the Release workflow's validate job against exactly this tree." \
+            || gh pr view "${BRANCH}" --json url --jq .url)"
+          PR="${PR_URL##*/}"
+          # Everything the release validated has passed on exactly this
+          # tree; try to merge outright, then arm auto-merge - it completes
+          # when RELEASE_TOKEN opened the pull request and CI reports on it.
+          if gh pr merge "${PR}" --repo "$GITHUB_REPOSITORY" --merge; then
+            echo "Bump pull request #${PR} merged." >> "$GITHUB_STEP_SUMMARY"
+          elif gh pr merge "${PR}" --repo "$GITHUB_REPOSITORY" --merge --auto; then
+            echo "Bump pull request #${PR} is green here; auto-merge armed, GitHub merges it once its checks report." >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "Bump pull request #${PR} is green and waiting for a maintainer."
+              echo "To let automation finish releases on its own, set the RELEASE_TOKEN secret (a PAT with contents and pull-requests write): a pull request opened with GITHUB_TOKEN never starts a workflow run, so its required checks never report."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64
@@ -348,3 +392,15 @@ jobs:
             **Developed by:** [Xerolux](https://github.com/Xerolux) | **License:** MIT
           files: |
             dist/*
+
+      - name: Publish to PyPI
+        # Skipped when the tag already existed: that version is on PyPI, and
+        # re-uploading an identical version only produces a failure there.
+        # A publish that itself failed is re-run by dispatching publish.yml.
+        if: steps.tagcheck.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NEW="${{ steps.version.outputs.version }}"
+          gh workflow run publish.yml -f "tag=v${NEW}"
+          echo "PyPI publish dispatched for v${NEW}." >> "$GITHUB_STEP_SUMMARY"

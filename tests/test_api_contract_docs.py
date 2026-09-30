@@ -111,6 +111,46 @@ def test_release_workflow_handles_prebumped_versions() -> None:
     assert "pyproject.toml already contains ${NEW}; no version commit needed" in workflow
 
 
+def test_release_workflow_lands_the_bump_despite_protected_main() -> None:
+    """Required status checks refuse the workflow's direct push to main.
+
+    The tag is not branch-protected and goes out directly; the version-bump
+    commit lands through a pull request instead. The optional RELEASE_TOKEN
+    secret lets CI run on that pull request so auto-merge can finish it - the
+    same pattern dependency-update.yml uses in idm-heatpump-hass.
+    """
+    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+
+    # The tag goes out on its own ref; only the branch push needs the detour.
+    assert 'git push origin "refs/tags/v${NEW}"' in workflow
+    assert "HEAD:refs/heads/main" in workflow
+    assert "gh pr create" in workflow
+    assert "gh pr merge" in workflow
+    assert "RELEASE_TOKEN" in workflow
+    # Opening/merging the bump pull request and dispatching publish.
+    assert "pull-requests: write" in workflow
+    assert "actions: write" in workflow
+
+
+def test_release_workflow_dispatches_the_pypi_publish() -> None:
+    """One dispatch releases: the publish no longer needs a second one."""
+    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+
+    assert "gh workflow run publish.yml" in workflow
+
+
+def test_publish_builds_the_dispatched_tag_not_main() -> None:
+    """A dispatch names the tag; the build must use exactly that tree.
+
+    The version-bump pull request may not have landed on main yet when the
+    publish is dispatched, so checking out the default branch would build the
+    previous version and the tag check would (correctly) reject it.
+    """
+    workflow = (ROOT / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
+
+    assert "ref: ${{ inputs.tag || github.ref }}" in workflow
+
+
 def test_ci_enforces_coverage_floor() -> None:
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     workflow = (ROOT / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
