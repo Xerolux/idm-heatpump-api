@@ -22,7 +22,9 @@ repositories change.
 
 1. Merge the API change.
 2. Verify CI and security checks.
-3. Publish the API package.
+3. Publish the API package (the Release workflow tags, releases and dispatches
+   the PyPI publish in one run; only the version-bump pull request may wait
+   for a maintainer merge unless `RELEASE_TOKEN` is set).
 4. Open the integration pin PR.
 5. Run integration CI and smoke tests.
 6. Publish the integration release.
@@ -69,17 +71,28 @@ differ here.
   `pip install idm-heatpump-api` resolves to the newest stable release and would
   silently skip the prerelease.
 
-### The tag push does not publish by itself
+### One dispatch releases; the bump lands through a pull request
 
 `release.yml` pushes the tag with `GITHUB_TOKEN`. **GitHub does not start
 workflows for events created by that token** — a deliberate guard against
-recursive runs — so `publish.yml`, which triggers on `push: tags: v*`, never
-sees it. Every release therefore takes two dispatches:
+recursive runs — so the release dispatches `publish.yml` itself at the end:
+publishing needs no second dispatch. (`publish.yml` still triggers on a
+manually pushed `v*` tag and can be dispatched by hand to re-run a failed
+publish; either way it checks out exactly the named tag, never whatever
+`main` currently carries.)
 
-1. Run **Release** with `version_mode=custom` and the version. It validates,
-   builds, bumps `pyproject.toml`, tags and creates the GitHub release.
-2. Run **Publish** with `tag` set to that tag (`v2.0.0b1`). This is the step
-   that uploads to PyPI.
+The version-bump commit cannot be pushed to `main` directly: the required
+sensitive-data check refuses every push a workflow makes — the built-in token
+can never satisfy a required status check, and `enforce_admins` extends that
+to maintainer tokens. The workflow therefore pushes the tag (tags are not
+branch-protected), creates the GitHub release and publishes PyPI from that
+tree, and carries the bump to `main` through a pull request:
+
+- With the optional **`RELEASE_TOKEN`** secret set (a PAT with contents and
+  pull-requests write), CI runs on that pull request and auto-merge finishes
+  the release unattended.
+- Without it, the pull request is green — the validate job ran the whole
+  gate on exactly that tree — and waits for one maintainer merge.
 
 Check PyPI before calling a release done: a GitHub release with assets attached
 does not mean the package is installable. Note also that the PyPI JSON API
