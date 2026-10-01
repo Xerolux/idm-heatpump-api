@@ -162,6 +162,18 @@ _NAVIGATOR10_ENERGYFLOW_REQUEST = {
     "command": "overview",
 }
 
+# The complete-plant frame the SPA renders its system page from
+# (controller/command capture-confirmed on a live Navigator 10, jsonVersion 11,
+# firmware T_NAV10_20.24-1580, 2026-10-01). Read-only; the frame carries the
+# per-heating-circuit ``type`` — the circuit's regulation type, the level-0
+# source for heating-circuit-type detection (the level-0 Heizsystem setting
+# page is display-level gated and answers only while the controller is
+# unlocked there).
+_NAVIGATOR10_SYSTEM_OVERVIEW_REQUEST = {
+    "controller": "system",
+    "command": "overview",
+}
+
 # Navigator 10 statistic/detail selectors, verified against a live controller
 # (jsonVersion 11, September 2026). ``statisticType`` selects the value block:
 # 0 heat-pump runtimes (heating / DHW "priority" / defrost), 2 second-stage
@@ -1996,6 +2008,195 @@ def parse_navigator_energyflow_response(
     )
 
 
+@dataclass
+class IdmWebSystemCircuit:
+    """One heating circuit as listed by the ``system/overview`` frame.
+
+    ``type`` is the circuit's regulation type (the value the level-2
+    Heizsystem setting page exposes as ``HS<x>01``): the numbering is
+    firmware-defined — observed live: a normally regulated circuit reports
+    ``2``. The semantic labels (Keines / Ungeregelt / Geregelt / Konstant /
+    Differenztemperaturgeregelt on the confirmation dropdown) are not decoded
+    here; consumers treat the raw value.
+    """
+
+    circuit_id: str
+    display_name: str | None = None
+    type: int | None = None
+    mode: int | None = None
+    active_mode: int | None = None
+    pump_active: bool | None = None
+    room_temperature: float | None = None
+    room_setpoint: float | None = None
+    flow_temperature: float | None = None
+    flow_setpoint: float | None = None
+
+
+@dataclass
+class IdmWebSystemOverview:
+    """Read-only Navigator 10 ``system/overview`` snapshot (complete plant).
+
+    One frame summarizes the buffer, the energy-flow widget, the domestic hot
+    water, every configured heating circuit and the heat pump block. The
+    iON sub-block is deliberately not repeated here — :meth:`read_ion` owns
+    it. Every field is read defensively: firmwares differ in which keys they
+    deliver, and a support-relevant fact must never turn a whole snapshot
+    unusable.
+    """
+
+    buffer_system_mode: int | None = None
+    buffer_heating_temperature: float | None = None
+    grid_power: float | None = None
+    energyflow_signal: int | None = None
+    energyflow_type: int | None = None
+    freshwater_system_mode: int | None = None
+    freshwater_temperature_top: float | None = None
+    freshwater_temperature_bottom: float | None = None
+    freshwater_circulation_active: bool | None = None
+    freshwater_status_info: int | None = None
+    heatpump_active: bool | None = None
+    heatpump_system_mode: int | None = None
+    heatpump_operation_mode: int | None = None
+    heatpump_flow_temperature: float | None = None
+    heatpump_return_temperature: float | None = None
+    heatpump_source_active: bool | None = None
+    heatpump_source_type: int | None = None
+    heatpump_source_temperature_in: float | None = None
+    heating_circuits: tuple[IdmWebSystemCircuit, ...] = ()
+    raw_response: str | None = None
+
+
+def _system_temperature(node: object, key: str) -> float | None:
+    if not isinstance(node, dict):
+        return None
+    temperatures = node.get("temperatures")
+    if not isinstance(temperatures, dict):
+        return None
+    return _optional_float(temperatures.get(key))
+
+
+def parse_navigator_system_overview_response(
+    raw_response: str,
+    *,
+    include_raw: bool = False,
+) -> IdmWebSystemOverview:
+    """Parse a Navigator 10 ``system/overview`` response."""
+    try:
+        payload = json.loads(raw_response)
+    except json.JSONDecodeError as exc:
+        raise IdmWebResponseError("Navigator 10 system response is not valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise IdmWebResponseError("Navigator 10 system response is not a JSON object")
+    system = payload.get("system")
+    if not isinstance(system, dict):
+        raise IdmWebResponseError("Navigator 10 response does not contain a system object")
+
+    buffer_block = system.get("buffer")
+    buffer_system_mode = (
+        _optional_int(buffer_block.get("systemMode")) if isinstance(buffer_block, dict) else None
+    )
+    buffer_heating_temperature = (
+        _system_temperature(buffer_block, "heating") if isinstance(buffer_block, dict) else None
+    )
+
+    energyflow_block = system.get("energyflow")
+    grid_power = None
+    energyflow_signal = None
+    energyflow_type = None
+    if isinstance(energyflow_block, dict):
+        energyflow_signal = _optional_int(energyflow_block.get("signal"))
+        energyflow_type = _optional_int(energyflow_block.get("type"))
+        grid_node = energyflow_block.get("grid")
+        if isinstance(grid_node, dict):
+            grid_power = _optional_float(grid_node.get("value"))
+
+    freshwater_block = system.get("freshwater")
+    freshwater_circulation_active = None
+    if isinstance(freshwater_block, dict):
+        circulation = freshwater_block.get("circulation")
+        if isinstance(circulation, dict):
+            freshwater_circulation_active = _optional_bool(circulation.get("active"))
+    freshwater_status_info = None
+    if isinstance(freshwater_block, dict):
+        status_info = freshwater_block.get("statusInfo")
+        if isinstance(status_info, dict):
+            freshwater_status_info = _optional_int(status_info.get("status"))
+
+    heatpump_block = system.get("heatpump")
+    heatpump_source_active = None
+    heatpump_source_type = None
+    heatpump_source_temperature_in = None
+    if isinstance(heatpump_block, dict):
+        source = heatpump_block.get("source")
+        if isinstance(source, dict):
+            heatpump_source_active = _optional_bool(source.get("active"))
+            heatpump_source_type = _optional_int(source.get("type"))
+            heatpump_source_temperature_in = _system_temperature(source, "in")
+
+    circuits: list[IdmWebSystemCircuit] = []
+    raw_circuits = system.get("heatingcircuit")
+    if isinstance(raw_circuits, list):
+        for entry in raw_circuits:
+            if not isinstance(entry, dict):
+                continue
+            circuit_id = entry.get("id")
+            if not isinstance(circuit_id, str) or not circuit_id:
+                continue
+            circuits.append(
+                IdmWebSystemCircuit(
+                    circuit_id=circuit_id,
+                    display_name=_optional_str(entry.get("displayName")),
+                    type=_optional_int(entry.get("type")),
+                    mode=_optional_int(entry.get("mode")),
+                    active_mode=_optional_int(entry.get("activeMode")),
+                    pump_active=_optional_bool(entry.get("pumpActive")),
+                    room_temperature=_system_temperature(entry.get("room"), "actual"),
+                    room_setpoint=_system_temperature(entry.get("room"), "set"),
+                    flow_temperature=_system_temperature(entry, "actual"),
+                    flow_setpoint=_system_temperature(entry, "set"),
+                )
+            )
+
+    return IdmWebSystemOverview(
+        buffer_system_mode=buffer_system_mode,
+        buffer_heating_temperature=buffer_heating_temperature,
+        grid_power=grid_power,
+        energyflow_signal=energyflow_signal,
+        energyflow_type=energyflow_type,
+        freshwater_system_mode=(
+            _optional_int(freshwater_block.get("systemMode"))
+            if isinstance(freshwater_block, dict)
+            else None
+        ),
+        freshwater_temperature_top=_system_temperature(freshwater_block, "top"),
+        freshwater_temperature_bottom=_system_temperature(freshwater_block, "bottom"),
+        freshwater_circulation_active=freshwater_circulation_active,
+        freshwater_status_info=freshwater_status_info,
+        heatpump_active=(
+            _optional_bool(heatpump_block.get("active"))
+            if isinstance(heatpump_block, dict)
+            else None
+        ),
+        heatpump_system_mode=(
+            _optional_int(heatpump_block.get("systemMode"))
+            if isinstance(heatpump_block, dict)
+            else None
+        ),
+        heatpump_operation_mode=(
+            _optional_int(heatpump_block.get("operationMode"))
+            if isinstance(heatpump_block, dict)
+            else None
+        ),
+        heatpump_flow_temperature=_system_temperature(heatpump_block, "flow"),
+        heatpump_return_temperature=_system_temperature(heatpump_block, "return"),
+        heatpump_source_active=heatpump_source_active,
+        heatpump_source_type=heatpump_source_type,
+        heatpump_source_temperature_in=heatpump_source_temperature_in,
+        heating_circuits=tuple(circuits),
+        raw_response=raw_response if include_raw else None,
+    )
+
+
 class IdmNavigator10WebClient:
     """Read-only async client for the Navigator 10 local WebSocket interface."""
 
@@ -2303,6 +2504,21 @@ class IdmNavigator10WebClient:
         energyflow = parse_navigator_energyflow_response(raw, include_raw=include_raw)
         self._last_success_monotonic = time.monotonic()
         return energyflow
+
+    async def read_system_overview(self, *, include_raw: bool = False) -> IdmWebSystemOverview:
+        """Read the Navigator 10 complete-plant snapshot (system/overview).
+
+        One frame summarizes the buffer, the energy-flow widget, the domestic
+        hot water, every configured heating circuit (including its regulation
+        ``type`` — the level-0 source for heating-circuit-type detection) and
+        the heat-pump block. Read-only like every client method; the frame
+        answers on a plain PIN session at userlevel 0.
+        """
+        await self.connect()
+        raw = await self._send_json_and_receive_text(_NAVIGATOR10_SYSTEM_OVERVIEW_REQUEST)
+        overview = parse_navigator_system_overview_response(raw, include_raw=include_raw)
+        self._last_success_monotonic = time.monotonic()
+        return overview
 
     async def read_freshwater_overview(self, *, include_raw: bool = False) -> IdmWebFreshwater:
         """Read the Navigator 10 domestic-hot-water detail (system.freshwater).
