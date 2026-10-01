@@ -17,6 +17,7 @@ from idm_heatpump import (
     parse_navigator_energyflow_response,
     parse_navigator_ion_response,
     parse_navigator_performance_response,
+    parse_navigator_system_overview_response,
     parse_navigator_weather_response,
 )
 
@@ -244,3 +245,138 @@ class TestEnergyflowParsing:
 
         assert client.captured == [{"controller": "energyflow", "command": "overview"}]
         assert flow.pv_power == pytest.approx(5.694)
+
+
+SYSTEM_OVERVIEW = json.dumps(
+    {
+        "remoteSessionId": "x",
+        "system": {
+            "buffer": {"systemMode": 1, "temperatures": {"heating": "49.0"}},
+            "energyflow": {"grid": {"value": "0.0180"}, "signal": 16, "type": 4},
+            "freshwater": {
+                "circulation": {"active": False},
+                "statusInfo": {"status": 16},
+                "systemMode": 1,
+                "temperatures": {"bottom": "51.3", "top": "54.9"},
+            },
+            "heatingcircuit": [
+                {
+                    "activeMode": 1,
+                    "displayName": "HK A",
+                    "id": "A",
+                    "mode": 2,
+                    "pumpActive": True,
+                    "room": {"temperatures": {"actual": "21.0", "set": "21.5"}},
+                    "temperatures": {"actual": "26.4", "set": "45.5"},
+                    "type": 2,
+                },
+                {
+                    "activeMode": 1,
+                    "displayName": "HK D",
+                    "id": "D",
+                    "mode": 2,
+                    "pumpActive": True,
+                    "room": {"temperatures": {"actual": "20.9", "set": "22.0"}},
+                    "temperatures": {"actual": "22.4", "set": "33.4"},
+                    "type": 2,
+                },
+            ],
+            "heatpump": {
+                "active": False,
+                "ion": {
+                    "active": False,
+                    "enabled": {
+                        "id": "CE001",
+                        "increment": "1",
+                        "type": "chooselist",
+                        "types": [{"0": "N2_NO"}, {"1": "N2_YES"}],
+                        "value": 0,
+                    },
+                    "ionSubscriptionStatus": -1,
+                },
+                "operationMode": 0,
+                "source": {"active": False, "temperatures": {"in": "12.3"}, "type": 2},
+                "systemMode": 1,
+                "temperatures": {"flow": "47.7", "return": "18.2"},
+            },
+        },
+    }
+)
+
+
+class TestSystemOverviewParsing:
+    def test_extracts_the_live_confirmed_plant_state(self) -> None:
+        overview = parse_navigator_system_overview_response(SYSTEM_OVERVIEW)
+
+        assert overview.buffer_system_mode == 1
+        assert overview.buffer_heating_temperature == pytest.approx(49.0)
+        assert overview.grid_power == pytest.approx(0.018)
+        assert overview.energyflow_signal == 16
+        assert overview.energyflow_type == 4
+        assert overview.freshwater_system_mode == 1
+        assert overview.freshwater_temperature_top == pytest.approx(54.9)
+        assert overview.freshwater_temperature_bottom == pytest.approx(51.3)
+        assert overview.freshwater_circulation_active is False
+        assert overview.freshwater_status_info == 16
+        assert overview.heatpump_active is False
+        assert overview.heatpump_system_mode == 1
+        assert overview.heatpump_operation_mode == 0
+        assert overview.heatpump_flow_temperature == pytest.approx(47.7)
+        assert overview.heatpump_return_temperature == pytest.approx(18.2)
+        assert overview.heatpump_source_active is False
+        assert overview.heatpump_source_type == 2
+        assert overview.heatpump_source_temperature_in == pytest.approx(12.3)
+
+    def test_lists_every_circuit_with_its_regulation_type(self) -> None:
+        overview = parse_navigator_system_overview_response(SYSTEM_OVERVIEW)
+
+        assert [circuit.circuit_id for circuit in overview.heating_circuits] == ["A", "D"]
+        circuit_a = overview.heating_circuits[0]
+        assert circuit_a.display_name == "HK A"
+        assert circuit_a.type == 2
+        assert circuit_a.mode == 2
+        assert circuit_a.active_mode == 1
+        assert circuit_a.pump_active is True
+        assert circuit_a.room_temperature == pytest.approx(21.0)
+        assert circuit_a.room_setpoint == pytest.approx(21.5)
+        assert circuit_a.flow_temperature == pytest.approx(26.4)
+        assert circuit_a.flow_setpoint == pytest.approx(45.5)
+        circuit_d = overview.heating_circuits[1]
+        assert circuit_d.circuit_id == "D"
+        assert circuit_d.type == 2
+
+    def test_missing_blocks_parse_as_none(self) -> None:
+        overview = parse_navigator_system_overview_response(
+            json.dumps({"system": {"heatingcircuit": []}})
+        )
+
+        assert overview.buffer_system_mode is None
+        assert overview.grid_power is None
+        assert overview.freshwater_temperature_top is None
+        assert overview.heatpump_active is None
+        assert overview.heating_circuits == ()
+
+    def test_non_dict_circuit_entries_are_skipped(self) -> None:
+        overview = parse_navigator_system_overview_response(
+            json.dumps({"system": {"heatingcircuit": ["nonsense", {"id": "A", "type": 3}]}})
+        )
+
+        assert [circuit.circuit_id for circuit in overview.heating_circuits] == ["A"]
+        assert overview.heating_circuits[0].type == 3
+
+    def test_missing_system_block_raises(self) -> None:
+        with pytest.raises(IdmWebResponseError):
+            parse_navigator_system_overview_response(json.dumps({"status": {}}))
+
+    def test_invalid_json_raises(self) -> None:
+        with pytest.raises(IdmWebResponseError):
+            parse_navigator_system_overview_response("not json")
+
+    @pytest.mark.asyncio
+    async def test_client_sends_the_documented_frame(self) -> None:
+        client = _StubClient([SYSTEM_OVERVIEW])
+
+        overview = await client.read_system_overview()
+
+        assert client.captured == [{"controller": "system", "command": "overview"}]
+        assert overview.heatpump_flow_temperature == pytest.approx(47.7)

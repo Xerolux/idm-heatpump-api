@@ -53,6 +53,27 @@ only. The `statistic/detail` selectors are exported as
 frame by frame on a live controller; `read_statistics()` keeps its generic
 `(statistic_type, period_type, prefix)` signature.
 
+### Navigator 10 complete-plant system overview
+
+`IdmNavigator10WebClient.read_system_overview()` returns an
+`IdmWebSystemOverview` from the `system/overview` frame the shipped frontend
+renders its system page from: the buffer block (`buffer_system_mode`,
+`buffer_heating_temperature`), the energy-flow widget (`grid_power`,
+`energyflow_signal`, `energyflow_type`), the domestic-hot-water summary
+(`freshwater_*`), the heat-pump block (`heatpump_*` including the source
+side) and `heating_circuits` — one `IdmWebSystemCircuit` per configured
+circuit with `circuit_id`, `display_name`, temperatures, pump state and
+`type`, the circuit's regulation type. The numbering of `type` is
+firmware-defined and deliberately not decoded into labels here (a normally
+regulated circuit reports `2`); the level-2 Heizsystem setting page
+(`HS<x>01`) that exposes the labelled dropdown is display-level gated, while
+this frame answers on a plain PIN session at userlevel 0 — the level-0
+source for heating-circuit-type detection. The iON sub-block is owned by
+`read_ion()` and not repeated. Exported parser:
+`parse_navigator_system_overview_response()`. Every field parses
+defensively; missing blocks stay `None`. Navigator 10 only; strictly
+read-only, no `save` command exists for this controller.
+
 ### Error-code database
 
 `get_error_code_info(code)` returns an `ErrorCodeInfo` for the vendor's

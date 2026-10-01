@@ -22,6 +22,25 @@ prerelease is `2.0.0b1`, not `2.0.0-beta.1` — see `docs/RELEASE_PROCESS.md`.
 Sections up to `1.0.3` are German; they stay as published, because a released
 changelog is history. Everything from `2.0.0b1` on is English.
 
+## [Unreleased]
+
+### Added
+
+- **`IdmNavigator10WebClient.read_system_overview()`**: the complete-plant
+  `system/overview` frame the shipped frontend renders its system page from —
+  buffer, energy-flow widget, domestic hot water, every configured heating
+  circuit and the heat-pump block, parsed defensively into the new exported
+  `IdmWebSystemOverview` / `IdmWebSystemCircuit` types and
+  `parse_navigator_system_overview_response()`. Each circuit carries its
+  regulation `type` (the value the display-level-gated Heizsystem setting page
+  exposes as `HS<x>01`); the numbering is firmware-defined and stays raw — a
+  normally regulated circuit reports `2`. Live-verified on a Navigator 10
+  (jsonVersion 11, firmware T_NAV10_20.24-1580, 2026-10-01) that the frame,
+  unlike the setting page, answers on a plain PIN session at userlevel 0 — the
+  level-0 source for heating-circuit-type detection
+  (idm-heatpump-hass issue #429). Strictly read-only; the controller has no
+  `save` command for this frame.
+
 ## [2.13.0] - 2026-09-29
 
 ### Changed
