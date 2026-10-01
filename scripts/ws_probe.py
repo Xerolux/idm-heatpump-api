@@ -9,6 +9,12 @@ which WebSocket frame serves that page. This probe asks the controllers that
 might carry it and dumps every raw response, so the frame that holds the
 circuit type can be identified without a browser capture session.
 
+It also answers the heat-pump-model question of integration 0.20.0-b18: the
+web UI shows the configuration page (serial number, Wärmepumpentype, inverter,
+fan) only at the display-unlocked Fachmann level, but the frames may answer at
+level 0 regardless — ``system/overview`` and ``status/overview`` are the
+candidates, and the marker scan looks for the model vocabulary.
+
 Strictly read-only: it sends only ``detail`` / ``overview`` requests, never
 ``save`` or ``execute``. Pure standard library, like ``ws_capture.py``.
 
@@ -18,14 +24,16 @@ What it asks, in order:
    (default A-G; each frame also lists ``availableHeatingCircuits``).
 2. ``setting/detail`` for every setting page known to answer at level 0.
 3. ``system/overview`` — the complete plant as JSON.
+4. ``status/overview`` (jsonVersion, active userlevel, myIDM id) and
+   ``authentication/overview`` (which login levels the firmware offers).
 
 Every response is written verbatim to a JSONL file and scanned for the
-markers ``HSD``, ``Differenz`` and ``Heizsystem`` (case-insensitive) plus
-every parameter id found in the heating-circuit frames; the summary is
-printed. The PIN never appears in the log (it lives only in the handshake
-URL, which is not logged). Everything else is recorded verbatim, so
-sanitize serial numbers, myIDM data and addresses before sharing a log.
-Raw logs stay on the maintainer's machine.
+markers below (case-insensitive, keys and string values) plus every
+parameter id found in the heating-circuit frames; the summary is printed.
+The PIN never appears in the log (it lives only in the handshake URL, which
+is not logged). Everything else is recorded verbatim, so sanitize serial
+numbers, myIDM data and addresses before sharing a log. Raw logs stay on
+the maintainer's machine.
 
 Usage::
 
@@ -50,7 +58,18 @@ from ws_capture import build_frame, read_frame
 DEFAULT_NAVIGATOR_PORT = 61220
 DEFAULT_CIRCUITS = "ABCDEFG"
 KNOWN_SETTING_IDS = ("4768", "4775", "4782", "4789", "4754", "13256", "13259")
-MARKERS = ("hsd", "differenz", "heizsystem")
+MARKERS = (
+    "hsd",
+    "differenz",
+    "heizsystem",
+    "aero",
+    "inverter",
+    "ventilator",
+    "serial",
+    "seriennummer",
+    "waermepumpentype",
+    "myidm",
+)
 
 
 class ProbeError(RuntimeError):
@@ -129,13 +148,18 @@ class NavigatorProbe:
                 raise ProbeError("the controller closed the session")
 
     def request(self, controller: str, command: str, data: object) -> str:
-        """Send one request frame and return the next text frame verbatim."""
+        """Send one request frame and return the next text frame verbatim.
+
+        ``data=None`` omits the key entirely, matching the frame shape the
+        library's own read requests use (``status/overview`` carries no data).
+        """
         sock = self._sock
         if sock is None:
             raise ProbeError("the probe is not connected")
-        frame = json.dumps({"controller": controller, "command": command, "data": data}).encode(
-            "utf-8"
-        )
+        request_frame: dict[str, object] = {"controller": controller, "command": command}
+        if data is not None:
+            request_frame["data"] = data
+        frame = json.dumps(request_frame).encode("utf-8")
         sock.sendall(build_frame(1, frame, mask=True))
         return self._next_text_frame(sock)
 
@@ -260,11 +284,39 @@ def _probe_system_overview(probe: NavigatorProbe, out: Path) -> None:
         out,
         {
             "label": label,
-            "request": {"controller": "system", "command": "overview", "data": None},
+            "request": {"controller": "system", "command": "overview"},
             "response": response,
         },
     )
     print(f"  {label}: {len(response)} bytes")
+
+
+def _probe_connection_frames(probe: NavigatorProbe, out: Path) -> None:
+    """Ask ``status/overview`` and ``authentication/overview``.
+
+    ``status`` reports the connection-level facts (jsonVersion, active
+    userlevel, myIDM id); ``authentication`` shows which login levels the
+    firmware offers. Together they answer whether the configuration data the
+    web UI hides behind the display-unlocked Fachmann level is reachable at
+    the plain PIN level, or gated.
+    """
+    for controller, command in (("status", "overview"), ("authentication", "overview")):
+        label = f"{controller} overview"
+        try:
+            response = probe.request(controller, command, None)
+        except (ProbeError, OSError) as err:
+            print(f"  {label}: request failed: {err!r}")
+            _log(out, {"label": label, "error": repr(err)})
+            continue
+        _log(
+            out,
+            {
+                "label": label,
+                "request": {"controller": controller, "command": command},
+                "response": response,
+            },
+        )
+        print(f"  {label}: {len(response)} bytes")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -309,12 +361,14 @@ def main(argv: list[str] | None = None) -> int:
         _probe_settings(probe, out_path)
         print("plant:")
         _probe_system_overview(probe, out_path)
+        print("connection level:")
+        _probe_connection_frames(probe, out_path)
     finally:
         probe.close()
         _log(out_path, {"note": "probe finished"})
 
     print()
-    print("marker scan (HSD / Differenz / Heizsystem):")
+    print("marker scan (circuit type + heat pump model vocabulary):")
     hits = 0
     with out_path.open(encoding="utf-8") as stream:
         for line in stream:
