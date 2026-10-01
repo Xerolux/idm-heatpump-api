@@ -324,6 +324,12 @@
       "hass_integration_version": "0.20.0-b17",
       "status": "tested",
       "notes": "Navigator 1.x coil rework (idm-heatpump-hass #319): c3003 Vorrangladung becomes a write-only command, momentary demand coils c3001/c3002 leave the map."
+    },
+    {
+      "api_version": "2.14.0",
+      "hass_integration_version": "pending",
+      "status": "api-prepared",
+      "notes": "Complete-plant system/overview read (buffer, energyflow, freshwater, heatpump, heating circuits with regulation type) - the level-0 source for heating-circuit-type detection (idm-heatpump-hass #429)."
     }
   ]
 }
