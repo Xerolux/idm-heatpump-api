@@ -22,6 +22,22 @@ prerelease is `2.0.0b1`, not `2.0.0-beta.1` — see `docs/RELEASE_PROCESS.md`.
 Sections up to `1.0.3` are German; they stay as published, because a released
 changelog is history. Everything from `2.0.0b1` on is English.
 
+## [2.14.2] - 2026-10-09
+
+### Fixed
+
+- **`dhw_charge_off_temp` (address 1034): validation range widened to
+  46..67 °C** (was 46..53 from the official map). The controller's own web
+  interface (`system/detail/freshwater`) accepts 50..67 on current firmware
+  and stores real values there — idm-heatpump-hass issue #460 measured 63 °C
+  on an AEOR ALM 4-12 (Navigator 10, firmware NAV10_20.23-903), a value the
+  documented maximum rejected on every poll. The lower bound keeps the
+  documented 46 so devices that follow the official map validate unchanged;
+  reads of previously rejected values now pass, and writes can use the full
+  window the controller itself offers. Register annotated with
+  `last_verified=2026-10-09`; register-reference docs and the versioned
+  schema fixture regenerated.
+
 ## [2.14.1] - 2026-10-09
 
 ### Fixed

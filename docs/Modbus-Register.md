@@ -37,7 +37,7 @@ documentation (as of 2025-06-18, software NAV10_20.23-903.iup / T_NAV10_20.23-13
 | 1030 | `dhw_tapping_temp` | FLOAT | RO | °C |  |  |
 | 1032 | `dhw_setpoint` | UCHAR | RW | °C | 35..95 | EEPROM |
 | 1033 | `dhw_charge_on_temp` | UCHAR | RW | °C | 30..50 | EEPROM |
-| 1034 | `dhw_charge_off_temp` | UCHAR | RW | °C | 46..53 | EEPROM |
+| 1034 | `dhw_charge_off_temp` | UCHAR | RW | °C | 46..67 | EEPROM |
 | 1048 | `current_electricity_price` | FLOAT | RO | €/MWh |  |  |
 | 1050 | `hp_flow_temp` | FLOAT | RO | °C |  |  |
 | 1052 | `hp_return_temp` | FLOAT | RO | °C |  |  |

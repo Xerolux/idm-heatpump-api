@@ -357,3 +357,34 @@ def test_cyclic_write_heartbeat_refreshes_deadline_and_can_be_reset() -> None:
 
     assert client.get_active_cyclic_writes() == {}
     assert client.get_expired_cyclic_writes() == set()
+
+
+def test_dhw_charge_off_temp_measured_63_validates_after_range_fix() -> None:
+    """idm-heatpump-hass issue #460: the real controller window is wider.
+
+    The official map documents 46..53, but an AEOR ALM 4-12 (firmware
+    NAV10_20.23-903) stores 63 at address 1034 and the controller's own
+    web interface (system/detail/freshwater) accepts 50..67. The measured
+    63 must decode as a valid read (it was rejected on every poll before),
+    values outside the widened 46..67 window must still be rejected, and
+    writes may use the full window the controller itself offers.
+    """
+    from idm_heatpump.registers import build_register_map
+
+    reg = build_register_map()["dhw_charge_off_temp"]
+    transport = FakeModbusTransport(input_registers={1034: 63})
+    client = IdmModbusClient("127.0.0.1")
+    client._client = transport  # type: ignore[assignment]
+
+    assert asyncio.run(client.read_batch([reg])) == {"dhw_charge_off_temp": 63}
+
+    out_of_range = FakeModbusTransport(input_registers={1034: 68})
+    client._client = out_of_range  # type: ignore[assignment]
+    assert asyncio.run(client.read_batch([reg])) == {}
+    assert client.get_register_outcomes()["dhw_charge_off_temp"]["reason"] == "above_max"
+
+    for value in (46, 50, 63, 67):
+        assert client.simulate_write(reg, value).encoded_registers
+    for value in (45, 68):
+        with pytest.raises(ValueError):
+            client.simulate_write(reg, value)
