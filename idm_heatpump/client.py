@@ -487,6 +487,16 @@ class IdmModbusClient:
         # actually returned — including values discarded as out of range
         # (idm-heatpump-hass issue #364: garbage words that hide a float).
         self._register_outcomes: dict[str, dict[str, Any]] = {}
+        # Registers whose invalid read (out-of-range value or undecodable
+        # data) has already produced a WARNING. A persistently invalid
+        # register is re-read on every poll by design — the value can come
+        # back into range at any time, e.g. after a controller menu change —
+        # so it must not be isolated like an Illegal Data Address register.
+        # But the warning is logged only once per episode; repeats go to
+        # DEBUG (idm-heatpump-hass issue #460: one WARNING per 12 s poll
+        # produced 6600+ log entries per day). Cleared when the register
+        # reads valid again or via reset_failed_registers().
+        self._invalid_value_warned: set[str] = set()
         self._model_info: IdmModelInfo | None = None
         self._last_eeprom_writes: dict[str, float] = {}
         self._cyclic_write_deadlines: dict[str, float] = {}
@@ -1747,6 +1757,7 @@ class IdmModbusClient:
                     )
                 else:
                     data[reg.name] = value
+                    self._invalid_value_warned.discard(reg.name)
                     self._record_outcome(reg, status="ok", value=value, raw_words=reg_slice)
             except (ValueError, IndexError) as err:
                 _LOGGER.debug(
@@ -1783,6 +1794,19 @@ class IdmModbusClient:
         ``enum_options`` or ``min_val``/``max_val`` are never flagged.
         """
         return IdmModbusClient._suspect_reason(reg, value) is not None
+
+    @staticmethod
+    def _describe_expected_range(reg: RegisterDef) -> str:
+        """Render the documented valid range of ``reg`` for log messages."""
+        if reg.enum_options is not None:
+            return "one of the documented options"
+        if reg.min_val is not None and reg.max_val is not None:
+            return f"{reg.min_val:g}..{reg.max_val:g}"
+        if reg.min_val is not None:
+            return f">= {reg.min_val:g}"
+        if reg.max_val is not None:
+            return f"<= {reg.max_val:g}"
+        return "a valid value"
 
     @staticmethod
     def _suspect_reason(reg: RegisterDef, value: Any) -> str | None:
@@ -1839,18 +1863,35 @@ class IdmModbusClient:
                 value = self.decode_value(registers, reg)
                 reason = self._suspect_reason(reg, value)
                 if reason is not None:
-                    _LOGGER.warning(
-                        "Register %s (address %d) returned an invalid value during "
-                        "individual validation; omitting it from this update",
-                        reg.name,
-                        reg.address,
-                    )
+                    if reg.name in self._invalid_value_warned:
+                        _LOGGER.debug(
+                            "Register %s (address %d) still returns an invalid value "
+                            "(%r, %s); omitted from this update (already warned)",
+                            reg.name,
+                            reg.address,
+                            value,
+                            reason,
+                        )
+                    else:
+                        self._invalid_value_warned.add(reg.name)
+                        _LOGGER.warning(
+                            "Register %s (address %d) returned an invalid value during "
+                            "individual validation (%r, %s; expected %s); omitting it "
+                            "from this update. Repeat occurrences are logged at debug "
+                            "level until the register reads valid again",
+                            reg.name,
+                            reg.address,
+                            value,
+                            reason,
+                            self._describe_expected_range(reg),
+                        )
                     self._record_outcome(
                         reg, status="suspect", value=value, raw_words=registers, reason=reason
                     )
                     continue
                 data[reg.name] = value
                 self._register_failures.pop(reg.name, None)
+                self._invalid_value_warned.discard(reg.name)
                 self._record_outcome(reg, status="ok", value=value, raw_words=registers)
             except _TRANSPORT_ERRORS:
                 _LOGGER.debug(
@@ -1907,12 +1948,22 @@ class IdmModbusClient:
                         _PERMANENT_FAILURE_THRESHOLD,
                     )
             except (ValueError, IndexError) as err:
-                _LOGGER.warning(
-                    "Decoding failed for register %s (address %d): %s",
-                    reg.name,
-                    reg.address,
-                    err,
-                )
+                if reg.name in self._invalid_value_warned:
+                    _LOGGER.debug(
+                        "Decoding still fails for register %s (address %d): %s (already warned)",
+                        reg.name,
+                        reg.address,
+                        err,
+                    )
+                else:
+                    self._invalid_value_warned.add(reg.name)
+                    _LOGGER.warning(
+                        "Decoding failed for register %s (address %d): %s. "
+                        "Repeat occurrences are logged at debug level",
+                        reg.name,
+                        reg.address,
+                        err,
+                    )
                 self._record_outcome(reg, status="decode_error", reason="decode_error")
         return data
 
@@ -1922,6 +1973,7 @@ class IdmModbusClient:
         self._unsupported_registers.clear()
         self._register_failures.clear()
         self._register_outcomes.clear()
+        self._invalid_value_warned.clear()
         _LOGGER.info("Permanently failed registers have been reset")
 
     def get_unsupported_registers(self) -> tuple[str, ...]:

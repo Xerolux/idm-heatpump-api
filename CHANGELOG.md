@@ -22,6 +22,26 @@ prerelease is `2.0.0b1`, not `2.0.0-beta.1` — see `docs/RELEASE_PROCESS.md`.
 Sections up to `1.0.3` are German; they stay as published, because a released
 changelog is history. Everything from `2.0.0b1` on is English.
 
+## [2.14.1] - 2026-10-09
+
+### Fixed
+
+- A register that persistently returns an invalid value no longer floods the
+  consumer's log with one WARNING per poll (idm-heatpump-hass issue #460:
+  `dhw_charge_off_temp`, address 1034, read outside its documented 46..53 °C
+  range on an AEOR ALM 4-12 — one warning every 12 s, 6600+ log entries per
+  day). The individual-validation WARNING is now logged once per register and
+  episode; further occurrences of the same rejection log at DEBUG level, and
+  a clean read re-arms the warning. The register keeps being re-read (unlike
+  an `Illegal Data Address` rejection the value can come back into range),
+  it just stops shouting about it. The same once-per-episode calibration
+  applies to the "Decoding failed for register" WARNING from the individual
+  fallback. The first-occurrence message now carries the offending value,
+  the rejection reason (`below_min`/`above_max`/`not_in_enum`) and the
+  documented range, so a log excerpt alone is enough to file a precise
+  register report; `reset_failed_registers()` also clears the warn-once
+  memory.
+
 ## [2.14.0] - 2026-10-01
 
 ### Added
