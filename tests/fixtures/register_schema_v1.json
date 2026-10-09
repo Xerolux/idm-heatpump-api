@@ -2290,7 +2290,7 @@
         "unit": "°C",
         "writable": true,
         "min_val": 46,
-        "max_val": 53,
+        "max_val": 67,
         "step": null,
         "enum_options": {},
         "multiplier": 1.0,
@@ -2313,7 +2313,7 @@
           "Navigator Pro"
         ],
         "sentinel_values": [],
-        "last_verified": null,
+        "last_verified": "2026-10-09",
         "size": 1
       },
       "dhw_charge_on_temp": {
@@ -11259,7 +11259,7 @@
         "unit": "°C",
         "writable": true,
         "min_val": 46,
-        "max_val": 53,
+        "max_val": 67,
         "step": null,
         "enum_options": {},
         "multiplier": 1.0,
@@ -11282,7 +11282,7 @@
           "Navigator Pro"
         ],
         "sentinel_values": [],
-        "last_verified": null,
+        "last_verified": "2026-10-09",
         "size": 1
       },
       "dhw_charge_on_temp": {
@@ -29935,7 +29935,7 @@
         "unit": "°C",
         "writable": true,
         "min_val": 46,
-        "max_val": 53,
+        "max_val": 67,
         "step": null,
         "enum_options": {},
         "multiplier": 1.0,
@@ -29958,7 +29958,7 @@
           "Navigator Pro"
         ],
         "sentinel_values": [],
-        "last_verified": null,
+        "last_verified": "2026-10-09",
         "size": 1
       },
       "dhw_charge_on_temp": {

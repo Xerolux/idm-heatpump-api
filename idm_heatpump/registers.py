@@ -260,9 +260,16 @@ def _system_registers() -> dict[str, RegisterDef]:
             name="dhw_charge_off_temp",
             unit="°C",
             writable=True,
+            # Official map documents 46..53, but the controller's own web
+            # interface (system/detail/freshwater) accepts 50..67 and stores
+            # real values up to 67 — idm-heatpump-hass issue #460 measured 63
+            # on an AEOR ALM 4-12 (firmware NAV10_20.23-903), which the old
+            # max rejected on every poll. Lower bound stays at the documented
+            # 46 so devices following the official map validate too.
             min_val=46,
-            max_val=53,
+            max_val=67,
             eeprom_sensitive=True,
+            last_verified="2026-10-09",
         ),
         "current_electricity_price": RegisterDef(
             address=1048,

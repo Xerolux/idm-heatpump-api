@@ -336,6 +336,12 @@
       "hass_integration_version": "pending",
       "status": "api-prepared",
       "notes": "Logging-only patch: a persistently invalid register value warns once per episode instead of on every poll (idm-heatpump-hass #460)."
+    },
+    {
+      "api_version": "2.14.2",
+      "hass_integration_version": "pending",
+      "status": "api-prepared",
+      "notes": "Register-data fix: dhw_charge_off_temp validation range 46..53 -> 46..67 per live evidence in idm-heatpump-hass #460."
     }
   ]
 }
