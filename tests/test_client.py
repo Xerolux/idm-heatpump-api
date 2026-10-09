@@ -1179,6 +1179,129 @@ def test_read_outcome_reflects_recovered_individual_value() -> None:
     assert outcomes["reason"] is None
 
 
+# --- invalid-value warning calibration (hass issue #460) --------------------
+
+
+def _issue_460_register() -> RegisterDef:
+    """The register from idm-heatpump-hass issue #460: UCHAR documented 46..53."""
+    return RegisterDef(
+        1034,
+        DataType.UCHAR,
+        "dhw_charge_off_temp",
+        min_val=46,
+        max_val=53,
+    )
+
+
+def test_invalid_value_warning_logged_once_per_episode(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A persistently out-of-range register warns once, then repeats at DEBUG.
+
+    Field case from idm-heatpump-hass issue #460: ``dhw_charge_off_temp``
+    (address 1034) reads outside its documented range on an AEOR ALM 4-12 and
+    the per-poll WARNING flooded the Home Assistant log (6600+ entries/day).
+    """
+    transport = FakeModbusTransport(input_registers={1034: 200})
+    client = _make_client_with_transport(transport)
+
+    with caplog.at_level(logging.DEBUG, logger="idm_heatpump.client"):
+        for _ in range(3):
+            assert asyncio.run(client.read_batch([_issue_460_register()])) == {}
+
+    warnings = [
+        r
+        for r in caplog.records
+        if r.levelno == logging.WARNING and "invalid value" in r.getMessage()
+    ]
+    repeats = [
+        r
+        for r in caplog.records
+        if r.levelno == logging.DEBUG and "still returns an invalid value" in r.getMessage()
+    ]
+    assert len(warnings) == 1
+    assert len(repeats) == 2
+    message = warnings[0].getMessage()
+    assert "200" in message, "the warning must name the offending value"
+    assert "above_max" in message, "the warning must name the rejection reason"
+    assert "46..53" in message, "the warning must name the documented range"
+
+
+def test_invalid_value_warning_recovers_and_warns_again(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A register that reads valid again starts a fresh episode on the next fault."""
+    transport = FakeModbusTransport(input_registers={1034: 200})
+    client = _make_client_with_transport(transport)
+
+    with caplog.at_level(logging.WARNING, logger="idm_heatpump.client"):
+        assert asyncio.run(client.read_batch([_issue_460_register()])) == {}
+        transport.input_registers[1034] = 50
+        assert asyncio.run(client.read_batch([_issue_460_register()])) == {
+            "dhw_charge_off_temp": 50
+        }
+        transport.input_registers[1034] = 200
+        assert asyncio.run(client.read_batch([_issue_460_register()])) == {}
+
+    warnings = [
+        r
+        for r in caplog.records
+        if r.levelno == logging.WARNING and "invalid value" in r.getMessage()
+    ]
+    assert len(warnings) == 2
+
+
+def test_reset_failed_registers_clears_invalid_value_warnings(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """``reset_failed_registers()`` also forgets already-warned invalid registers."""
+    transport = FakeModbusTransport(input_registers={1034: 200})
+    client = _make_client_with_transport(transport)
+
+    with caplog.at_level(logging.WARNING, logger="idm_heatpump.client"):
+        assert asyncio.run(client.read_batch([_issue_460_register()])) == {}
+        client.reset_failed_registers()
+        assert asyncio.run(client.read_batch([_issue_460_register()])) == {}
+
+    warnings = [
+        r
+        for r in caplog.records
+        if r.levelno == logging.WARNING and "invalid value" in r.getMessage()
+    ]
+    assert len(warnings) == 2
+
+
+def test_decode_error_warning_logged_once_per_episode(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A persistently undecodable register warns once, then repeats at DEBUG."""
+
+    async def empty_read(address: int, count: int, reg_type: Any = None) -> list[int]:
+        del address, count, reg_type
+        return []
+
+    reg = RegisterDef(1200, DataType.FLOAT, "broken_float", unit="°C")
+    client = _make_client_with_transport(FakeModbusTransport())
+    client._read_registers = empty_read  # type: ignore[method-assign]
+
+    with caplog.at_level(logging.DEBUG, logger="idm_heatpump.client"):
+        for _ in range(2):
+            assert asyncio.run(client._read_individual_fallback([reg])) == {}
+
+    warnings = [
+        r
+        for r in caplog.records
+        if r.levelno == logging.WARNING and "Decoding failed for register" in r.getMessage()
+    ]
+    repeats = [
+        r
+        for r in caplog.records
+        if r.levelno == logging.DEBUG and "Decoding still fails" in r.getMessage()
+    ]
+    assert len(warnings) == 1
+    assert len(repeats) == 1
+
+
 def test_read_outcome_records_illegal_address_as_unsupported() -> None:
     """Registers rejected with Illegal Data Address record status unsupported."""
     bad = RegisterDef(1200, DataType.FLOAT, "cascade_temp", unit="°C")
