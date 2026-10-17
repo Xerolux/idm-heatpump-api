@@ -22,6 +22,31 @@ prerelease is `2.0.0b1`, not `2.0.0-beta.1` — see `docs/RELEASE_PROCESS.md`.
 Sections up to `1.0.3` are German; they stay as published, because a released
 changelog is history. Everything from `2.0.0b1` on is English.
 
+## [2.14.3] - 2026-10-17
+
+### Fixed
+
+- **"Not present" fills no longer warn as invalid values on unconfigured
+  features** (idm-heatpump-hass issue #532, Navigator 2.0 diagnostics):
+  `bivalence_state` (1124) and `solar_mode` (1856) read the one-byte fill
+  255 on plants without bivalence or solar — `compressor_status_*` already
+  stayed silent on the identical raw `0xFFFF`, but the enum registers
+  warned on every Home Assistant restart. Both registers now declare
+  `sentinel_values=(255,)`, so the values publish as *not present* (the
+  integration's unused classification makes the entities unavailable)
+  instead of tripping the per-register validation. The sentinels are
+  declared per register, deliberately not validator-wide: the corrupt-batch
+  re-read recovery of issue #69 must keep flagging unexpected 255s on every
+  other enum register.
+- **Cooling setpoints and external demand temperatures read 0 when the
+  feature is unconfigured**: `hc_*_room_setpoint_cool_normal` (1457+),
+  `hc_*_room_setpoint_cool_eco` (1471+), `ext_demand_temp_heating` (1694)
+  and `ext_demand_temp_cooling` (1695) now declare their zero fill as a
+  sentinel (0 is never inside the documented ranges 15..30, 20..65 and
+  10..25), from the same issue #532 diagnostics. The Navigator 1.7 map is
+  untouched — separate protocol family, no capture.
+- The versioned register-schema fixture is regenerated accordingly.
+
 ## [2.14.2] - 2026-10-09
 
 ### Fixed

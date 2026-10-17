@@ -28,6 +28,7 @@ from idm_heatpump.const import (
     MODEL_UNKNOWN,
 )
 from idm_heatpump.exceptions import IdmConnectionError, IdmDeviceError
+from idm_heatpump.registers import get_heating_circuit_registers, get_register
 from idm_heatpump.transport import quiet_pymodbus_logging
 
 from .fake_modbus import FakeModbusTransport
@@ -1269,6 +1270,79 @@ def test_reset_failed_registers_clears_invalid_value_warnings(
         if r.levelno == logging.WARNING and "invalid value" in r.getMessage()
     ]
     assert len(warnings) == 2
+
+
+def test_not_present_enum_fills_are_declared_sentinels() -> None:
+    """255 on ``bivalence_state``/``solar_mode`` means "feature not present".
+
+    Issue #532: those enum registers read the one-byte "not present" fill on
+    plants without the feature, which used to warn on every restart while
+    ``compressor_status_*`` stayed silent on the identical raw 0xFFFF. The
+    sentinels are declared per register (not validator-wide) so the
+    corrupt-batch re-read recovery of issue #69 keeps working for every
+    other enum register.
+    """
+    bivalence = get_register("bivalence_state")
+    solar = get_register("solar_mode")
+    assert bivalence is not None and bivalence.sentinel_values == (255,)
+    assert solar is not None and solar.sentinel_values == (255,)
+    assert IdmModbusClient._suspect_reason(bivalence, 255) is None
+    assert IdmModbusClient._suspect_reason(solar, 255) is None
+    # A value that is neither documented option nor sentinel stays suspect
+    # and keeps triggering the individual re-read recovery.
+    assert IdmModbusClient._suspect_reason(bivalence, 7) == "not_in_enum"
+
+
+def test_unconfigured_feature_zero_fills_are_sentinels() -> None:
+    """Cooling setpoints and external demand temps read 0 when unconfigured.
+
+    Navigator 2.0 without cooling or an external demand source fills the
+    registers with 0, outside their documented ranges — classify as not
+    present instead of warning on every restart (issue #532 diagnostics).
+    """
+    cool_normal = get_heating_circuit_registers("a")["hc_a_room_setpoint_cool_normal"]
+    cool_eco = get_heating_circuit_registers("a")["hc_a_room_setpoint_cool_eco"]
+    demand_heating = get_register("ext_demand_temp_heating")
+    demand_cooling = get_register("ext_demand_temp_cooling")
+    assert cool_normal.sentinel_values == (0.0,)
+    assert cool_eco.sentinel_values == (0.0,)
+    assert demand_heating is not None and demand_heating.sentinel_values == (0,)
+    assert demand_cooling is not None and demand_cooling.sentinel_values == (0,)
+    assert IdmModbusClient._suspect_reason(cool_normal, 0.0) is None
+    assert IdmModbusClient._suspect_reason(cool_eco, 0.0) is None
+    assert IdmModbusClient._suspect_reason(demand_heating, 0) is None
+    assert IdmModbusClient._suspect_reason(demand_cooling, 0) is None
+    # In-range values are unaffected by the sentinel.
+    assert IdmModbusClient._suspect_reason(cool_normal, 22.0) is None
+    assert IdmModbusClient._suspect_reason(cool_normal, 40.0) == "above_max"
+
+
+def test_out_of_range_humidity_stays_suspect() -> None:
+    """A live source reading above 100 % is a genuine range violation.
+
+    Issue #532: the reporter's KNX-fed ``ext_humidity`` delivers 100.96 % —
+    physically impossible upstream data that must stay rejected.
+    """
+    humidity = get_register("ext_humidity")
+    assert humidity is not None
+    assert IdmModbusClient._suspect_reason(humidity, 100.96) == "above_max"
+    assert IdmModbusClient._suspect_reason(humidity, -1.0) is None
+
+
+def test_datatype_sentinel_fill_publishes_without_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The issue #532 scenario: 255 on bivalence_state reads silently."""
+    transport = FakeModbusTransport(input_registers={1124: 255})
+    client = _make_client_with_transport(transport)
+    bivalence = get_register("bivalence_state")
+    assert bivalence is not None
+
+    with caplog.at_level(logging.DEBUG, logger="idm_heatpump.client"):
+        result = asyncio.run(client.read_batch([bivalence]))
+
+    assert result == {"bivalence_state": 255}
+    assert not [r for r in caplog.records if "invalid value" in r.getMessage()]
 
 
 def test_decode_error_warning_logged_once_per_episode(
