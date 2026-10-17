@@ -495,6 +495,13 @@ def _hp_status_registers() -> dict[str, RegisterDef]:
             datatype=DataType.UCHAR,
             name="bivalence_state",
             enum_options=BIVALENCE_STATE_OPTIONS,
+            # 255 = no bivalence configuration: Navigator 2.0 plants without
+            # the feature read the one-byte "not present" fill; sibling
+            # registers (compressor_status_*) show the same raw 0xFFFF
+            # (idm-heatpump-hass issue #532 diagnostics, 2026-10). Declaring
+            # it explicitly keeps the corrupt-batch re-read recovery of
+            # issue #69 intact for every other enum register.
+            sentinel_values=(255,),
         ),
         "cascade_available_heating": RegisterDef(
             address=1147,
@@ -758,6 +765,9 @@ def _solar_registers() -> dict[str, RegisterDef]:
             min_val=0,
             max_val=4,
             enum_options=SOLAR_MODE_OPTIONS,
+            # 255 = no solar on the plant, same evidence as bivalence_state
+            # (idm-heatpump-hass issue #532 diagnostics, 2026-10).
+            sentinel_values=(255,),
             eeprom_sensitive=True,
         ),
         "solar_wq_pool_temp": RegisterDef(
@@ -1232,6 +1242,10 @@ def _glt_registers() -> dict[str, RegisterDef]:
             writable=True,
             min_val=20,
             max_val=65,
+            # 0 = no external demand source connected: Navigator 2.0 without
+            # a GLT demand writer holds 0, which is never a valid setpoint
+            # (idm-heatpump-hass issue #532 diagnostics, 2026-10).
+            sentinel_values=(0,),
             eeprom_sensitive=True,
         ),
         "ext_demand_temp_cooling": RegisterDef(
@@ -1242,6 +1256,8 @@ def _glt_registers() -> dict[str, RegisterDef]:
             writable=True,
             min_val=10,
             max_val=25,
+            # 0 = no external demand source connected (see heating above).
+            sentinel_values=(0,),
             eeprom_sensitive=True,
         ),
         "glt_temp_demand_heating": RegisterDef(
@@ -1883,6 +1899,10 @@ def get_heating_circuit_registers(
         writable=True,
         min_val=15,
         max_val=30,
+        # 0.0 = cooling not configured for this circuit: the controller fills
+        # the pair with the "no value" zero instead of the FLOAT -1.0 pattern
+        # (idm-heatpump-hass issue #532 diagnostics, 2026-10).
+        sentinel_values=(0.0,),
         eeprom_sensitive=True,
     )
     regs[f"hc_{c}_room_setpoint_cool_eco"] = RegisterDef(
@@ -1893,6 +1913,8 @@ def get_heating_circuit_registers(
         writable=True,
         min_val=15,
         max_val=30,
+        # 0.0 = cooling not configured for this circuit (see normal above).
+        sentinel_values=(0.0,),
         eeprom_sensitive=True,
     )
     regs[f"hc_{c}_cooling_limit"] = RegisterDef(
