@@ -296,6 +296,19 @@ class TestHeatSinkRegisters:
         assert reg.unit == "L/min", "Unit should be L/min (not l/min)"
         assert reg.state_class == "measurement"
 
+    def test_heat_sink_flow_rate_is_word_swapped_float32(self) -> None:
+        """Field-proven type (idm-heatpump-hass discussion #516).
+
+        The controller serves a word-swapped FLOAT32 at 1072 like its sibling
+        temperatures — the official doc's UCHAR listing reads one byte of the
+        low word and produced jumping, far-too-high values. Not-present plants
+        answer -1.0, which the FLOAT datatype default sentinel covers.
+        """
+        reg = _heat_sink_registers()["heat_sink_flow_rate"]
+        assert reg.datatype == DataType.FLOAT
+        assert reg.size == 2
+        assert reg.effective_sentinel_values == (-1.0,)
+
 
 class TestHumidityRegisters:
     """Test humidity register definitions."""

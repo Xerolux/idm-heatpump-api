@@ -7383,7 +7383,7 @@
       },
       "heat_sink_flow_rate": {
         "address": 1072,
-        "datatype": "UCHAR",
+        "datatype": "FLOAT",
         "name": "heat_sink_flow_rate",
         "unit": "L/min",
         "writable": false,
@@ -7410,7 +7410,7 @@
         ],
         "sentinel_values": [],
         "last_verified": null,
-        "size": 1
+        "size": 2
       },
       "heat_sink_flow_temp": {
         "address": 1070,
@@ -16388,7 +16388,7 @@
       },
       "heat_sink_flow_rate": {
         "address": 1072,
-        "datatype": "UCHAR",
+        "datatype": "FLOAT",
         "name": "heat_sink_flow_rate",
         "unit": "L/min",
         "writable": false,
@@ -16415,7 +16415,7 @@
         ],
         "sentinel_values": [],
         "last_verified": null,
-        "size": 1
+        "size": 2
       },
       "heat_sink_flow_temp": {
         "address": 1070,

@@ -22,6 +22,23 @@ prerelease is `2.0.0b1`, not `2.0.0-beta.1` — see `docs/RELEASE_PROCESS.md`.
 Sections up to `1.0.3` are German; they stay as published, because a released
 changelog is history. Everything from `2.0.0b1` on is English.
 
+## [2.14.4] - 2026-10-18
+
+### Fixed
+
+- **`heat_sink_flow_rate` (address 1072) re-typed from UCHAR to word-swapped
+  FLOAT32** (idm-heatpump-hass discussion #516): the official IDM register
+  doc lists UCHAR, but two independent field reads prove the controller
+  serves a 32-bit word-swapped float here like its siblings 1068/1070 — a
+  direct Home Assistant modbus `float32` read with word swap returns
+  plausible L/min values on a plant with a live flow signal, and plants
+  without a plate heat exchanger answer the −1.0 float pattern (raw
+  `[0, 49024]`). The UCHAR decode read one byte of the float's low word,
+  which produced jumping, far-too-high flow readings whenever the charging
+  pump ran. The FLOAT datatype default sentinel (−1.0) covers not-present
+  plants, so consumers keep classifying them as *not present*. The versioned
+  register-schema fixture and the register reference are updated accordingly.
+
 ## [2.14.3] - 2026-10-17
 
 ### Fixed

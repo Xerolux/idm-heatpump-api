@@ -896,11 +896,19 @@ def _heat_sink_registers() -> dict[str, RegisterDef]:
         ),
         "heat_sink_flow_rate": RegisterDef(
             address=1072,
-            datatype=DataType.UCHAR,
+            datatype=DataType.FLOAT,
             name="heat_sink_flow_rate",
             unit="L/min",
             state_class="measurement",
-            # B2 - Durchfluss Wärmesenke (only available with plate heat exchanger / TWT)
+            # B2 - Durchfluss Wärmesenke (only available with plate heat exchanger / TWT).
+            # The official IDM register doc lists UCHAR, but two independent field
+            # reads (idm-heatpump-hass discussion #516) prove the controller serves
+            # a word-swapped FLOAT32 here like its siblings 1068/1070: a direct HA
+            # modbus float32 read with word swap returns plausible L/min values,
+            # and the not-present pattern raw [0, 49024] is exactly the -1.0 FLOAT
+            # sentinel. UCHAR decoding read one byte of the low word and produced
+            # jumping, far-too-high values on plants with a live flow signal.
+            # The FLOAT datatype default sentinel (-1.0) covers not-present plants.
         ),
         "heat_sink_charging_pump_signal": RegisterDef(
             address=1074,

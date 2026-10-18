@@ -348,6 +348,12 @@
       "hass_integration_version": "pending",
       "status": "api-prepared",
       "notes": "Register-data fix: not-present fills declared as sentinels (bivalence_state/solar_mode 255, cooling setpoints and ext_demand temps 0) per Navigator 2.0 diagnostics in idm-heatpump-hass #532."
+    },
+    {
+      "api_version": "2.14.4",
+      "hass_integration_version": "pending",
+      "status": "api-prepared",
+      "notes": "Register-data fix: heat_sink_flow_rate (1072) re-typed UCHAR -> word-swapped FLOAT32 per field evidence in idm-heatpump-hass discussion #516."
     }
   ]
 }
