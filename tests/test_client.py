@@ -959,6 +959,30 @@ def test_read_register_skips_permanently_failed_registers() -> None:
         asyncio.run(client.read_register(reg))
 
 
+def test_heat_sink_flow_rate_decodes_word_swapped_float32() -> None:
+    """Regression (idm-heatpump-hass discussion #516): address 1072 is a FLOAT32.
+
+    The controller serves a word-swapped FLOAT32 at 1072, like its sibling
+    temperatures 1068/1070. The raw words [0x999A, 0x4207] are 33.9 L/min;
+    the previous UCHAR typing read one byte of the low word (0x9A = 154)
+    and produced jumping, far-too-high values on plants with a live flow
+    signal. Not-present plants answer the -1.0 float pattern [0, 49024].
+    """
+    reg = get_register("heat_sink_flow_rate")
+    assert reg.address == 1072
+
+    live = _make_client_with_transport(
+        FakeModbusTransport(input_registers={1072: 0x999A, 1073: 0x4207})
+    )
+    assert asyncio.run(live.read_register(reg)) == 33.9
+
+    not_present = _make_client_with_transport(
+        FakeModbusTransport(input_registers={1072: 0, 1073: 49024})
+    )
+    assert asyncio.run(not_present.read_register(reg)) == -1.0
+    assert -1.0 in reg.effective_sentinel_values
+
+
 def test_successful_individual_read_resets_transient_failure_counter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

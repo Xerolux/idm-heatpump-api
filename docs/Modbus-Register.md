@@ -50,7 +50,7 @@ documentation (as of 2025-06-18, software NAV10_20.23-903.iup / T_NAV10_20.23-13
 | 1066 | `charging_sensor_temp` | FLOAT | RO | °C |  |  |
 | 1068 | `heat_sink_return_temp` | FLOAT | RO | °C |  |  |
 | 1070 | `heat_sink_flow_temp` | FLOAT | RO | °C |  |  |
-| 1072 | `heat_sink_flow_rate` | UCHAR | RO | L/min |  |  |
+| 1072 | `heat_sink_flow_rate` | FLOAT | RO | L/min |  | word-swapped FLOAT32 (see notes); -1.0 = not present |
 | 1074 | `heat_sink_charging_pump_signal` | INT16 | RO | % |  |  |
 | 1086 | `groundwater_inlet_temp_1` | FLOAT | RO | °C |  |  |
 | 1088 | `groundwater_inlet_temp_2` | FLOAT | RO | °C |  |  |
@@ -530,6 +530,8 @@ same volatile GLT writes as on the shared family:
 - Address 1004 (internal message): message numbers 020–999 — read as 16-bit value.
 - Address 1050/1052 are not readable on systems with a separating heat exchanger (TWT); use 1068/1070 instead.
 - Address 1072 (flow rate heat sink) is only available with a separating heat exchanger (TWT).
+  The official IDM doc lists UCHAR, but field reads (idm-heatpump-hass discussion #516) show a
+  word-swapped FLOAT32 like the sibling temperatures; plants without a TWT answer `-1.0`.
 - Address 1712 (DHW charge demand): write 0 to end the charge — it does not stop on storage temperature.
 - Address 1999 (error acknowledge) must not be written permanently.
 - Addresses 1710/1711 (heat/cool demand) should be written cyclically so demands survive a restart.
