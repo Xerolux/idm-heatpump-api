@@ -354,6 +354,12 @@
       "hass_integration_version": "pending",
       "status": "api-prepared",
       "notes": "Register-data fix: heat_sink_flow_rate (1072) re-typed UCHAR -> word-swapped FLOAT32 per field evidence in idm-heatpump-hass discussion #516."
+    },
+    {
+      "api_version": "2.14.5b1",
+      "hass_integration_version": "0.23.2-b1",
+      "status": "api-prepared",
+      "notes": "Holiday system mode (3) accepted by validated shared-family Modbus polls; 180 integration contract/platform/reference checks passed against the fix source. Integration prerelease validation and field confirmation are separate."
     }
   ]
 }
