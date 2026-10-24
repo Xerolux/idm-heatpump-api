@@ -35,6 +35,7 @@ class SystemMode(enum.IntEnum):
     STANDBY = 0
     AUTOMATIC = 1
     AWAY = 2
+    HOLIDAY = 3
     HOT_WATER_ONLY = 4
     HEATING_COOLING_ONLY = 5
 
@@ -43,6 +44,7 @@ SYSTEM_MODE_OPTIONS: dict[int, str] = {
     0: "Standby",
     1: "Automatic",
     2: "Absent",
+    3: "Holiday",
     4: "Hot Water Only",
     5: "Heating/Cooling Only",
 }

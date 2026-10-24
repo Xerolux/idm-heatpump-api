@@ -875,9 +875,12 @@ def test_write_safety_rejects_invalid_enum_boolean_and_fractional_integer_values
     client = IdmModbusClient("192.0.2.10")
     bool_reg = RegisterDef(1710, DataType.BOOL, "demand_heating", writable=True)
     int_reg = RegisterDef(1714, DataType.UCHAR, "pump_demand", writable=True)
+    enum_reg = RegisterDef(
+        9999, DataType.UCHAR, "sparse_mode", writable=True, enum_options={0: "Off", 2: "On"}
+    )
 
     with pytest.raises(ValueError, match="not a supported option"):
-        client.simulate_write("system_mode", 3)
+        client.simulate_write(enum_reg, 1)
     with pytest.raises(ValueError, match="must be a boolean"):
         client.simulate_write(bool_reg, "false")
     with pytest.raises(ValueError, match="must be an integer"):
