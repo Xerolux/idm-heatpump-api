@@ -22,6 +22,17 @@ prerelease is `2.0.0b1`, not `2.0.0-beta.1` — see `docs/RELEASE_PROCESS.md`.
 Sections up to `1.0.3` are German; they stay as published, because a released
 changelog is history. Everything from `2.0.0b1` on is English.
 
+## [2.14.5b1] - 2026-10-24
+
+### Fixed
+
+- Accept **Holiday (3)** in the shared Navigator 2.0/10/Pro system-mode enum
+  and public `SystemMode`. The missing option caused validated Modbus polls
+  to discard register 1005 while the controller was on holiday, even though
+  the web protocol and Home Assistant selector already supported that mode
+  (idm-heatpump-hass#596). Unknown modes remain rejected and EEPROM write
+  protection is unchanged. Navigator 1.7 keeps its separate mode meanings.
+
 ## [2.14.4] - 2026-10-18
 
 ### Fixed

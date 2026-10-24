@@ -28,7 +28,7 @@ documentation (as of 2025-06-18, software NAV10_20.23-903.iup / T_NAV10_20.23-13
 | 1000 | `outdoor_temp` | FLOAT | RO | °C |  |  |
 | 1002 | `outdoor_temp_avg` | FLOAT | RO | °C |  |  |
 | 1004 | `internal_message` | UINT16 | RO | - |  |  |
-| 1005 | `system_mode` | UCHAR | RW | - | 0..5 | EEPROM, 0=Standby; 1=Automatic; 2=Absent; 4=Hot Water Only; 5=Heating/Cooling Only |
+| 1005 | `system_mode` | UCHAR | RW | - | 0..5 | EEPROM, 0=Standby; 1=Automatic; 2=Absent; 3=Holiday; 4=Hot Water Only; 5=Heating/Cooling Only |
 | 1006 | `variable_input` | UCHAR | RO | - |  | 0=Not configured; 1=External DHW Charging; 2=PV / Digital Input; 3=External Heat/Cool Switch |
 | 1008 | `storage_temp` | FLOAT | RO | °C |  |  |
 | 1010 | `cold_storage_temp` | FLOAT | RO | °C |  |  |

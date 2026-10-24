@@ -8609,6 +8609,7 @@
           "0": "Standby",
           "1": "Automatic",
           "2": "Absent",
+          "3": "Holiday",
           "4": "Hot Water Only",
           "5": "Heating/Cooling Only"
         },
@@ -17614,6 +17615,7 @@
           "0": "Standby",
           "1": "Automatic",
           "2": "Absent",
+          "3": "Holiday",
           "4": "Hot Water Only",
           "5": "Heating/Cooling Only"
         },
@@ -32116,6 +32118,7 @@
           "0": "Standby",
           "1": "Automatic",
           "2": "Absent",
+          "3": "Holiday",
           "4": "Hot Water Only",
           "5": "Heating/Cooling Only"
         },

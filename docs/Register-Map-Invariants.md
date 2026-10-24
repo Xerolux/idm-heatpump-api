@@ -152,6 +152,17 @@ addresses into the existing Navigator 2.0/10/Pro map.
 
 ## Write safety
 
+### Shared-family system mode: Holiday (2026-10-24)
+
+The shared-family `system_mode` at FC04 address 1005/count 1 remains UCHAR,
+with FC16 writes and EEPROM protection. The enum includes Holiday at value 3:
+idm-heatpump-hass#596 reports the controller displaying Holiday while the
+individual validated read returns 3. This agrees with the existing September
+2026 Navigator 10 `home/save` capture (`NAVIGATOR10_SYSTEM_MODE_HOLIDAY = 3`)
+and Home Assistant's existing mode mapping. Adding the missing enum member
+changes neither wire encoding nor request shape. Navigator 1.7's FC03 address
+2000 is a separate enum; its value 3 continues to mean a one-time DHW charge.
+
 Official IDM documentation warns that selected RW values are written to EEPROM
 when changed, with a documented maximum of 300,000 writes per register. Keep
 EEPROM-sensitive writes guarded and never turn them into periodic writes.
