@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from idm_heatpump.client import (
+    DEFAULT_CYCLIC_WRITE_TTL,
     DataType,
     IdmModbusClient,
     IdmModelInfo,
@@ -24,6 +25,7 @@ from idm_heatpump.const import (
     FEATURE_SOLAR,
     FEATURE_ZONE_MODULES,
     MODEL_NAVIGATOR_10,
+    MODEL_NAVIGATOR_17,
     MODEL_NAVIGATOR_20,
     MODEL_UNKNOWN,
 )
@@ -505,6 +507,111 @@ def test_detect_model_scans_all_heating_circuits_but_stops_zone_modules() -> Non
     assert (2000, 1) in client.probe_calls
     assert (2065, 1) in client.probe_calls
     assert (2130, 1) not in client.probe_calls
+
+
+def test_detect_model_batches_heating_circuit_probes_when_possible() -> None:
+    """Fast path: when the gate slot answers, the remaining heating-circuit
+    slots are fetched with one adjacent batch per signal (1350-1363 flow,
+    1498-1504 active mode) instead of seven individual requests each."""
+    unavailable_flow = ModbusCodec.encode_float32(-1.0)
+    flow_batch: list[int] = []
+    flow_batch += ModbusCodec.encode_float32(27.61)  # A real
+    flow_batch += unavailable_flow  # B
+    flow_batch += unavailable_flow  # C
+    flow_batch += ModbusCodec.encode_float32(26.90)  # D real
+    flow_batch += unavailable_flow  # E
+    flow_batch += unavailable_flow  # F
+    flow_batch += unavailable_flow  # G
+    # Active-mode: A and D configured (0), B/C/E/F/G sentinel 0xFFFF.
+    mode_batch = [0x0000, 0xFFFF, 0xFFFF, 0x0000, 0xFFFF, 0xFFFF, 0xFFFF]
+
+    client = ProbeOnlyClient(
+        {
+            (1350, 2): ModbusCodec.encode_float32(27.61),  # gate slot A
+            (1350, 14): flow_batch,
+            (1498, 1): [0x0000],  # gate slot A
+            (1498, 7): mode_batch,
+        }
+    )
+
+    model_info = asyncio.run(client.detect_model())
+
+    assert model_info.active_heating_circuits == ["A", "D"]
+    # The batched fast path was used for both signals...
+    assert (1350, 14) in client.probe_calls
+    assert (1498, 7) in client.probe_calls
+    # ...and no per-slot probes beyond the gates were issued.
+    assert (1352, 2) not in client.probe_calls
+    assert (1362, 2) not in client.probe_calls
+    assert (1499, 1) not in client.probe_calls
+    assert (1504, 1) not in client.probe_calls
+
+
+def test_detect_model_falls_back_to_individual_probes_on_short_batch() -> None:
+    """A wrong-length batch answer must degrade to the per-slot request shape
+    rather than classifying slots from truncated words."""
+    unavailable_flow = ModbusCodec.encode_float32(-1.0)
+    client = ProbeOnlyClient(
+        {
+            (1350, 2): ModbusCodec.encode_float32(27.61),  # gate slot A
+            (1350, 14): [0, 16968],  # short batch -> fallback
+            (1352, 2): unavailable_flow,
+            (1354, 2): unavailable_flow,
+            (1356, 2): unavailable_flow,
+            (1358, 2): unavailable_flow,
+            (1360, 2): unavailable_flow,
+            (1362, 2): unavailable_flow,
+            (1498, 1): [0x0000],  # gate slot A
+            (1498, 7): [0x0000],  # short batch -> fallback
+            (1499, 1): [0xFFFF],
+            (1500, 1): [0xFFFF],
+            (1501, 1): [0xFFFF],
+            (1502, 1): [0xFFFF],
+            (1503, 1): [0xFFFF],
+            (1504, 1): [0xFFFF],
+        }
+    )
+
+    model_info = asyncio.run(client.detect_model())
+
+    assert model_info.active_heating_circuits == ["A"]
+    # The fallback re-probed every slot individually.
+    assert (1352, 2) in client.probe_calls
+    assert (1362, 2) in client.probe_calls
+    assert (1499, 1) in client.probe_calls
+    assert (1504, 1) in client.probe_calls
+
+
+def test_detect_model_falls_back_to_individual_probes_on_batch_failure() -> None:
+    """A batch rejection (None) falls back to per-slot probes, and the gate
+    slot's rejection state still comes from its individual probe."""
+    unavailable_flow = ModbusCodec.encode_float32(-1.0)
+    client = ProbeOnlyClient(
+        {
+            (1350, 2): ModbusCodec.encode_float32(25.0),  # gate slot A
+            # (1350, 14) missing -> batch probe returns None -> fallback
+            (1352, 2): unavailable_flow,
+            (1354, 2): unavailable_flow,
+            (1356, 2): unavailable_flow,
+            (1358, 2): unavailable_flow,
+            (1360, 2): unavailable_flow,
+            (1362, 2): unavailable_flow,
+            (1498, 1): [0x0000],  # gate slot A
+            # (1498, 7) missing -> fallback
+            (1499, 1): [0xFFFF],
+            (1500, 1): [0xFFFF],
+            (1501, 1): [0xFFFF],
+            (1502, 1): [0xFFFF],
+            (1503, 1): [0xFFFF],
+            (1504, 1): [0xFFFF],
+        }
+    )
+
+    model_info = asyncio.run(client.detect_model())
+
+    assert model_info.active_heating_circuits == ["A"]
+    assert (1352, 2) in client.probe_calls
+    assert (1499, 1) in client.probe_calls
 
 
 def test_read_registers_rejects_incomplete_modbus_response() -> None:
@@ -1494,3 +1601,121 @@ def test_detect_model_raises_when_the_link_dies_mid_detection() -> None:
         asyncio.run(client.detect_model())
 
     assert client.model_info is None
+
+
+# ---------------------------------------------------------------------------
+# Key-based API: read_value() and set_value()
+# ---------------------------------------------------------------------------
+
+
+def test_read_value_returns_decoded_value_by_key() -> None:
+    """read_value resolves the registry key and returns the decoded value."""
+    transport = FakeModbusTransport(
+        input_registers={
+            1000 + offset: word for offset, word in enumerate(ModbusCodec.encode_float32(30.5))
+        }
+    )
+    client = IdmModbusClient("127.0.0.1", max_retries=1, transport=transport)
+
+    assert asyncio.run(client.read_value("outdoor_temp")) == pytest.approx(30.5)
+    assert transport.read_calls == [("input", 1000, 2)]
+
+
+def test_read_value_unknown_key_raises_keyerror() -> None:
+    client = IdmModbusClient("127.0.0.1", transport=FakeModbusTransport())
+
+    with pytest.raises(KeyError, match="Unknown IDM register key"):
+        asyncio.run(client.read_value("no_such_register"))
+
+
+def test_set_value_dry_run_returns_plan_without_writing() -> None:
+    """A dry run validates and encodes by key but sends no Modbus packet."""
+    transport = FakeModbusTransport()
+    client = IdmModbusClient("127.0.0.1", transport=transport)
+
+    plan = asyncio.run(client.set_value("hc_a_mode", 2, dry_run=True))
+
+    assert plan.dry_run is True
+    assert plan.register.name == "hc_a_mode"
+    assert plan.register.address == 1393
+    assert plan.encoded_registers == (2,)
+    assert transport.write_calls == []
+    assert transport.coil_write_calls == []
+
+
+def test_set_value_executes_holding_write_by_key() -> None:
+    transport = FakeModbusTransport()
+    client = IdmModbusClient("127.0.0.1", transport=transport)
+
+    plan = asyncio.run(client.set_value("hc_a_mode", 2))
+
+    assert plan.dry_run is False
+    assert transport.write_calls == [(1393, [2])]
+
+
+def test_set_value_eeprom_guard_applies_to_key_writes() -> None:
+    """The EEPROM throttle is recorded and enforced through set_value() too."""
+    transport = FakeModbusTransport()
+    client = IdmModbusClient("127.0.0.1", transport=transport)
+    client._time = lambda: 1000.0
+
+    asyncio.run(client.set_value("hc_a_mode", 2))
+
+    with pytest.raises(ValueError, match=r"try again in 60\.0s"):
+        asyncio.run(client.set_value("hc_a_mode", 3))
+
+    assert transport.write_calls == [(1393, [2])]
+
+
+def test_set_value_coil_branch_writes_fc05() -> None:
+    """A coil register goes through the FC05 path of set_value, never FC16."""
+    transport = FakeModbusTransport()
+    client = IdmModbusClient("127.0.0.1", transport=transport)
+    client.set_model_info(
+        IdmModelInfo(
+            model_name=MODEL_NAVIGATOR_17,
+            active_heating_circuits=[],
+            zone_modules=0,
+            has_solar=False,
+            has_isc=False,
+            has_pv=False,
+            has_cascade=False,
+        )
+    )
+
+    plan = asyncio.run(client.set_value("demand_dhw_17", True))
+
+    assert transport.coil_write_calls == [(3003, True)]
+    assert transport.write_calls == []
+    assert plan.encoded_registers == (1,)
+
+
+def test_set_value_records_cyclic_write_deadline() -> None:
+    """A successful set_value on a cyclic register arms the cyclic TTL."""
+    transport = FakeModbusTransport()
+    client = IdmModbusClient("127.0.0.1", transport=transport)
+    client._time = lambda: 1000.0
+
+    asyncio.run(client.set_value("glt_temp_demand_heating", 55.0))
+
+    assert transport.write_calls == [(1696, ModbusCodec.encode_float32(55.0))]
+    active = client.get_active_cyclic_writes()
+    assert set(active) == {"glt_temp_demand_heating"}
+    assert active["glt_temp_demand_heating"] == pytest.approx(1000.0 + DEFAULT_CYCLIC_WRITE_TTL)
+
+
+def test_set_value_rejects_read_only_register_before_any_write() -> None:
+    transport = FakeModbusTransport()
+    client = IdmModbusClient("127.0.0.1", transport=transport)
+
+    with pytest.raises(ValueError, match="read-only"):
+        asyncio.run(client.set_value("outdoor_temp", 42.0))
+
+    assert transport.write_calls == []
+
+
+def test_set_value_unknown_key_raises_keyerror() -> None:
+    client = IdmModbusClient("127.0.0.1", transport=FakeModbusTransport())
+
+    with pytest.raises(KeyError, match="Unknown IDM register key"):
+        asyncio.run(client.set_value("no_such_register", 1))

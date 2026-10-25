@@ -170,34 +170,43 @@ class IdmCoilTransportExtension(Protocol):
         ...
 
 
+def _raise_device_error_from_response(result: Any, address: int, *, operation: str) -> None:
+    """Map a pymodbus-shaped ``isError()`` response onto the library hierarchy.
+
+    Shared by :func:`check_transport_response` and
+    :func:`check_coil_response`:
+
+    * exception code 2 -> :class:`IllegalAddressError` (permanent for the
+      address; the library retry loop short-circuits it).
+    * any other error -> :class:`IdmDeviceError` carrying the device's
+      ``exception_code`` (transient, retried in place; never treated as an
+      unsupported register).
+    """
+    exception_code = getattr(result, "exception_code", None)
+    code = int(exception_code) if isinstance(exception_code, int) else None
+    if code == 2:
+        raise IllegalAddressError(f"Illegal Data Address {operation} address {address}: {result}")
+    raise IdmDeviceError(
+        f"Modbus error {operation} address {address}: {result}",
+        exception_code=code,
+    )
+
+
 def check_transport_response(result: Any, address: int, *, operation: str) -> list[int]:
     """Validate a pymodbus-shaped response and return its register words.
 
     Centralises the device-response mapping so the default Pymodbus adapter
-    and any pymodbus-shaped injected transport classify responses identically:
-
-    * ``isError()`` with ``exception_code == 2`` -> :class:`IllegalAddressError`
-      (permanent for the address; the library retry loop short-circuits it).
-    * Any other ``isError()`` response -> :class:`IdmDeviceError` carrying the
-      device's ``exception_code`` (transient, retried in place; never treated
-      as an unsupported register).
-    * A response with fewer registers than requested -> :class:`IdmTransportError`.
+    and any pymodbus-shaped injected transport classify responses identically.
+    Error responses are mapped through
+    :func:`_raise_device_error_from_response`; a non-error response yields
+    its ``registers`` list (empty when absent).
 
     ``operation`` is one of ``"read"``/``"write"`` and only flavours the error
     message. Transports that already raise the correct exceptions directly do
     not need to call this helper.
     """
     if result.isError():
-        exception_code = getattr(result, "exception_code", None)
-        code = int(exception_code) if isinstance(exception_code, int) else None
-        if code == 2:
-            raise IllegalAddressError(
-                f"Illegal Data Address {operation} address {address}: {result}"
-            )
-        raise IdmDeviceError(
-            f"Modbus error {operation} address {address}: {result}",
-            exception_code=code,
-        )
+        _raise_device_error_from_response(result, address, operation=operation)
     registers_obj = getattr(result, "registers", None)
     registers = list(registers_obj) if registers_obj is not None else []
     return registers
@@ -207,23 +216,13 @@ def check_coil_response(result: Any, address: int, *, operation: str) -> list[bo
     """Validate a pymodbus-shaped coil response and return its bits.
 
     Coil twin of :func:`check_transport_response`: the same device-side error
-    mapping (exception code 2 -> :class:`IllegalAddressError`, any other
-    ``isError()`` -> :class:`IdmDeviceError`), but the payload is the
-    response's ``bits`` list. Length validation is left to the caller — the
+    mapping via :func:`_raise_device_error_from_response`, but the payload is
+    the response's ``bits`` list. Length validation is left to the caller — the
     client treats a short coil answer like a short register answer
     (:class:`IdmDeviceError`) so the batch fallback can isolate the address.
     """
     if result.isError():
-        exception_code = getattr(result, "exception_code", None)
-        code = int(exception_code) if isinstance(exception_code, int) else None
-        if code == 2:
-            raise IllegalAddressError(
-                f"Illegal Data Address {operation} address {address}: {result}"
-            )
-        raise IdmDeviceError(
-            f"Modbus error {operation} address {address}: {result}",
-            exception_code=code,
-        )
+        _raise_device_error_from_response(result, address, operation=operation)
     bits_obj = getattr(result, "bits", None)
     return [bool(bit) for bit in bits_obj] if bits_obj is not None else []
 
