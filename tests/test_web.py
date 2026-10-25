@@ -89,6 +89,21 @@ def test_parse_idm_html_table_values_maps_known_values() -> None:
     assert values["room_temperature_HK_D"].unit == "°C"
 
 
+def test_parse_idm_html_table_values_maps_dual_label_flow_and_return() -> None:
+    """Navigator 10 ALM systems with intermediate loop report B33/B113 and B34/B114."""
+    html = """
+    <table>
+    <tr><td>B33/B113</td><td>Vorlauftemperatur</td><td>28.4°C</td></tr>
+    <tr><td>B34/B114</td><td>Rücklauftemperatur</td><td>24.1°C</td></tr>
+    </table>
+    """
+    values = parse_idm_html_table_values(html)
+    assert values["flow_temperature"].numeric_value == 28.4
+    assert values["flow_temperature"].unit == "°C"
+    assert values["return_temperature"].numeric_value == 24.1
+    assert values["return_temperature"].unit == "°C"
+
+
 def test_web_data_helpers_return_defaults_and_numeric_values() -> None:
     data = IdmWebData(
         model="Navigator 10 Web",
