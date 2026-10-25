@@ -22,6 +22,55 @@ prerelease is `2.0.0b1`, not `2.0.0-beta.1` — see `docs/RELEASE_PROCESS.md`.
 Sections up to `1.0.3` are German; they stay as published, because a released
 changelog is history. Everything from `2.0.0b1` on is English.
 
+## [2.14.5b2] - 2026-10-25
+
+### Changed
+
+- `write_register()` now labels its internal write-safety plan as a real
+  write (`dry_run=False`) instead of inheriting the `simulate_write()`
+  dry-run default. The plan never leaves the method, so observable behaviour
+  is unchanged; the mislabel only affected future debugging.
+
+### Added
+
+- Test coverage for the key-based public API (`set_value()`,
+  `read_value()`): dry run, holding and coil writes, EEPROM throttle
+  enforcement, cyclic write deadline recording, and the read-only and
+  unknown-key error paths.
+- Test coverage for the built-in Pymodbus adapter's coil extension
+  (FC01/FC05): byte-padding truncation, short-answer classification,
+  exception-code mapping (code 2 to `IllegalAddressError`, others to
+  `IdmDeviceError`), raised backend error translation, connection guards,
+  and the client-side 0/1 word normalisation.
+
+### Fixed
+
+- `_validate_write_allowed()` no longer truncates FLOAT values to integers
+  before checking `exclude_from_write`. No register currently uses that
+  metadata, so this is a latent correctness fix only.
+
+### Optimized
+
+- `detect_model()` fetches the seven heating-circuit flow-temperature and
+  active-mode slots with one adjacent batch per signal (1350-1363 and
+  1498-1504) once the first slot of each signal answered individually,
+  cutting the heating-circuit probe round trips from 14 to 4. The gate
+  slots keep their individual request shape because their
+  Illegal-Data-Address rejection feeds the Navigator 1.7 family signature;
+  any batch failure or wrong-length answer falls back to the previous
+  per-slot probing. Adjacent batching follows the register-map invariant
+  (`docs/Register-Map-Invariants.md`), whose 2026-07-10 capture verified
+  identical batch/individual words for these addresses.
+- `check_transport_response()` and `check_coil_response()` now share one
+  `_raise_device_error_from_response()` mapper instead of duplicating the
+  exception-code classification.
+- Collapsed the three nearly identical read paths in `_read_registers()`
+  (COIL/HOLDING/INPUT) around a shared `_await_with_optional_timeout()`
+  helper using `asyncio.timeout`, removing duplicated `wait_for` ternaries.
+- Tightened `PollRateLimiter._clock` from `Any` to `Callable[[], float]`,
+  removing the redundant runtime `float()` cast and improving static type
+  safety.
+
 ## [2.14.5b1] - 2026-10-24
 
 ### Fixed
