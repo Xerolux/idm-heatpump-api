@@ -49,6 +49,20 @@ _LOGGER = logging.getLogger(__name__)
 
 _T = TypeVar("_T")
 
+
+async def _await_with_optional_timeout(awaitable: Awaitable[_T], timeout: float | None) -> _T:
+    """Await ``awaitable`` directly, or bound it with ``asyncio.timeout``.
+
+    Model detection uses short per-request timeouts while normal polling
+    relies on the transport's own socket timeout; this helper keeps the two
+    paths identical except for the optional wrapper.
+    """
+    if timeout is not None:
+        async with asyncio.timeout(timeout):
+            return await awaitable
+    return await awaitable
+
+
 # IDM firmware variants have returned shifted or otherwise inconsistent values
 # when a single Modbus request spans addresses that are not part of the
 # requested register map. Some officially documented data points also overlap
@@ -229,7 +243,7 @@ class AdaptiveBackoff:
 class PollRateLimiter:
     """Simple monotonic rate limiter for Modbus/web/diagnostic polling loops."""
 
-    def __init__(self, interval: float, *, clock: Any = time.monotonic) -> None:
+    def __init__(self, interval: float, *, clock: Callable[[], float] = time.monotonic) -> None:
         if interval < 0:
             raise ValueError("poll interval must be >= 0")
         self._interval = float(interval)
@@ -241,7 +255,7 @@ class PollRateLimiter:
         return self._interval
 
     def remaining(self) -> float:
-        return max(0.0, self._next_allowed - float(self._clock()))
+        return max(0.0, self._next_allowed - self._clock())
 
     def allow(self) -> bool:
         return self.remaining() <= 0
@@ -808,30 +822,26 @@ class IdmModbusClient:
             transport = self._require_client()
             if reg_type is RegisterType.COIL:
                 assert coil_transport is not None
-                coil_task = coil_transport.read_coils(address=address, count=count)
-                # ``asyncio.wait_for`` preserves the per-request timeout used
-                # for model detection; the transport itself is timeout-agnostic.
-                bits = (
-                    await asyncio.wait_for(coil_task, timeout=request_timeout)
-                    if request_timeout is not None
-                    else await coil_task
+                bits = await _await_with_optional_timeout(
+                    coil_transport.read_coils(address=address, count=count),
+                    request_timeout,
                 )
                 # Same normalisation as every other transport: raw booleans
                 # become 0/1 words so decode_value() handles them uniformly.
                 result: list[int] = [1 if bit else 0 for bit in bits]
             elif reg_type == RegisterType.HOLDING:
-                word_task = transport.read_holding_registers(address=address, count=count)
                 result = list(
-                    await asyncio.wait_for(word_task, timeout=request_timeout)
-                    if request_timeout is not None
-                    else await word_task
+                    await _await_with_optional_timeout(
+                        transport.read_holding_registers(address=address, count=count),
+                        request_timeout,
+                    )
                 )
             else:
-                word_task = transport.read_input_registers(address=address, count=count)
                 result = list(
-                    await asyncio.wait_for(word_task, timeout=request_timeout)
-                    if request_timeout is not None
-                    else await word_task
+                    await _await_with_optional_timeout(
+                        transport.read_input_registers(address=address, count=count),
+                        request_timeout,
+                    )
                 )
             # The transport contract guarantees raw register words, but the
             # requested count is a client-side invariant that every transport
@@ -1035,7 +1045,11 @@ class IdmModbusClient:
              non-contiguous (e.g. only A and D configured, with B/C unconfigured).
              A circuit counts as active when its flow temperature is a real
              value (not the -1.0 sentinel) OR its active-mode register is not
-             the UCHAR "not configured" sentinel (raw word 0xFFFF).
+             the UCHAR "not configured" sentinel (raw word 0xFFFF). The first
+             slot of each signal is probed individually (it gates the family
+             signature below); when it answers, the remaining slots are read
+             with one adjacent batch per signal, falling back to per-slot
+             probes whenever a batch fails or returns a wrong length.
           2. Probe zone module presence (2000, 2065, ...)
           3. Probe solar register (1850)
           4. Probe ISC register (1870)
@@ -1057,10 +1071,59 @@ class IdmModbusClient:
         await self._ensure_connected()
         self._probe_illegal_rejections.clear()
 
+        # Heating-circuit presence probing. The first slot of each signal is
+        # always probed individually: it gates the Navigator 1.7 family
+        # signature below, and its Illegal-Data-Address rejection must be
+        # recorded from an individual request exactly as before. When the gate
+        # answers, the remaining slots are fetched with one adjacent batch per
+        # signal (flow temperatures 1350-1363, active modes 1498-1504; strict
+        # adjacency without overlap per docs/Register-Map-Invariants.md, whose
+        # 2026-07-10 capture verified identical batch/individual words). Any
+        # batch failure or wrong-length answer falls back to per-slot probes,
+        # so firmware quirks degrade to the previous request shape.
+        flow_span = MAX_HEATING_CIRCUITS * _DETECT_HC_STEP
+        flow_gate = await self._probe_model_register(_DETECT_HC_FLOW_BASE, 2)
+        flow_slots: list[list[int] | None]
+        if flow_gate is not None:
+            flow_batch = await self._probe_model_register(_DETECT_HC_FLOW_BASE, flow_span)
+            if flow_batch is not None and len(flow_batch) == flow_span:
+                flow_slots = [
+                    flow_batch[i * _DETECT_HC_STEP : (i + 1) * _DETECT_HC_STEP]
+                    for i in range(MAX_HEATING_CIRCUITS)
+                ]
+            else:
+                flow_slots = [
+                    await self._probe_model_register(_DETECT_HC_FLOW_BASE + i * _DETECT_HC_STEP, 2)
+                    for i in range(MAX_HEATING_CIRCUITS)
+                ]
+        else:
+            flow_slots = [
+                await self._probe_model_register(_DETECT_HC_FLOW_BASE + i * _DETECT_HC_STEP, 2)
+                for i in range(MAX_HEATING_CIRCUITS)
+            ]
+
+        mode_gate = await self._probe_model_register(_DETECT_HC_ACTIVE_MODE_BASE, 1)
+        mode_slots: list[list[int] | None]
+        if mode_gate is not None:
+            mode_batch = await self._probe_model_register(
+                _DETECT_HC_ACTIVE_MODE_BASE, MAX_HEATING_CIRCUITS
+            )
+            if mode_batch is not None and len(mode_batch) == MAX_HEATING_CIRCUITS:
+                mode_slots = [[mode_batch[i]] for i in range(MAX_HEATING_CIRCUITS)]
+            else:
+                mode_slots = [
+                    await self._probe_model_register(_DETECT_HC_ACTIVE_MODE_BASE + i, 1)
+                    for i in range(MAX_HEATING_CIRCUITS)
+                ]
+        else:
+            mode_slots = [
+                await self._probe_model_register(_DETECT_HC_ACTIVE_MODE_BASE + i, 1)
+                for i in range(MAX_HEATING_CIRCUITS)
+            ]
+
         active_circuits: list[str] = []
         for i in range(MAX_HEATING_CIRCUITS):
-            addr = _DETECT_HC_FLOW_BASE + i * _DETECT_HC_STEP
-            regs = await self._probe_model_register(addr, 2)
+            regs = flow_slots[i]
             val = self._probe_float_value(regs, min_val=-50.0, max_val=80.0)
             # Navigator controllers return -1.0 for the flow-temperature
             # register of an unconfigured heating-circuit slot. The register
@@ -1075,8 +1138,7 @@ class IdmModbusClient:
             # the UCHAR "not configured" sentinel). This catches circuits that
             # report -1.0 on flow temperature (e.g. pump off, no flow sensor)
             # while still being physically configured.
-            mode_addr = _DETECT_HC_ACTIVE_MODE_BASE + i
-            mode_regs = await self._probe_model_register(mode_addr, 1)
+            mode_regs = mode_slots[i]
             mode_configured = (
                 mode_regs is not None
                 and len(mode_regs) == 1
@@ -1451,9 +1513,12 @@ class IdmModbusClient:
         metadata validation still apply. Consumers must expose this only behind
         an explicit advanced-user risk acknowledgement.
         """
+        # dry_run=False labels the internal safety plan honestly: a real write
+        # follows below, even though the plan itself is never returned.
         plan = self.simulate_write(
             reg,
             value,
+            dry_run=False,
             allow_custom_register=allow_custom_register,
         )
         await self._ensure_connected()
@@ -1564,7 +1629,7 @@ class IdmModbusClient:
                 raise ValueError(f"Value {value!r} for '{reg.name}' must be an integer")
 
         comparable_value = numeric_value if numeric_value is not None else int(value)
-        if reg.exclude_from_write and int(comparable_value) in reg.exclude_from_write:
+        if reg.exclude_from_write and comparable_value in reg.exclude_from_write:
             raise ValueError(
                 f"Value {value} for '{reg.name}' is not writable (excluded values: {reg.exclude_from_write})"
             )
