@@ -2,7 +2,7 @@
 
 import pytest
 
-from idm_heatpump.client import DataType, IdmModelInfo
+from idm_heatpump.client import DataType, IdmModelInfo, RegisterType
 from idm_heatpump.const import (
     MODEL_NAVIGATOR_10,
     MODEL_NAVIGATOR_20,
@@ -669,6 +669,8 @@ def test_register_registry_provides_key_address_and_schema_lookups() -> None:
     by_addr = registry.by_address(1005)
     assert by_addr is not None
     assert by_addr.name == "system_mode"
+    assert registry.by_address(1005, RegisterType.INPUT) is by_addr
+    assert registry.by_address(1005, "holding") is None
     assert "system_mode" in registry.writable()
     schema = registry.to_schema()
     system_mode_schema = next(item for item in schema if item["key"] == "system_mode")
