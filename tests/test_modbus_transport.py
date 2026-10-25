@@ -484,6 +484,11 @@ class _StubPymodbusClient:
         *,
         raise_on_read: BaseException | None = None,
         raise_on_write: BaseException | None = None,
+        raise_on_coil_read: BaseException | None = None,
+        raise_on_coil_write: BaseException | None = None,
+        bits: list[bool] | None = None,
+        coil_read_result: Any | None = None,
+        coil_write_result: Any | None = None,
         registers: list[int] | None = None,
         connect_result: bool = True,
         **_: Any,
@@ -492,9 +497,16 @@ class _StubPymodbusClient:
         self.connect_result = connect_result
         self.raise_on_read = raise_on_read
         self.raise_on_write = raise_on_write
+        self.raise_on_coil_read = raise_on_coil_read
+        self.raise_on_coil_write = raise_on_coil_write
+        self.bits = bits
+        self.coil_read_result = coil_read_result
+        self.coil_write_result = coil_write_result
         self.registers = registers if registers is not None else []
         self.close_calls = 0
         self.read_calls: list[tuple[int, int]] = []
+        self.coil_read_calls: list[tuple[int, int]] = []
+        self.coil_write_calls: list[tuple[int, bool]] = []
 
     async def connect(self) -> bool:
         self.connected = self.connect_result
@@ -518,6 +530,22 @@ class _StubPymodbusClient:
             raise self.raise_on_write
         return _StubResponse([])
 
+    async def read_coils(self, *, address: int, count: int, **_: Any) -> Any:
+        self.coil_read_calls.append((address, count))
+        if self.raise_on_coil_read is not None:
+            raise self.raise_on_coil_read
+        if self.coil_read_result is not None:
+            return self.coil_read_result
+        return _StubCoilResponse(self.bits if self.bits is not None else [False] * count)
+
+    async def write_coil(self, *, address: int, value: bool, **_: Any) -> Any:
+        self.coil_write_calls.append((address, bool(value)))
+        if self.raise_on_coil_write is not None:
+            raise self.raise_on_coil_write
+        if self.coil_write_result is not None:
+            return self.coil_write_result
+        return _StubResponse([])
+
 
 class _StubResponse:
     def __init__(self, registers: list[int]) -> None:
@@ -525,6 +553,22 @@ class _StubResponse:
 
     def isError(self) -> bool:  # noqa: N802 - pymodbus API name
         return False
+
+
+class _StubCoilResponse:
+    def __init__(self, bits: list[bool]) -> None:
+        self.bits = bits
+
+    def isError(self) -> bool:  # noqa: N802 - pymodbus API name
+        return False
+
+
+class _StubErrorResponse:
+    def __init__(self, exception_code: int) -> None:
+        self.exception_code = exception_code
+
+    def isError(self) -> bool:  # noqa: N802 - pymodbus API name
+        return True
 
 
 def _pymodbus_transport_with(client: Any) -> _PymodbusTransport:
@@ -679,4 +723,149 @@ def test_pymodbus_transport_short_response_reaches_per_register_fallback() -> No
     client._transport = transport  # type: ignore[assignment]
     with pytest.raises(IdmDeviceError, match="Incomplete Modbus response"):
         asyncio.run(client._read_registers(1000, 4, RegisterType.INPUT))
+    assert client._connection_suspect is False
+
+
+# ---------------------------------------------------------------------------
+# Built-in pymodbus adapter: coil extension (FC01/FC05)
+# ---------------------------------------------------------------------------
+
+
+def test_pymodbus_transport_read_coils_truncates_byte_padding() -> None:
+    """pymodbus pads the bit payload to byte boundaries; the adapter must hand
+    the caller exactly the requested count so the client's central length
+    check stays honest."""
+    stub = _StubPymodbusClient(bits=[True, False, True, False, False, False, False, False])
+    stub.connected = True
+    transport = _pymodbus_transport_with(stub)
+
+    bits = asyncio.run(transport.read_coils(address=3000, count=3))
+
+    assert bits == [True, False, True]
+    assert stub.coil_read_calls == [(3000, 3)]
+
+
+def test_pymodbus_transport_read_coils_short_answer_is_transport_error() -> None:
+    stub = _StubPymodbusClient(bits=[True])
+    stub.connected = True
+    transport = _pymodbus_transport_with(stub)
+
+    with pytest.raises(IdmTransportError, match="Incomplete coil response"):
+        asyncio.run(transport.read_coils(address=3000, count=3))
+
+
+def test_pymodbus_transport_read_coils_code_2_is_illegal_address() -> None:
+    """A device-side exception code 2 answer surfaces as IllegalAddressError."""
+    stub = _StubPymodbusClient(coil_read_result=_StubErrorResponse(2))
+    stub.connected = True
+    transport = _pymodbus_transport_with(stub)
+
+    with pytest.raises(IllegalAddressError):
+        asyncio.run(transport.read_coils(address=3000, count=1))
+
+
+def test_pymodbus_transport_read_coils_other_codes_are_device_errors() -> None:
+    stub = _StubPymodbusClient(coil_read_result=_StubErrorResponse(6))
+    stub.connected = True
+    transport = _pymodbus_transport_with(stub)
+
+    with pytest.raises(IdmDeviceError) as info:
+        asyncio.run(transport.read_coils(address=3000, count=1))
+
+    assert info.value.exception_code == 6
+
+
+def test_pymodbus_transport_read_coils_translates_raised_backend_errors() -> None:
+    pymodbus_exceptions = pytest.importorskip("pymodbus.exceptions")
+    err = pymodbus_exceptions.ModbusIOException("No response received")
+    stub = _StubPymodbusClient(raise_on_coil_read=err)
+    stub.connected = True
+    transport = _pymodbus_transport_with(stub)
+
+    with pytest.raises(IdmTransportError) as info:
+        asyncio.run(transport.read_coils(address=3000, count=2))
+
+    assert info.value.__cause__ is err
+
+
+def test_pymodbus_transport_read_coils_leaves_foreign_exceptions_alone() -> None:
+    stub = _StubPymodbusClient(raise_on_coil_read=RuntimeError("boom"))
+    stub.connected = True
+    transport = _pymodbus_transport_with(stub)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        asyncio.run(transport.read_coils(address=3000, count=1))
+
+
+def test_pymodbus_transport_write_coil_sends_bool() -> None:
+    stub = _StubPymodbusClient()
+    stub.connected = True
+    transport = _pymodbus_transport_with(stub)
+
+    asyncio.run(transport.write_coil(address=3003, value=True))
+
+    assert stub.coil_write_calls == [(3003, True)]
+
+
+def test_pymodbus_transport_write_coil_code_2_is_illegal_address() -> None:
+    stub = _StubPymodbusClient(coil_write_result=_StubErrorResponse(2))
+    stub.connected = True
+    transport = _pymodbus_transport_with(stub)
+
+    with pytest.raises(IllegalAddressError):
+        asyncio.run(transport.write_coil(address=3003, value=True))
+
+
+def test_pymodbus_transport_write_coil_translates_raised_backend_errors() -> None:
+    pymodbus_exceptions = pytest.importorskip("pymodbus.exceptions")
+    err = pymodbus_exceptions.ModbusIOException("No response received")
+    stub = _StubPymodbusClient(raise_on_coil_write=err)
+    stub.connected = True
+    transport = _pymodbus_transport_with(stub)
+
+    with pytest.raises(IdmTransportError) as info:
+        asyncio.run(transport.write_coil(address=3003, value=True))
+
+    assert info.value.__cause__ is err
+
+
+def test_pymodbus_transport_coils_require_connection() -> None:
+    """Coil access without a live pymodbus client raises the connection error."""
+    stub = _StubPymodbusClient(bits=[True, True, True])
+    stub.connected = False
+    transport = _pymodbus_transport_with(stub)
+
+    with pytest.raises(IdmConnectionError, match="Not connected"):
+        asyncio.run(transport.read_coils(address=3000, count=3))
+
+    with pytest.raises(IdmConnectionError, match="Not connected"):
+        asyncio.run(transport.write_coil(address=3003, value=True))
+
+    assert stub.coil_read_calls == []
+    assert stub.coil_write_calls == []
+
+
+def test_client_coil_read_normalises_bits_to_words_via_pymodbus_adapter() -> None:
+    """End to end: a COIL register read through the built-in adapter returns
+    0/1 words, so the shared decode machinery needs no coil special case."""
+    stub = _StubPymodbusClient(bits=[True, False, True, False, False, False, False, False])
+    stub.connected = True
+    transport = _pymodbus_transport_with(stub)
+    client = IdmModbusClient("127.0.0.1", max_retries=1, transport=transport)
+
+    result = asyncio.run(client._read_registers(3000, 3, RegisterType.COIL))
+
+    assert result == [1, 0, 1]
+    assert stub.coil_read_calls == [(3000, 3)]
+
+
+def test_client_coil_write_goes_through_pymodbus_adapter() -> None:
+    stub = _StubPymodbusClient()
+    stub.connected = True
+    transport = _pymodbus_transport_with(stub)
+    client = IdmModbusClient("127.0.0.1", max_retries=1, transport=transport)
+
+    asyncio.run(client._write_coil(3003, True))
+
+    assert stub.coil_write_calls == [(3003, True)]
     assert client._connection_suspect is False
