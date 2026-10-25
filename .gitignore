@@ -4,9 +4,12 @@ build/
 __pycache__/
 *.pyc
 venv/
+venv*/
 .venv/
+.venv*/
 .tmp/
 .coverage
 
 # Editor / tooling artifacts
 .zcode/
+.planning/

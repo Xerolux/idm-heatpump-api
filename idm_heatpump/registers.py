@@ -136,8 +136,11 @@ class RegisterRegistry:
             raise KeyError(f"Unknown IDM register key: {key}")
         return reg
 
-    def by_address(self, address: int, register_type: str = "input") -> RegisterDef | None:
-        key = self._by_address.get((register_type, address))
+    def by_address(
+        self, address: int, register_type: str | RegisterType = "input"
+    ) -> RegisterDef | None:
+        type_str = register_type.value if hasattr(register_type, "value") else str(register_type)
+        key = self._by_address.get((type_str, address))
         return self.registers.get(key) if key is not None else None
 
     def writable(self) -> dict[str, RegisterDef]:
