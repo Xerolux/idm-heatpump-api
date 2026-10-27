@@ -172,7 +172,7 @@ def test_parse_navigator_setting_response_uses_setting_specific_names() -> None:
                 "name": "N2_ANALOGUE_OUTPUTS",
                 "value": """
                 <table>
-                <tr><td>M124</td><td>Zwischenkreispumpe</td><td>Unterbrechung</td><td>V</td></tr>
+                <tr><td>M125</td><td>Zwischenkreispumpe</td><td>Unterbrechung</td><td>V</td></tr>
                 </table>
                 """,
             }
@@ -182,6 +182,26 @@ def test_parse_navigator_setting_response_uses_setting_specific_names() -> None:
     analogue_values = parse_navigator_setting_response(raw_analogue)
 
     assert analogue_values["heat_sink_intermediate_circuit_pump_signal"].value == "Unterbrechung"
+
+    # M124 is kept as an alias for plants whose firmware still labels the
+    # intermediate-circuit pump output that way (#151).
+    raw_analogue_m124 = json.dumps(
+        {
+            "settingDetail": {
+                "id": "4782",
+                "name": "N2_ANALOGUE_OUTPUTS",
+                "value": """
+                <table>
+                <tr><td>M124</td><td>Zwischenkreispumpe</td><td>42</td><td>%</td></tr>
+                </table>
+                """,
+            }
+        }
+    )
+
+    analogue_values_m124 = parse_navigator_setting_response(raw_analogue_m124)
+
+    assert analogue_values_m124["heat_sink_intermediate_circuit_pump_signal"].value == "42%"
 
 
 def test_parse_navigator_setting_response_rejects_invalid_json() -> None:
