@@ -22,14 +22,7 @@ prerelease is `2.0.0b1`, not `2.0.0-beta.1` — see `docs/RELEASE_PROCESS.md`.
 Sections up to `1.0.3` are German; they stay as published, because a released
 changelog is history. Everything from `2.0.0b1` on is English.
 
-## [2.14.5b2] - 2026-10-25
-
-### Changed
-
-- `write_register()` now labels its internal write-safety plan as a real
-  write (`dry_run=False`) instead of inheriting the `simulate_write()`
-  dry-run default. The plan never leaves the method, so observable behaviour
-  is unchanged; the mislabel only affected future debugging.
+## [2.14.5] - 2026-10-27
 
 ### Added
 
@@ -43,8 +36,27 @@ changelog is history. Everything from `2.0.0b1` on is English.
   `IdmDeviceError`), raised backend error translation, connection guards,
   and the client-side 0/1 word normalisation.
 
+### Changed
+
+- `write_register()` now labels its internal write-safety plan as a real
+  write (`dry_run=False`) instead of inheriting the `simulate_write()`
+  dry-run default. The plan never leaves the method, so observable behaviour
+  is unchanged; the mislabel only affected future debugging.
+
 ### Fixed
 
+- Accept **Holiday (3)** in the shared Navigator 2.0/10/Pro system-mode enum
+  and public `SystemMode`. The missing option caused validated Modbus polls
+  to discard register 1005 while the controller was on holiday, even though
+  the web protocol and Home Assistant selector already supported that mode
+  (idm-heatpump-hass#596). Unknown modes remain rejected and EEPROM write
+  protection is unchanged. Navigator 1.7 keeps its separate mode meanings.
+- Map the Navigator 10 intermediate-circuit pump control signal from
+  **M125**: `settingId 4782` carries it as *Ladepumpe 1 Zwischenkreis
+  Steuersignal* (verified live on an AERO ALM 6-15, `T_NAV10_20.24`), but
+  the setting-name map only knew M124, so the web value stayed unavailable
+  although the WebSocket delivered it (#151). M124 is kept as an alias for
+  plants whose firmware still labels the output that way.
 - `_validate_write_allowed()` no longer truncates FLOAT values to integers
   before checking `exclude_from_write`. No register currently uses that
   metadata, so this is a latent correctness fix only.
@@ -70,17 +82,6 @@ changelog is history. Everything from `2.0.0b1` on is English.
 - Tightened `PollRateLimiter._clock` from `Any` to `Callable[[], float]`,
   removing the redundant runtime `float()` cast and improving static type
   safety.
-
-## [2.14.5b1] - 2026-10-24
-
-### Fixed
-
-- Accept **Holiday (3)** in the shared Navigator 2.0/10/Pro system-mode enum
-  and public `SystemMode`. The missing option caused validated Modbus polls
-  to discard register 1005 while the controller was on holiday, even though
-  the web protocol and Home Assistant selector already supported that mode
-  (idm-heatpump-hass#596). Unknown modes remain rejected and EEPROM write
-  protection is unchanged. Navigator 1.7 keeps its separate mode meanings.
 
 ## [2.14.4] - 2026-10-18
 

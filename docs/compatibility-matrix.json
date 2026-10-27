@@ -366,6 +366,12 @@
       "hass_integration_version": "0.23.2-b3",
       "status": "api-prepared",
       "notes": "Prerelease hardening: model-detection heating-circuit probes batched behind individual gates (14 to 4 round trips, per-slot fallback preserved, gate slots keep the Navigator 1.7 signature shape); write-plan labeling, shared timeout and error-mapping helpers, and expanded key-API (set_value/read_value) and Pymodbus coil-extension test coverage. No register-map changes; 3149 integration contract tests passed against this tree."
+    },
+    {
+      "api_version": "2.14.5",
+      "hass_integration_version": "0.23.2",
+      "status": "api-prepared",
+      "notes": "Stable promotion of the 2.14.5b1/b2 hardening (Holiday system mode accepted in validated shared-family polls; model-detection heating-circuit probes batched 14 to 4 round trips with per-slot fallback) plus the Navigator 10 intermediate-circuit pump signal mapped from M125 with M124 kept as an alias (#151). The 0.23.2 integration line (b1-b5) passed its full suite against this tree."
     }
   ]
 }
