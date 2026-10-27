@@ -324,6 +324,10 @@ NAVIGATOR10_SETTING_NAME_MAP: dict[tuple[str, str], str] = {
     ("4782", "M13"): "ventilator_voltage",
     ("4782", "M22"): "hotwater_station_pump_percentage",
     ("4782", "M124"): "heat_sink_intermediate_circuit_pump_signal",
+    # Navigator 10 sends M125 ("Ladepumpe 1 Zwischenkreis Steuersignal",
+    # verified live on an AERO ALM 6-15, T_NAV10_20.24): keep M124 too in
+    # case earlier firmware generations label the output that way (#151).
+    ("4782", "M125"): "heat_sink_intermediate_circuit_pump_signal",
     ("4789", "M1"): "compressor_1",
     ("4789", "M51"): "4way_valve_circuit1",
     ("4789", "E32.1"): "siphon_heating",
