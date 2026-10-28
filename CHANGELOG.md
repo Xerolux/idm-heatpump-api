@@ -22,6 +22,12 @@ prerelease is `2.0.0b1`, not `2.0.0-beta.1` — see `docs/RELEASE_PROCESS.md`.
 Sections up to `1.0.3` are German; they stay as published, because a released
 changelog is history. Everything from `2.0.0b1` on is English.
 
+## [Unreleased]
+
+### Fixed
+
+- Read the Navigator 2.0 structured JSON temperature schema alongside legacy HTML tables; preserve existing sensor names and ignore ambiguous circuit IDs or missing readings. Accept version-2 statistics totals nested in `data` with the existing hours/kWh scaling. Evidence: [synthetic schema regressions](docs/Nav20-JSON-Evidence.md).
+
 ## [2.15.0] - Unreleased
 
 ### Added

@@ -7,6 +7,7 @@ import builtins
 import ipaddress
 import json
 import logging
+import math
 import re
 import time
 from dataclasses import dataclass, field
@@ -810,7 +811,9 @@ def _looks_like_data_response(text: str) -> bool:
         key.casefold() in {"error", "errors", "exception"} for key in payload
     ):
         return False
-    return any(marker in stripped.lower() for marker in ("<table", "setting", "heatpump", "value"))
+    return bool(parse_navigator20_response(stripped)) or any(
+        marker in stripped.lower() for marker in ("<table", "setting", "heatpump", "value")
+    )
 
 
 def _require_aiohttp() -> Any:
@@ -883,6 +886,67 @@ def parse_idm_html_table_values(
             numeric_value=numeric_value,
         )
 
+    return values
+
+
+def parse_navigator20_response(raw_response: str) -> dict[str, IdmWebValue]:
+    """Read legacy HTML and the verified Navigator 2.0 structured JSON schema.
+
+    Only known temperature paths are mapped. Custom circuit names, credentials,
+    mode numbers and unknown source/DHW sensor positions are not inferred.
+    """
+    values = parse_idm_html_table_values(raw_response)
+    try:
+        payload = json.loads(raw_response)
+    except json.JSONDecodeError:
+        return values
+    if not isinstance(payload, dict):
+        return values
+    # settings.php can wrap its legacy table in a JSON string. Decode that
+    # string before parsing so JSON escapes do not become part of labels/units.
+    for text in payload.values():
+        if isinstance(text, str) and "<table" in text.casefold():
+            values.update(parse_idm_html_table_values(text))
+
+    def temperature(name: str, node: object, path: tuple[str, ...]) -> None:
+        current = node
+        for component in path:
+            if not isinstance(current, dict):
+                return
+            current = current.get(component)
+        numeric = _optional_float(current)
+        if numeric is None or not math.isfinite(numeric):
+            return
+        values[name] = IdmWebValue(
+            name=name,
+            value=f"{numeric:g} °C",
+            raw_key=".".join(path),
+            unit="°C",
+            numeric_value=numeric,
+        )
+
+    temperature("outside_air_temperature", payload, ("out",))
+    temperature("flow_temperature", payload, ("system", "temperatures", "hpout"))
+    temperature("return_temperature", payload, ("system", "temperatures", "hpin"))
+    circuits = payload.get("hk")
+    if isinstance(circuits, list):
+        seen: set[str] = set()
+        duplicates: set[str] = set()
+        for circuit in circuits:
+            if not isinstance(circuit, dict):
+                continue
+            letter = circuit.get("hk")
+            if not isinstance(letter, str) or letter not in "ABCDEFG" or len(letter) != 1:
+                continue
+            if letter in seen:
+                duplicates.add(letter)
+                values.pop(f"flow_temp_HK_{letter}", None)
+                values.pop(f"room_temperature_HK_{letter}", None)
+            if letter in duplicates:
+                continue
+            seen.add(letter)
+            temperature(f"flow_temp_HK_{letter}", circuit, ("flow", "temperatures", "act"))
+            temperature(f"room_temperature_HK_{letter}", circuit, ("room", "temperatures", "act"))
     return values
 
 
@@ -2887,6 +2951,10 @@ def parse_navigator20_statistics_response(
     if not isinstance(payload, dict):
         raise IdmWebResponseError("Navigator 2.0 statistics response is not a JSON object")
 
+    # Version 2 wraps the same totals/units in data; older firmware is flat.
+    if "total" not in payload and isinstance(payload.get("data"), dict):
+        payload = payload["data"]
+
     unit = payload.get("unitTotal")
     factor = 1.0
     if isinstance(unit, str):
@@ -2910,7 +2978,12 @@ def parse_navigator20_statistics_response(
             continue
         raw_name = entry.get("name")
         raw_value = entry.get("value")
-        if not isinstance(raw_name, str) or not isinstance(raw_value, (int, float)):
+        if (
+            not isinstance(raw_name, str)
+            or isinstance(raw_value, bool)
+            or not isinstance(raw_value, (int, float))
+            or not math.isfinite(raw_value)
+        ):
             continue
         category = _STATISTICS_CATEGORY_NAMES.get(raw_name.strip().casefold())
         if category is None:
@@ -3111,7 +3184,7 @@ class IdmNavigator20WebClient:
                     break
                 if include_raw:
                     raw_responses[path] = text
-                values.update(parse_idm_html_table_values(text))
+                values.update(parse_navigator20_response(text))
         finally:
             self._probe_responses.clear()
 
