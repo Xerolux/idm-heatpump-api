@@ -22,6 +22,20 @@ prerelease is `2.0.0b1`, not `2.0.0-beta.1` — see `docs/RELEASE_PROCESS.md`.
 Sections up to `1.0.3` are German; they stay as published, because a released
 changelog is history. Everything from `2.0.0b1` on is English.
 
+## [2.15.0] - Unreleased
+
+### Added
+
+- Optional ``connects_lazily`` attribute on injected transports: a transport
+  that holds a claim on a shared connection (Home Assistant 2026.10+
+  ``modbus.async_get_unit``) establishes the wire on the first request, so it
+  may report ``connected == False`` right after ``connect()``. The client's
+  connected-gate honours the attribute and lets the request open the link;
+  transports without it keep the pre-2.15 behaviour (a request on a closed
+  socket still raises ``IdmConnectionError``). The transport protocol
+  documentation now spells out the shared-hold contract: ``close()`` releases
+  the transport's claim without tearing down a link other consumers use.
+
 ## [2.14.5] - 2026-10-27
 
 ### Added

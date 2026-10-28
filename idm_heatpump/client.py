@@ -669,8 +669,17 @@ class IdmModbusClient:
             await self._connect_internal()
 
     def _require_client(self) -> IdmModbusTransport:
-        """Return the transport or raise if not connected (call while holding lock)."""
-        if self._transport is None or not self._transport.connected:
+        """Return the transport or raise if not connected (call while holding lock).
+
+        Transports that declare ``connects_lazily`` (shared links, since
+        2.15.0) establish the wire on the first request, so a False
+        ``connected`` right after ``connect()`` is not an error for them;
+        every other transport still has to report an open socket before a
+        request may go out.
+        """
+        if self._transport is None or (
+            not self._transport.connected and not getattr(self._transport, "connects_lazily", False)
+        ):
             raise IdmConnectionError(f"Not connected to {self._host}:{self._port}")
         return self._transport
 
