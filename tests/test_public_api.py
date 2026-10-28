@@ -132,6 +132,7 @@ EXPECTED_PUBLIC_API = [
     "NAVIGATOR10_WRITABLE_SYSTEM_MODES",
     "NAVIGATOR10_DHW_SETPOINT_PARAM",
     "NAVIGATOR10_DATETIME_SETTING_ID",
+    "parse_navigator20_response",
     "parse_navigator20_statistics_response",
     "NAVIGATOR10_DHW_SETPOINT_SETTING_ID",
     "parse_navigator_energyflow_response",
