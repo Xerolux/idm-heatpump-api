@@ -191,7 +191,7 @@
       "api_version": "1.0.2",
       "hass_integration_version": "pending",
       "status": "hardware-verified",
-      "notes": "Web client mapping expansion: adds heating-circuit room temperature sensors B61-B67 (room_temperature_HK_A through G) to SENSOR_NAME_MAP and WEB_VALUE_DESCRIPTIONS. Verified live on a Navigator 10 ALM 6-15 with heating circuits A and D (B64 = 21.8 °C)."
+      "notes": "Web client mapping expansion: adds heating-circuit room temperature sensors B61-B67 (room_temperature_HK_A through G) to SENSOR_NAME_MAP and WEB_VALUE_DESCRIPTIONS. Verified live on a Navigator 10 ALM 6-15 with heating circuits A and D (B64 = 21.8 \u00c2\u00b0C)."
     },
     {
       "api_version": "1.0.3",
@@ -378,6 +378,12 @@
       "hass_integration_version": "0.24.0",
       "status": "api-prepared",
       "notes": "Optional connects_lazily transport attribute for shared-hold transports (Home Assistant 2026.10+ modbus.async_get_unit): connect() acquires a claim, the first request opens the wire, close() releases the claim without disturbing other holders. The client connected-gate honours the attribute; transports without it keep the pre-2.15 behaviour. Consumer: the integration's shared Modbus connection provider."
+    },
+    {
+      "api_version": "2.15.1",
+      "hass_integration_version": "0.24.0-b1",
+      "status": "api-prepared",
+      "notes": "Navigator 2.0 structured JSON temperatures and version-2 nested statistics supported alongside legacy responses. 113 integration web and cross-repository contract tests passed against this API source; full consumer pin validation runs separately. Synthetic fixtures contain no private submission data. No Modbus/write changes."
     }
   ]
 }
