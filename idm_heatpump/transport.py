@@ -108,10 +108,23 @@ class IdmModbusTransport(Protocol):
     * :meth:`close` releases the socket and any background tasks; idempotent.
     * :attr:`connected` reflects the live socket state.
 
+    Optional attribute (since 2.15.0) for transports that do not own their
+    socket: ``connects_lazily = True`` declares that :meth:`connect` only
+    acquires a *claim* on a shared link and that the link itself is
+    established by the backend on the first request. Such a transport may
+    report ``connected == False`` right after a successful :meth:`connect`;
+    the client then skips its connected-gate and lets the request open the
+    link. Transports without the attribute keep the pre-2.15 behaviour
+    unchanged: the client refuses to send while ``connected`` is False.
+
     The three register methods return raw 16-bit register words and must map
     device-side exception responses through :func:`check_transport_response`
     (or raise the equivalent exceptions directly). Incomplete responses
     (fewer registers than requested) must raise :class:`IdmTransportError`.
+
+    A shared-hold transport (``connects_lazily``) must keep :meth:`close`
+    side-effect free for the other holders: releasing its claim may not tear
+    down a link that other consumers still use.
     """
 
     __slots__ = ()

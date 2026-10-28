@@ -804,6 +804,115 @@ def test_connection_suspect_starts_false() -> None:
     assert client._connection_suspect is False
 
 
+class _LazySharedTransportDouble:
+    """Transport double for a shared link that opens the wire per request.
+
+    ``connects_lazily`` mirrors a transport holding a claim on a shared
+    connection (Home Assistant's ``modbus.async_get_unit``): connect()
+    acquires the claim, the first request establishes the wire, and close()
+    must not tear the link down for the other holders.
+    """
+
+    connects_lazily = True
+
+    def __init__(self) -> None:
+        self.connected = False
+        self.connect_calls = 0
+        self.read_calls = 0
+        self.close_calls = 0
+
+    async def connect(self) -> None:
+        self.connect_calls += 1
+
+    async def close(self) -> None:
+        self.close_calls += 1
+        self.connected = False
+
+    async def read_input_registers(self, *, address: int, count: int) -> list[int]:
+        self.read_calls += 1
+        self.connected = True  # the shared backend opens the link on demand
+        return [0] * count
+
+    async def read_holding_registers(self, *, address: int, count: int) -> list[int]:
+        self.connected = True
+        return [0] * count
+
+    async def write_registers(self, *, address: int, values: list[int]) -> None:
+        self.connected = True
+
+
+class _EagerDisconnectedTransportDouble:
+    """Transport double without ``connects_lazily`` and without a live socket."""
+
+    connected = False
+
+    async def connect(self) -> None:
+        pass
+
+    async def close(self) -> None:
+        pass
+
+    async def read_input_registers(self, *, address: int, count: int) -> list[int]:
+        return [0] * count
+
+    async def read_holding_registers(self, *, address: int, count: int) -> list[int]:
+        return [0] * count
+
+    async def write_registers(self, *, address: int, values: list[int]) -> None:
+        return None
+
+
+def test_lazy_shared_transport_connects_on_first_request() -> None:
+    """A shared-hold transport may open the wire with the first request.
+
+    ``connects_lazily`` transports report ``connected == False`` right after
+    connect() because they only acquired a claim; the client must not gate
+    the request on the live socket state for them.
+    """
+    transport = _LazySharedTransportDouble()
+    client = IdmModbusClient("127.0.0.1", transport=transport)
+
+    regs = asyncio.run(client.probe_register(100, 1))
+
+    assert regs == [0]
+    assert transport.connect_calls == 1
+    assert transport.read_calls == 1
+    assert transport.connected is True
+
+
+def test_eager_transport_still_requires_live_socket() -> None:
+    """Without ``connects_lazily`` a closed socket must keep refusing requests."""
+    transport = _EagerDisconnectedTransportDouble()
+    client = IdmModbusClient("127.0.0.1", transport=transport)
+
+    regs = asyncio.run(client.probe_register(100, 1))
+
+    assert regs is None  # the connected-gate refused before any read
+
+
+def test_lazy_shared_transport_survives_reconnect_cycle() -> None:
+    """The soft close of a shared claim must not poison later requests.
+
+    After a connection failure the client closes and reconnects the
+    transport; for a lazy shared transport that is claim bookkeeping only,
+    and the next request goes out (re-opening the wire) without the
+    connected-gate raising.
+    """
+    transport = _LazySharedTransportDouble()
+    client = IdmModbusClient("127.0.0.1", transport=transport)
+
+    first = asyncio.run(client.probe_register(100, 1))
+    assert first == [0]
+
+    client._connection_suspect = True  # simulate a dropped link
+    asyncio.run(client._ensure_connected())
+    assert transport.close_calls == 1
+    assert transport.connect_calls >= 2  # re-acquired the claim
+
+    second = asyncio.run(client.probe_register(100, 1))
+    assert second == [0]
+
+
 def test_force_reconnect_closes_existing_client_and_reconnects(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

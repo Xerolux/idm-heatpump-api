@@ -372,6 +372,12 @@
       "hass_integration_version": "0.23.2",
       "status": "api-prepared",
       "notes": "Stable promotion of the 2.14.5b1/b2 hardening (Holiday system mode accepted in validated shared-family polls; model-detection heating-circuit probes batched 14 to 4 round trips with per-slot fallback) plus the Navigator 10 intermediate-circuit pump signal mapped from M125 with M124 kept as an alias (#151). The 0.23.2 integration line (b1-b5) passed its full suite against this tree."
+    },
+    {
+      "api_version": "2.15.0",
+      "hass_integration_version": "0.24.0",
+      "status": "api-prepared",
+      "notes": "Optional connects_lazily transport attribute for shared-hold transports (Home Assistant 2026.10+ modbus.async_get_unit): connect() acquires a claim, the first request opens the wire, close() releases the claim without disturbing other holders. The client connected-gate honours the attribute; transports without it keep the pre-2.15 behaviour. Consumer: the integration's shared Modbus connection provider."
     }
   ]
 }
