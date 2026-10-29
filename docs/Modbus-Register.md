@@ -69,7 +69,7 @@ documentation (as of 2025-06-18, software NAV10_20.23-903.iup / T_NAV10_20.23-13
 | 1106 | `heat_source_pump_status` | INT16 | RO | % |  |  |
 | 1108 | `isc_cold_storage_pump_status` | INT16 | RO | % |  |  |
 | 1109 | `isc_recooling_pump_status` | INT16 | RO | % |  |  |
-| 1110 | `valve_hc_heat_cool` | UINT16 | RO | - |  |  |
+| 1110 | `valve_hc_heat_cool` | UINT16 | RO | - |  | 0=Heating; 1=Cooling (official table) |
 | 1111 | `valve_storage_heat_cool` | UINT16 | RO | - |  |  |
 | 1112 | `valve_heat_dhw` | UINT16 | RO | - |  |  |
 | 1113 | `valve_heat_source_heat_cool` | UINT16 | RO | - |  |  |
@@ -220,7 +220,7 @@ documentation (as of 2025-06-18, software NAV10_20.23-903.iup / T_NAV10_20.23-13
 | 1658 | `hc_e_ext_room_temp` | FLOAT | RW | °C | 15..30 |  |
 | 1660 | `hc_f_ext_room_temp` | FLOAT | RW | °C | 15..30 |  |
 | 1662 | `hc_g_ext_room_temp` | FLOAT | RW | °C | 15..30 |  |
-| 1680 | `fault_heat_source_circuit` | UCHAR | RO | - |  |  |
+| 1680 | `fault_heat_source_circuit` | UCHAR | RO | - |  | inverted: 0=fault; 1=no fault (official table) |
 | 1681 | `fault_heat_source_pressure_switch` | UCHAR | RO | - |  |  |
 | 1682 | `fault_charging_pump_1_intermediate` | UCHAR | RO | - |  |  |
 | 1683 | `fault_charging_pump_2_intermediate` | UCHAR | RO | - |  |  |
