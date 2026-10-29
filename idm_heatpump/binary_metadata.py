@@ -49,6 +49,14 @@ BINARY_REGISTER_METADATA: dict[str, BinaryRegisterMetadata] = {
     "cooling_demand": _metadata("cold"),
     "dhw_demand": _metadata("heat"),
     "hp_sum_alarm": _metadata("problem"),
+    # Official Navigator 10 table: 0 ... Störung (fault), 1 ... Keine
+    # Störung (no fault) - inverted against the usual active-high convention,
+    # so the explicit value sets replace the (1,)/(0,) defaults.
+    "fault_heat_source_circuit": BinaryRegisterMetadata(
+        on_values=(0,),
+        off_values=(1,),
+        device_class="problem",
+    ),
     "compressor_status_1": _metadata("running"),
     "compressor_status_2": _metadata("running"),
     "compressor_status_3": _metadata("running"),

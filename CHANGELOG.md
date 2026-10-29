@@ -22,6 +22,12 @@ prerelease is `2.0.0b1`, not `2.0.0-beta.1` — see `docs/RELEASE_PROCESS.md`.
 Sections up to `1.0.3` are German; they stay as published, because a released
 changelog is history. Everything from `2.0.0b1` on is English.
 
+## [2.16.0] - Unreleased
+
+### Added
+
+- Surface documented value semantics for two Navigator 10/2.0 status words: the heating-circuit changeover valve (1110) now reports the official Heating/Cooling positions as an enum, and the heat-source circuit fault (1680) becomes a binary status with its documented inverted polarity (0 = fault). Both survive validated polls; the fix keeps Navigator 1.7's separate map untouched.
+
 ## [2.15.1] - 2026-10-28
 
 ### Fixed

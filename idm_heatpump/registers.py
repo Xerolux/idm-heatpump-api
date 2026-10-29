@@ -45,6 +45,7 @@ from .const import (
     SOLAR_OPERATING_MODE_17_OPTIONS,
     SYSTEM_MODE_17_OPTIONS,
     SYSTEM_MODE_OPTIONS,
+    VALVE_HC_HEAT_COOL_OPTIONS,
     VARIABLE_INPUT_OPTIONS,
     ZONE_MODULE_MODE_OPTIONS,
 )
@@ -412,6 +413,8 @@ def _hp_status_registers() -> dict[str, RegisterDef]:
             address=1110,
             datatype=DataType.UINT16,
             name="valve_hc_heat_cool",
+            enum_options=VALVE_HC_HEAT_COOL_OPTIONS,
+            last_verified="2026-10-29",
         ),
         "valve_storage_heat_cool": RegisterDef(
             address=1111,
@@ -952,7 +955,13 @@ def _additional_fault_registers() -> dict[str, RegisterDef]:
             address=1680,
             datatype=DataType.UCHAR,
             name="fault_heat_source_circuit",
-            # 0 = fault, 1 = no fault
+            # Official Navigator 10 table (2025-06-18): 0 ... Störung
+            # (fault), 1 ... Keine Störung (no fault) - inverted against the
+            # usual active-high convention. Siblings 1681-1683 document only
+            # the 0/1 range without labels and stay raw until field captures
+            # confirm their polarity.
+            binary=True,
+            last_verified="2026-10-29",
         ),
         "fault_heat_source_pressure_switch": RegisterDef(
             address=1681,

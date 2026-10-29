@@ -150,6 +150,23 @@ circuit-based classification, because the shared active-mode probes
 (1498-1504) overlap the 1.x status block (1500-1524). Never merge its
 addresses into the existing Navigator 2.0/10/Pro map.
 
+## Documented value semantics: valve 1110 and heat-source fault 1680 (2026-10-29)
+
+A systematic comparison of every official Navigator 10 value list against the
+library's enum tables (the audit that followed the Holiday gap) found two
+status words the official table labels explicitly but the library modelled as
+raw numbers. The heating-circuit changeover valve at FC04 address 1110 gains
+the documented enum (0 = Heating, 1 = Cooling); the heat-source circuit fault
+at address 1680 becomes `binary=True` with `BinaryRegisterMetadata` pinning
+the documented inverted polarity (0 = fault, 1 = no fault) so consumers render
+a problem state instead of a bare number. Unmapped read values keep the
+established not-in-enum rejection; Navigator 1.7's separate map is untouched.
+
+The neighbouring status words 1111-1116 and 1681-1683 document only a `0 1`
+range without value labels. Their polarity is deliberately NOT inferred from
+the two labelled neighbours; they stay raw until a field capture (see the
+idm-heatpump-hass field-data collection, issue #594) confirms it.
+
 ## Write safety
 
 ### Shared-family system mode: Holiday (2026-10-24)

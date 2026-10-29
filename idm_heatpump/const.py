@@ -157,6 +157,18 @@ EVU_LOCK_OPTIONS: dict[int, str] = {
 }
 
 
+#: Address 1110: heating-circuit changeover valve (M61). The official
+#: Navigator 10 table (2025-06-18) labels the two positions explicitly:
+#: 0 ... Heizen (Heating), 1 ... Kühlen (Cooling). The neighbouring valve
+#: status words (1111-1116) document only the 0/1 range without value
+#: labels, so they deliberately stay raw until field captures confirm
+#: their polarity.
+VALVE_HC_HEAT_COOL_OPTIONS: dict[int, str] = {
+    0: "Heating",
+    1: "Cooling",
+}
+
+
 BIVALENCE_STATE_OPTIONS: dict[int, str] = {
     0: "Off",
     1: "Bivalence 1 Active",

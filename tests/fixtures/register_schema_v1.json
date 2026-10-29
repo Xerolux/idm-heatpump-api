@@ -3163,7 +3163,7 @@
         "eeprom_sensitive": false,
         "cyclic_required": false,
         "cyclic_write_ttl": null,
-        "binary": false,
+        "binary": true,
         "enabled_by_default": true,
         "state_class": null,
         "icon": null,
@@ -3176,7 +3176,7 @@
           "Navigator 10"
         ],
         "sentinel_values": [],
-        "last_verified": null,
+        "last_verified": "2026-10-29",
         "size": 1
       },
       "fault_heat_source_pressure_switch": {
@@ -8711,7 +8711,10 @@
         "min_val": null,
         "max_val": null,
         "step": null,
-        "enum_options": {},
+        "enum_options": {
+          "0": "Heating",
+          "1": "Cooling"
+        },
         "multiplier": 1.0,
         "register_type": "input",
         "eeprom_sensitive": false,
@@ -8732,7 +8735,7 @@
           "Navigator Pro"
         ],
         "sentinel_values": [],
-        "last_verified": null,
+        "last_verified": "2026-10-29",
         "size": 1
       },
       "valve_heat_dhw": {
@@ -12169,7 +12172,7 @@
         "eeprom_sensitive": false,
         "cyclic_required": false,
         "cyclic_write_ttl": null,
-        "binary": false,
+        "binary": true,
         "enabled_by_default": true,
         "state_class": null,
         "icon": null,
@@ -12182,7 +12185,7 @@
           "Navigator 10"
         ],
         "sentinel_values": [],
-        "last_verified": null,
+        "last_verified": "2026-10-29",
         "size": 1
       },
       "fault_heat_source_pressure_switch": {
@@ -17717,7 +17720,10 @@
         "min_val": null,
         "max_val": null,
         "step": null,
-        "enum_options": {},
+        "enum_options": {
+          "0": "Heating",
+          "1": "Cooling"
+        },
         "multiplier": 1.0,
         "register_type": "input",
         "eeprom_sensitive": false,
@@ -17738,7 +17744,7 @@
           "Navigator Pro"
         ],
         "sentinel_values": [],
-        "last_verified": null,
+        "last_verified": "2026-10-29",
         "size": 1
       },
       "valve_heat_dhw": {
@@ -32220,7 +32226,10 @@
         "min_val": null,
         "max_val": null,
         "step": null,
-        "enum_options": {},
+        "enum_options": {
+          "0": "Heating",
+          "1": "Cooling"
+        },
         "multiplier": 1.0,
         "register_type": "input",
         "eeprom_sensitive": false,
@@ -32241,7 +32250,7 @@
           "Navigator Pro"
         ],
         "sentinel_values": [],
-        "last_verified": null,
+        "last_verified": "2026-10-29",
         "size": 1
       },
       "valve_heat_dhw": {
