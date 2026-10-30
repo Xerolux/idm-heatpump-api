@@ -22,7 +22,7 @@ prerelease is `2.0.0b1`, not `2.0.0-beta.1` — see `docs/RELEASE_PROCESS.md`.
 Sections up to `1.0.3` are German; they stay as published, because a released
 changelog is history. Everything from `2.0.0b1` on is English.
 
-## [2.16.0] - Unreleased
+## [2.16.0b1] - 2026-10-30
 
 ### Added
 
