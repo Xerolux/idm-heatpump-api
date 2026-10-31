@@ -60,6 +60,27 @@ async def test_valve_positions_survive_validated_poll(model: str, position: int)
     assert client.get_register_outcomes()["valve_hc_heat_cool"]["status"] == "ok"
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("model", [MODEL_NAVIGATOR_20, MODEL_NAVIGATOR_10, MODEL_NAVIGATOR_PRO])
+async def test_valve_not_configured_sentinel_passes_validation(model: str) -> None:
+    """Plants without the heating/cooling function answer 0xFFFF.
+
+    The official table documents only 0 and 1; 65535 is the UINT16
+    "not configured" sentinel and must survive the validated poll like
+    variable_input's 255 does, instead of being rejected as not_in_enum.
+    """
+    reg = build_register_map(model_info=_model_info(model))["valve_hc_heat_cool"]
+    transport = FakeModbusTransport(input_registers={1110: 65535})
+    client = IdmModbusClient("127.0.0.1", transport=transport)
+
+    assert reg.sentinel_values == (65535,)
+    assert 65535 in reg.effective_sentinel_values
+    assert await client.read_batch([reg]) == {"valve_hc_heat_cool": 65535}
+    assert client.get_register_outcomes()["valve_hc_heat_cool"]["status"] == "ok"
+    assert IdmModbusClient._suspect_reason(reg, 65535) is None
+    assert IdmModbusClient._suspect_reason(reg, 2) == "not_in_enum"
+
+
 def test_fault_register_binary_metadata_is_inverted() -> None:
     reg = build_register_map(model_info=_model_info(MODEL_NAVIGATOR_10))[
         "fault_heat_source_circuit"

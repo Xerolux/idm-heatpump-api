@@ -390,6 +390,12 @@
       "hass_integration_version": "0.25.0-b2",
       "status": "api-prepared",
       "notes": "Navigator 10/2.0 changeover valve (1110) carries the officially documented Heating/Cooling enum and the heat-source circuit fault (1680) becomes a binary register with its documented inverted polarity, both from the value-list audit that followed the Holiday gap. Unmapped read values keep the not-in-enum rejection; undocumented 0/1 neighbours stay raw pending field captures. Read-validation behaviour changes for the two registers only."
+    },
+    {
+      "api_version": "2.16.0b2",
+      "hass_integration_version": "0.25.0-b3",
+      "status": "api-prepared",
+      "notes": "Changeover valve 1110 declares the UINT16 not-configured sentinel 65535 so plants without the heating/cooling function pass validated polls after the 2.16.0 enum landed. First field report against 2.16.0b1; no other register changes."
     }
   ]
 }

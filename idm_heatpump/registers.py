@@ -414,7 +414,12 @@ def _hp_status_registers() -> dict[str, RegisterDef]:
             datatype=DataType.UINT16,
             name="valve_hc_heat_cool",
             enum_options=VALVE_HC_HEAT_COOL_OPTIONS,
-            last_verified="2026-10-29",
+            # Field evidence (2026-10-31): plants without the heating/cooling
+            # function answer 0xFFFF, the UINT16 "not configured" sentinel,
+            # although the official table documents only 0 and 1. Same shape
+            # as variable_input's documented 0-3 enum with a 255 sentinel.
+            sentinel_values=(65535,),
+            last_verified="2026-10-31",
         ),
         "valve_storage_heat_cool": RegisterDef(
             address=1111,

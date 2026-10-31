@@ -8734,8 +8734,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": "2026-10-29",
+        "sentinel_values": [
+          65535
+        ],
+        "last_verified": "2026-10-31",
         "size": 1
       },
       "valve_heat_dhw": {
@@ -17743,8 +17745,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": "2026-10-29",
+        "sentinel_values": [
+          65535
+        ],
+        "last_verified": "2026-10-31",
         "size": 1
       },
       "valve_heat_dhw": {
@@ -32249,8 +32253,10 @@
           "Navigator 2.0",
           "Navigator Pro"
         ],
-        "sentinel_values": [],
-        "last_verified": "2026-10-29",
+        "sentinel_values": [
+          65535
+        ],
+        "last_verified": "2026-10-31",
         "size": 1
       },
       "valve_heat_dhw": {

@@ -167,6 +167,19 @@ range without value labels. Their polarity is deliberately NOT inferred from
 the two labelled neighbours; they stay raw until a field capture (see the
 idm-heatpump-hass field-data collection, issue #594) confirms it.
 
+### Valve sentinel: 1110 answers 0xFFFF when not configured (2026-10-31)
+
+The first field reports against the 2.16.0 enum show plants without the
+heating/cooling function answering `65535` (0xFFFF) at FC04 address 1110 —
+the UINT16 "not configured" sentinel, exactly like `variable_input`'s
+documented 0-3 enum answers `255`. The read validation compares against the
+explicit `sentinel_values` only, so the value was rejected as not_in_enum
+and the entity dropped out of every update. The register now declares
+`sentinel_values=(65535,)`: the sentinel passes validation, consumers keep
+classifying it as unused through `effective_sentinel_values`, and genuine
+out-of-table states (e.g. `2`) stay rejected. Navigator 1.7's map is
+untouched; the raw 0/1 neighbours keep no sentinel until evidence arrives.
+
 ## Write safety
 
 ### Shared-family system mode: Holiday (2026-10-24)
