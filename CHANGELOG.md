@@ -22,6 +22,12 @@ prerelease is `2.0.0b1`, not `2.0.0-beta.1` — see `docs/RELEASE_PROCESS.md`.
 Sections up to `1.0.3` are German; they stay as published, because a released
 changelog is history. Everything from `2.0.0b1` on is English.
 
+## [2.16.0b2] - 2026-10-31
+
+### Fixed
+
+- The Navigator 10/2.0 changeover valve (1110) accepts its "not configured" answer: plants without the heating/cooling function return the UINT16 sentinel 65535 although the official table documents only 0 and 1, and the 2.16.0 enum rejected it as not_in_enum, dropping the entity from every update. The register now declares the sentinel (same shape as `variable_input`'s 255), so the value passes validated polls and consumers keep treating it as unused; genuine out-of-table states stay rejected.
+
 ## [2.16.0b1] - 2026-10-30
 
 ### Added
