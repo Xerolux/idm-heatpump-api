@@ -2377,7 +2377,7 @@ class IdmNavigator10WebClient:
             self._last_error = f"Navigator 10 websocket handshake failed: {type(exc).__name__}"
             await self._close_unlocked()
             raise IdmWebConnectionError(self._last_error) from exc
-        except Exception:
+        except (Exception, asyncio.CancelledError):
             self._last_error = "Navigator 10 websocket connection failed"
             await self._close_unlocked()
             raise
@@ -2708,6 +2708,8 @@ class IdmNavigator10WebClient:
         """
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise ValueError(f"value must be a number, got {value!r}")
+        if isinstance(value, float) and not math.isfinite(value):
+            raise ValueError("value must be finite")
         clean_parameter = str(parameter_id).strip()
         if not clean_parameter:
             raise ValueError("parameter_id must not be empty")
@@ -2809,6 +2811,8 @@ class IdmNavigator10WebClient:
         """
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise ValueError(f"value must be a number, got {value!r}")
+        if isinstance(value, float) and not math.isfinite(value):
+            raise ValueError("value must be finite")
         clean_parameter = str(parameter_id).strip()
         if not clean_parameter:
             raise ValueError("parameter_id must not be empty")
@@ -2850,6 +2854,15 @@ class IdmNavigator10WebClient:
             except IdmWebAuthenticationError:
                 raise
             except _NAV10_RECOVERABLE_ERRORS as exc:
+                # A save may already have reached the controller even when
+                # sending or receiving fails. Never replay an uncertain write;
+                # discard the socket so a late reply cannot poison the next read.
+                if payload.get("command") == "save":
+                    self._last_error = (
+                        "Navigator 10 write outcome is unknown; request was not retried"
+                    )
+                    await self._close_unlocked()
+                    raise IdmWebWebSocketError(self._last_error) from exc
                 if self._closed:
                     raise IdmWebWebSocketError(
                         "Navigator 10 web client was closed during the request"
@@ -3093,7 +3106,7 @@ class IdmNavigator20WebClient:
                     )
                 self._data_paths = paths
                 _LOGGER.debug("NAV2 login successful for %s, endpoints: %s", self._host, paths)
-            except Exception:
+            except (Exception, asyncio.CancelledError):
                 await self.close()
                 raise
             self._last_success_monotonic = time.monotonic()
@@ -3205,23 +3218,42 @@ class IdmNavigator20WebClient:
         a firmware does not answer are skipped; an empty result raises only
         when no page answered at all.
         """
-        await self.login()
+        if not self._data_paths:
+            await self.login()
         values: dict[str, IdmWebValue] = {}
+        raw_responses: dict[str, str] = {}
         answered = 0
+        auth_retried = False
         for stat_type, path in NAVIGATOR20_STATISTICS_PATHS:
             try:
-                raw = await self._request_text("GET", path)
+                while True:
+                    try:
+                        raw = await self._request_text("GET", path)
+                        if _looks_like_auth_failure(raw) or _looks_like_login_page(raw):
+                            raise IdmWebAuthenticationError(
+                                "Navigator 2.0 statistics returned a login response"
+                            )
+                        break
+                    except IdmWebAuthenticationError:
+                        if auth_retried:
+                            raise
+                        auth_retried = True
+                        await self.login()
+            except IdmWebAuthenticationError:
+                raise
             except IdmWebError:
                 _LOGGER.debug("Navigator 2.0 statistics page %s unavailable", path)
                 continue
             answered += 1
+            if include_raw:
+                raw_responses[path] = raw
             try:
                 values.update(parse_navigator20_statistics_response(raw, stat_type))
             except IdmWebResponseError:
                 _LOGGER.debug("Navigator 2.0 statistics page %s unparseable", path, exc_info=True)
         if not answered:
             raise IdmWebResponseError("Navigator 2.0 answered none of the statistics pages")
-        data = IdmWebData(model="Navigator 2.0 Web", values=values)
+        data = IdmWebData(model="Navigator 2.0 Web", values=values, raw_responses=raw_responses)
         self._last_success_monotonic = time.monotonic()
         return data
 

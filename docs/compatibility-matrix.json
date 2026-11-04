@@ -396,6 +396,12 @@
       "hass_integration_version": "0.25.0-b3",
       "status": "api-prepared",
       "notes": "Changeover valve 1110 declares the UINT16 not-configured sentinel 65535 so plants without the heating/cooling function pass validated polls after the 2.16.0 enum landed. First field report against 2.16.0b1; no other register changes."
+    },
+    {
+      "api_version": "2.16.0b3",
+      "hass_integration_version": "pending",
+      "status": "api-prepared",
+      "notes": "Web write replay protection, finite setpoint validation, cancellation cleanup, and Navigator 2.0 statistics session reuse with raw-response diagnostics. Home Assistant client and adapter contract tests pass; field validation pending."
     }
   ]
 }
