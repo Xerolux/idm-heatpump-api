@@ -65,6 +65,21 @@ class _StubClient(IdmNavigator10WebClient):
         return self.responses.pop(0)
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+@pytest.mark.parametrize("target", ["freshwater", "dhw", "heatingcircuit"])
+async def test_nonfinite_writes_fail_before_any_request(value: float, target: str) -> None:
+    client = _StubClient([])
+    with pytest.raises(ValueError, match="finite"):
+        if target == "freshwater":
+            await client.save_freshwater_parameter("FW030", value, setting_id="13256")
+        elif target == "dhw":
+            await client.save_dhw_setpoint(value)
+        else:
+            await client.save_heatingcircuit_parameter("test", value, min_value=7, max_value=30)
+    assert client.captured == []
+
+
 class TestSettingParameterParsing:
     def test_extracts_the_live_confirmed_definition(self) -> None:
         parameter = parse_navigator_setting_parameter(SETTING_DETAIL)

@@ -22,6 +22,19 @@ prerelease is `2.0.0b1`, not `2.0.0-beta.1` — see `docs/RELEASE_PROCESS.md`.
 Sections up to `1.0.3` are German; they stay as published, because a released
 changelog is history. Everything from `2.0.0b1` on is English.
 
+## [2.16.0b3] - 2026-11-04
+
+### Fixed
+
+- Do not replay Navigator 10 web saves after a transport failure: the controller may already have executed the write. Close the uncertain connection and report the unknown outcome instead; read requests retain reconnect retries.
+- Reject NaN and infinite freshwater and heating-circuit parameter values before any network request, including device-range lookups.
+- Release owned HTTP sessions and WebSockets when Navigator 10 or Navigator 2.0 connection setup is cancelled.
+- Honor `include_raw=True` for Navigator 2.0 statistics responses.
+
+### Changed
+
+- Reuse the authenticated Navigator 2.0 session for statistics polls instead of repeating login and endpoint discovery on every call. Renew expired authentication once and surface repeated authentication failures.
+
 ## [2.16.0b2] - 2026-10-31
 
 ### Fixed

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -92,6 +93,49 @@ class _StubNav20(IdmNavigator20WebClient):
 
 
 class TestReadStatistics:
+    @pytest.mark.asyncio
+    async def test_raw_responses_are_opt_in_and_session_is_reused(self) -> None:
+        path = "/data/statistics.php?type=heatpump"
+        client = _StubNav20({path: RUNTIME_JSON})
+        client._data_paths = ("/data/heatpump.php",)
+        client.login = AsyncMock()
+        data = await client.read_statistics(include_raw=True)
+        assert data.raw_responses == {path: RUNTIME_JSON}
+        data = await client.read_statistics()
+        assert data.raw_responses == {}
+        client.login.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_expired_statistics_session_is_renewed_once(self) -> None:
+        from idm_heatpump.web import IdmWebPinRejectedError
+
+        client = _StubNav20({})
+        client._data_paths = ("/data/heatpump.php",)
+        client.login = AsyncMock()
+        client._request_text = AsyncMock(
+            side_effect=[
+                IdmWebPinRejectedError("expired"),
+                RUNTIME_JSON,
+                RUNTIME_JSON,
+                RUNTIME_JSON,
+            ]
+        )
+        data = await client.read_statistics()
+        assert data.values
+        client.login.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_repeated_statistics_auth_failure_is_not_swallowed(self) -> None:
+        from idm_heatpump.web import IdmWebPinRejectedError
+
+        client = _StubNav20({})
+        client._data_paths = ("/data/heatpump.php",)
+        client.login = AsyncMock()
+        client._request_text = AsyncMock(side_effect=IdmWebPinRejectedError("rejected"))
+        with pytest.raises(IdmWebPinRejectedError):
+            await client.read_statistics()
+        client.login.assert_awaited_once()
+
     @pytest.mark.asyncio
     async def test_reads_all_three_pages_and_merges(self) -> None:
         client = _StubNav20(

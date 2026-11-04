@@ -22,6 +22,7 @@ from idm_heatpump.web import (
     IdmWebResponseError,
     IdmWebTimeoutError,
     IdmWebValue,
+    IdmWebWebSocketError,
     _extract_csrf_token,
     _is_ip_literal,
     _looks_like_data_response,
@@ -368,6 +369,45 @@ class FailingSendWs(FakeWs):
     async def send_json(self, payload: dict[str, object]) -> None:
         self.closed = True
         raise OSError("drop")
+
+
+class LostWriteReplyWs(FakeWs):
+    async def receive(self, timeout: float) -> FakeWsMessage:
+        if self.sent:
+            raise TimeoutError("write reply lost")
+        return await super().receive(timeout)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["send", "receive"])
+@pytest.mark.parametrize("operation", ["mode", "notification", "freshwater", "heatingcircuit"])
+async def test_web_saves_are_not_replayed_after_transport_failure(
+    failure: str, operation: str
+) -> None:
+    ws_type = FailingSendWs if failure == "send" else LostWriteReplyWs
+    ws = ws_type(['{"authorized":true}'])
+    replacement = FakeWs(['{"authorized":true}', '{"home":{}}'])
+    session = FakeSession([ws, replacement])
+    client = IdmNavigator10WebClient("192.0.2.10", "1234", session=session, reconnect_base_delay=0)
+    with pytest.raises(IdmWebWebSocketError, match="outcome is unknown"):
+        if operation == "mode":
+            await client.set_system_mode(1)
+        elif operation == "notification":
+            await client.acknowledge_all_notifications()
+        elif operation == "freshwater":
+            await client.save_freshwater_parameter("FW030", 45)
+        else:
+            await client.save_heatingcircuit_parameter("test", 20)
+    assert len(session.urls) == 1
+    assert len(ws.sent) == (0 if failure == "send" else 1)
+    assert replacement.sent == []
+    assert ws.closed
+    assert client._ws is None
+    # A later explicit read opens a clean socket and cannot consume a late save reply.
+    await client.read_home_overview()
+    assert len(session.urls) == 2
+    assert replacement.sent == [{"controller": "home", "command": "overview"}]
+    await client.close()
 
 
 class FakeSession:
