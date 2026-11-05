@@ -399,9 +399,15 @@
     },
     {
       "api_version": "2.16.0b3",
-      "hass_integration_version": "pending",
+      "hass_integration_version": "0.25.0-b7",
       "status": "api-prepared",
       "notes": "Web write replay protection, finite setpoint validation, cancellation cleanup, and Navigator 2.0 statistics session reuse with raw-response diagnostics. Home Assistant client and adapter contract tests pass; field validation pending."
+    },
+    {
+      "api_version": "2.16.0",
+      "hass_integration_version": "0.25.0",
+      "status": "api-prepared",
+      "notes": "Stable cut of the 2.16.0 line (b1-b3): documented valve (1110) and heat-source fault (1680) semantics, the UINT16 65535 not-configured sentinel, web write replay protection, finite setpoint validation, cancellation cleanup, and Navigator 2.0 statistics session reuse. Identical code to 2.16.0b3; pinned by integration 0.25.0."
     }
   ]
 }
