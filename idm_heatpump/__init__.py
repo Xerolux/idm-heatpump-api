@@ -73,6 +73,7 @@ from .exceptions import (
     IdmTransportError,
     IllegalAddressError,
 )
+from .plausibility import UNINITIALIZED_TEMPERATURE_C, is_uninitialized_temperature
 from .registers import (
     CORE_REGISTERS,
     RegisterRegistry,
@@ -215,6 +216,7 @@ __all__ = [
     "SMART_GRID_OPTIONS",
     "SOLAR_MODE_OPTIONS",
     "SYSTEM_MODE_OPTIONS",
+    "UNINITIALIZED_TEMPERATURE_C",
     "VARIABLE_INPUT_OPTIONS",
     "ZONE_MODULE_MODE_OPTIONS",
     "AuthenticationError",
@@ -334,6 +336,7 @@ __all__ = [
     "get_register",
     "get_register_registry",
     "get_zone_module_registers",
+    "is_uninitialized_temperature",
     "quiet_pymodbus_logging",
     "web_pin_configured",
 ]

@@ -22,6 +22,12 @@ prerelease is `2.0.0b1`, not `2.0.0-beta.1` — see `docs/RELEASE_PROCESS.md`.
 Sections up to `1.0.3` are German; they stay as published, because a released
 changelog is history. Everything from `2.0.0b1` on is English.
 
+## [2.16.1] - 2026-11-08
+
+### Added
+
+- Publish the uninitialized-temperature band as library knowledge: a temperature input whose sensor is not wired answers with uninitialized controller memory instead of a declared sentinel — observed as about -327 °C on Navigator 2.0 register 1364 (idm-heatpump-hass issues #504 and #668). `is_uninitialized_temperature()` and `UNINITIALIZED_TEMPERATURE_C` (-300 °C) classify that band. Decoding is unchanged: values still flow through faithfully and consumers decide what to publish, the same contract as the declared sentinel sets.
+
 ## [2.16.0] - 2026-11-05
 
 ### Added

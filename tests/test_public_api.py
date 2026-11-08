@@ -43,6 +43,7 @@ EXPECTED_PUBLIC_API = [
     "SMART_GRID_OPTIONS",
     "SOLAR_MODE_OPTIONS",
     "SYSTEM_MODE_OPTIONS",
+    "UNINITIALIZED_TEMPERATURE_C",
     "VARIABLE_INPUT_OPTIONS",
     "ZONE_MODULE_MODE_OPTIONS",
     "AuthenticationError",
@@ -162,6 +163,7 @@ EXPECTED_PUBLIC_API = [
     "get_register",
     "get_register_registry",
     "get_zone_module_registers",
+    "is_uninitialized_temperature",
     "quiet_pymodbus_logging",
     "web_pin_configured",
 ]
