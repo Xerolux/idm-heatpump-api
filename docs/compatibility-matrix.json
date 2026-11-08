@@ -408,6 +408,12 @@
       "hass_integration_version": "0.25.0",
       "status": "api-prepared",
       "notes": "Stable cut of the 2.16.0 line (b1-b3): documented valve (1110) and heat-source fault (1680) semantics, the UINT16 65535 not-configured sentinel, web write replay protection, finite setpoint validation, cancellation cleanup, and Navigator 2.0 statistics session reuse. Identical code to 2.16.0b3; pinned by integration 0.25.0."
+    },
+    {
+      "api_version": "2.16.1",
+      "hass_integration_version": "0.26.7",
+      "status": "api-prepared",
+      "notes": "Publishes the uninitialized-temperature band as library knowledge: is_uninitialized_temperature() and UNINITIALIZED_TEMPERATURE_C (-300 C) classify memory garbage from unwired temperature inputs (about -327 C on register 1364, idm-heatpump-hass #504/#668). Decoding unchanged; pinned by integration 0.26.7."
     }
   ]
 }
