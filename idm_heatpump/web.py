@@ -463,6 +463,14 @@ class IdmWebResponseError(IdmWebProtocolError):
     """Raised when the local web interface returns an unexpected response."""
 
 
+class IdmWebHeatingCircuitUnavailableError(IdmWebResponseError):
+    """The controller explicitly reports that a circuit is unavailable."""
+
+    def __init__(self, hc_id: str) -> None:
+        self.hc_id = hc_id
+        super().__init__(f"Navigator 10 heating circuit {hc_id} is unavailable")
+
+
 # Short aliases requested by downstream integrations. They intentionally point
 # to the IDM-prefixed classes to preserve the existing public exception tree.
 AuthenticationError = IdmWebAuthenticationError
@@ -1571,6 +1579,17 @@ def parse_navigator_heatingcircuit_response(
         raise IdmWebResponseError("Navigator 10 response does not contain heatingcircuitDetail")
     hc_id = detail.get("id")
     if not isinstance(hc_id, str) or not hc_id:
+        # A captured controller reply explicitly reports an absent circuit.
+        # Match only the confirmed shape; malformed/unknown replies stay errors.
+        note = detail.get("note")
+        if set(detail) == {"note"} and isinstance(note, dict) and note.get("type") == "danger":
+            text = note.get("text")
+            match = re.fullmatch(
+                r"no heating circuit available for specified heating circuit id \[([A-G])\]!",
+                text if isinstance(text, str) else "",
+            )
+            if match:
+                raise IdmWebHeatingCircuitUnavailableError(match[1])
         raise IdmWebResponseError("Navigator 10 heatingcircuitDetail carries no id")
 
     mode_block = detail.get("mode")
@@ -2789,7 +2808,14 @@ class IdmNavigator10WebClient:
                 "data": {"hcId": clean_id},
             }
         )
-        circuit = parse_navigator_heatingcircuit_response(raw)
+        try:
+            circuit = parse_navigator_heatingcircuit_response(raw)
+        except IdmWebHeatingCircuitUnavailableError as error:
+            if error.hc_id != clean_id:
+                raise IdmWebResponseError(
+                    "Navigator 10 unavailable circuit does not match request"
+                ) from error
+            raise
         self._last_success_monotonic = time.monotonic()
         return circuit
 

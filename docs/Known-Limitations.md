@@ -25,7 +25,7 @@ its exact documented start address and size, and never shifts an official
 address merely to eliminate a logical range overlap. See
 [Register-Map Invariants](Register-Map-Invariants) for the full rules.
 
-There is **no no-overlap invariant** — by design.
+There is **no no-overlap invariant** â€” by design.
 
 ## EEPROM-sensitive registers
 
@@ -90,23 +90,45 @@ transport boundary and explicitly unsupported areas.
 ## Sentinel handling
 
 Context-specific unavailable values are decoded using the documented datatype
-and then interpreted as unavailable — they are never clamped or discarded at
+and then interpreted as unavailable â€” they are never clamped or discarded at
 the raw-byte level to hide a datatype/address error. See [Data Polling](Data-Update)
 for how sentinels interact with batch validation.
 
 One "unavailable" answer is not covered by any declared sentinel: a
 temperature input whose sensor is not wired answers with uninitialized
 controller memory. A Navigator 2.0 heating circuit without an iDM room sensor
-reports about -327 °C on register 1364 (observed -327.33 °C and -327.22 °C;
-idm-heatpump-hass issues #504 and #668) — a finite value that the official
+reports about -327 Â°C on register 1364 (observed -327.33 Â°C and -327.22 Â°C;
+idm-heatpump-hass issues #504 and #668) â€” a finite value that the official
 tables do not bound, so range validation cannot catch it either.
 `is_uninitialized_temperature()` classifies readings at or below
-`UNINITIALIZED_TEMPERATURE_C` (-300 °C) as that memory garbage. Decoding is
+`UNINITIALIZED_TEMPERATURE_C` (-300 Â°C) as that memory garbage. Decoding is
 unchanged: the value still flows through, and consumers decide what to
-publish — the same contract as the declared sentinel sets.
+publish â€” the same contract as the declared sentinel sets.
 
 ## No implied affiliation
 
 This project is an unofficial community project and is not affiliated with,
 endorsed by, or connected to IDM Energiesysteme GmbH. All trademarks belong to
 their respective owners.
+
+
+## Diagnostic donations reviewed on 9 November 2026
+
+Navigator 10 replies can explicitly report a circuit as unavailable using a
+note-only `heatingcircuitDetail`. The parser distinguishes this confirmed shape
+with `IdmWebHeatingCircuitUnavailableError` (a subclass of `IdmWebResponseError`);
+unknown notes and malformed replies remain protocol errors. The request reader
+rejects a note naming a different circuit. Consumers can skip the unavailable
+circuit without inventing a value or discarding other successful circuit reads.
+Synthetic regression fixtures reproduce the shape, not donated measurements.
+Numeric setting parameters remain distinct from HTML setting sections.
+
+Open evidence work: a donation declared as NAVIGATOR Pro contains additional
+readable FC03/FC04 address pairs but no authenticated web data. Readability alone
+does not establish register meaning or prove the physical controller identity.
+Do not add or alter mappings from these words alone. Web login rejection remains
+ambiguous between rejected credentials and an unsupported authentication flow;
+the capture tool needs sanitized per-attempt diagnostics and a browser-login
+comparison. No new #577-referenced evidence settles its remaining parser or
+packed-register questions. Community firmware sightings remain channel-specific;
+`NAV10_` and `T_NAV10_` must not be mixed.

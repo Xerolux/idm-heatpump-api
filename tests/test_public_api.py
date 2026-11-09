@@ -98,6 +98,7 @@ EXPECTED_PUBLIC_API = [
     "IdmWebPinRejectedError",
     "IdmWebProtocolError",
     "IdmWebResponseError",
+    "IdmWebHeatingCircuitUnavailableError",
     "IdmWebTimeoutError",
     "IdmWebWebSocketError",
     "PinRejectedError",
