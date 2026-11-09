@@ -38,6 +38,7 @@ changelog is history. Everything from `2.0.0b1` on is English.
 - Removed `docs/Changelog (1).md` (a stray PNG) and `docs/Contributing (2).md` (a German landing page) that were being mirrored into the wiki and Pages by the sync workflows.
 - README: the public API list now includes `is_uninitialized_temperature()` and `UNINITIALIZED_TEMPERATURE_C`, the advanced-usage section documents the uninitialized-temperature band, and the contributing link no longer points at the removed landing page.
 - New wiki page **CI and Automation** documents the workflows, branch protection, Dependabot auto-merge design, and wiki/Pages publishing; the wiki index links it and the contributing guide.
+- `AGENTS.md` release guidance updated to the one-dispatch flow: `release.yml` dispatches `publish.yml` itself, and the version bump lands through a pull request.
 
 ## [2.16.1] - 2026-11-08
 
