@@ -191,7 +191,7 @@
       "api_version": "1.0.2",
       "hass_integration_version": "pending",
       "status": "hardware-verified",
-      "notes": "Web client mapping expansion: adds heating-circuit room temperature sensors B61-B67 (room_temperature_HK_A through G) to SENSOR_NAME_MAP and WEB_VALUE_DESCRIPTIONS. Verified live on a Navigator 10 ALM 6-15 with heating circuits A and D (B64 = 21.8 Â°C)."
+      "notes": "Web client mapping expansion: adds heating-circuit room temperature sensors B61-B67 (room_temperature_HK_A through G) to SENSOR_NAME_MAP and WEB_VALUE_DESCRIPTIONS. Verified live on a Navigator 10 ALM 6-15 with heating circuits A and D (B64 = 21.8 \u00c2\u00b0C)."
     },
     {
       "api_version": "1.0.3",
@@ -414,6 +414,18 @@
       "hass_integration_version": "0.26.7",
       "status": "api-prepared",
       "notes": "Publishes the uninitialized-temperature band as library knowledge: is_uninitialized_temperature() and UNINITIALIZED_TEMPERATURE_C (-300 C) classify memory garbage from unwired temperature inputs (about -327 C on register 1364, idm-heatpump-hass #504/#668). Decoding unchanged; pinned by integration 0.26.7."
+    },
+    {
+      "api_version": "2.16.2rc1",
+      "hass_integration_version": "0.26.11",
+      "status": "api-prepared",
+      "notes": "Capture-confirmed explicit unavailable heating-circuit notes get a response-error subtype; synthetic parser and request-binding regressions pass. The consumer preserves other successful circuit reads. No register-map or write changes; no new live hardware test."
+    },
+    {
+      "api_version": "2.16.2",
+      "hass_integration_version": "0.26.11",
+      "status": "api-prepared",
+      "notes": "Capture-confirmed explicit unavailable heating-circuit notes get a response-error subtype; synthetic parser and request-binding regressions pass. The consumer preserves other successful circuit reads. No register-map or write changes; no new live hardware test."
     }
   ]
 }
