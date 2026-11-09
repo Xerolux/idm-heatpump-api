@@ -110,3 +110,25 @@ publish — the same contract as the declared sentinel sets.
 This project is an unofficial community project and is not affiliated with,
 endorsed by, or connected to IDM Energiesysteme GmbH. All trademarks belong to
 their respective owners.
+
+
+## Diagnostic donations reviewed on 9 November 2026
+
+Navigator 10 replies can explicitly report a circuit as unavailable using a
+note-only `heatingcircuitDetail`. The parser distinguishes this confirmed shape
+with `IdmWebHeatingCircuitUnavailableError` (a subclass of `IdmWebResponseError`);
+unknown notes and malformed replies remain protocol errors. The request reader
+rejects a note naming a different circuit. Consumers can skip the unavailable
+circuit without inventing a value or discarding other successful circuit reads.
+Synthetic regression fixtures reproduce the shape, not donated measurements.
+Numeric setting parameters remain distinct from HTML setting sections.
+
+Open evidence work: a donation declared as NAVIGATOR Pro contains additional
+readable FC03/FC04 address pairs but no authenticated web data. Readability alone
+does not establish register meaning or prove the physical controller identity.
+Do not add or alter mappings from these words alone. Web login rejection remains
+ambiguous between rejected credentials and an unsupported authentication flow;
+the capture tool needs sanitized per-attempt diagnostics and a browser-login
+comparison. No new #577-referenced evidence settles its remaining parser or
+packed-register questions. Community firmware sightings remain channel-specific;
+`NAV10_` and `T_NAV10_` must not be mixed.

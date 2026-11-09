@@ -164,3 +164,66 @@ class TestSaveHeatingCircuitParameter:
 
         with pytest.raises(IdmWebResponseError, match="rejected the write"):
             await client.save_heatingcircuit_parameter("HKA04", 21.6, min_value=15, max_value=30)
+
+
+@pytest.mark.parametrize("hc_id", list("ABCDEFG"))
+def test_explicit_unavailable_circuit_is_distinct(hc_id: str) -> None:
+    from idm_heatpump import IdmWebHeatingCircuitUnavailableError
+
+    raw = json.dumps(
+        {
+            "heatingcircuitDetail": {
+                "note": {
+                    "type": "danger",
+                    "text": f"no heating circuit available for specified heating circuit id [{hc_id}]!",
+                }
+            }
+        }
+    )
+    with pytest.raises(IdmWebHeatingCircuitUnavailableError) as caught:
+        parse_navigator_heatingcircuit_response(raw)
+    assert caught.value.hc_id == hc_id
+    assert isinstance(caught.value, IdmWebResponseError)
+
+
+@pytest.mark.parametrize(
+    "note",
+    [
+        None,
+        {},
+        {"type": "danger", "text": "unexpected error"},
+        {
+            "type": "info",
+            "text": "no heating circuit available for specified heating circuit id [D]!",
+        },
+    ],
+)
+def test_unknown_missing_id_reply_remains_protocol_error(note: object) -> None:
+    from idm_heatpump import IdmWebHeatingCircuitUnavailableError
+
+    with pytest.raises(IdmWebResponseError) as caught:
+        parse_navigator_heatingcircuit_response(
+            json.dumps({"heatingcircuitDetail": {"note": note}})
+        )
+    assert not isinstance(caught.value, IdmWebHeatingCircuitUnavailableError)
+
+
+@pytest.mark.asyncio
+async def test_absence_note_for_another_request_is_not_silently_skipped() -> None:
+    from idm_heatpump import IdmWebHeatingCircuitUnavailableError
+
+    raw = json.dumps(
+        {
+            "heatingcircuitDetail": {
+                "note": {
+                    "type": "danger",
+                    "text": "no heating circuit available for specified heating circuit id [D]!",
+                }
+            }
+        }
+    )
+    with pytest.raises(IdmWebResponseError) as caught:
+        await _StubClient([raw]).read_heatingcircuit("A")
+    assert not isinstance(caught.value, IdmWebHeatingCircuitUnavailableError)
+    with pytest.raises(IdmWebHeatingCircuitUnavailableError):
+        await _StubClient([raw]).read_heatingcircuit("D")

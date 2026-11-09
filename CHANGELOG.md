@@ -26,6 +26,16 @@ changelog is history. Everything from `2.0.0b1` on is English.
 
 ### Fixed
 
+- Distinguish capture-confirmed Navigator 10 unavailable-circuit notes from malformed responses. Existing response-error handlers remain compatible; a note for a different requested circuit remains an error. This allows consumers to retain successful circuit reads without treating missing circuits as valid zero states. No Modbus map or write behavior changes.
+
+### Documentation
+
+- Record the reviewed donation evidence and unresolved Pro authentication, register attribution and #577 questions in Known Limitations. Retain numeric-parameter versus HTML-section parser separation and firmware-channel boundaries.
+
+## [Unreleased]
+
+### Fixed
+
 - Dependabot auto-merge deadlock: the workflow's `gh pr checks --watch` saw its own `pull_request_target` job as a pending check on the pull request, so every Dependabot pull request waited for itself until the 90-minute job timeout cancelled the run (#163 and #164 each burned the full timeout while every real check was green after one minute). The job now polls the Checks API, skips its own workflow run, and merges once every other check completed successfully; a red check still fails the job and leaves the pull request open.
 
 ### Changed
