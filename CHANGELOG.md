@@ -22,6 +22,23 @@ prerelease is `2.0.0b1`, not `2.0.0-beta.1` — see `docs/RELEASE_PROCESS.md`.
 Sections up to `1.0.3` are German; they stay as published, because a released
 changelog is history. Everything from `2.0.0b1` on is English.
 
+## [Unreleased]
+
+### Fixed
+
+- Dependabot auto-merge deadlock: the workflow's `gh pr checks --watch` saw its own `pull_request_target` job as a pending check on the pull request, so every Dependabot pull request waited for itself until the 90-minute job timeout cancelled the run (#163 and #164 each burned the full timeout while every real check was green after one minute). The job now polls the Checks API, skips its own workflow run, and merges once every other check completed successfully; a red check still fails the job and leaves the pull request open.
+
+### Changed
+
+- Repository settings now match the documented maintenance policy: merged branches are deleted automatically, and the `dependencies`, `ci`, and `python` labels referenced by `dependabot.yml` exist so Dependabot can label its pull requests again.
+
+### Docs
+
+- `CONTRIBUTING.md` contained a stray wiki-sync workflow YAML instead of a contributing guide; it is now an actual guide covering the developer setup, quality gate, register-map rules, and documentation workflow.
+- Removed `docs/Changelog (1).md` (a stray PNG) and `docs/Contributing (2).md` (a German landing page) that were being mirrored into the wiki and Pages by the sync workflows.
+- README: the public API list now includes `is_uninitialized_temperature()` and `UNINITIALIZED_TEMPERATURE_C`, the advanced-usage section documents the uninitialized-temperature band, and the contributing link no longer points at the removed landing page.
+- New wiki page **CI and Automation** documents the workflows, branch protection, Dependabot auto-merge design, and wiki/Pages publishing; the wiki index links it and the contributing guide.
+
 ## [2.16.1] - 2026-11-08
 
 ### Added

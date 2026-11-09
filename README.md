@@ -172,6 +172,7 @@ The library provides fine-grained control for advanced scenarios:
 - `client.get_batch_unsafe_registers()` / `client.mark_batch_unsafe(reg)`: Registers that produced an invalid grouped value are read individually for the rest of the client session. `mark_batch_unsafe` lets a consumer quarantine a register when an external plausibility check detects a valid-looking but incorrect grouped value.
 - `client.get_active_cyclic_writes()` / `client.get_expired_cyclic_writes()` / `client.reset_cyclic_write_state()`: Track cyclic GLT write heartbeats. Successful writes to cyclic GLT registers refresh an in-memory deadline; consumers can detect stale external demands and clear the state on reload or shutdown.
 - `client.decode_value(registers, reg)` / `client.encode_value(value, reg)`: Public codec helpers (`ModbusCodec` mixin) for manual (de)serialization.
+- `is_uninitialized_temperature(value)`: classify readings at or below `UNINITIALIZED_TEMPERATURE_C` (-300 °C). A temperature input whose sensor is not wired answers with uninitialized controller memory (observed near -327 °C) instead of a declared sentinel. Decoding stays faithful — consumers decide what to publish, the same contract as the declared sentinel sets.
 
 Register metadata for HA integration mapping:
 
@@ -274,6 +275,7 @@ The public API is the package root `__all__` contract, protected by a snapshot t
 - **Client and metadata types:** `IdmModbusClient`, `IdmModelInfo`, `RegisterDef`, `DataType`, `RegisterType`, `WriteClass`, `WriteSafetyResult`, `ModbusErrorContext`, `ModbusCodec`, `IdmClientDiagnostics`, `FeatureFlags`, `IllegalAddressError`, `AdaptiveBackoff`, `PollRateLimiter`, `quiet_pymodbus_logging`
 - **Register builders and registry:** `build_register_map`, `get_all_registers`, `get_register`, `get_register_registry`, `get_detection_registers`, `get_heating_circuit_registers`, `get_zone_module_registers`, `RegisterRegistry`, `CORE_REGISTERS`
 - **Error-code database:** `ErrorCodeInfo`, `get_error_code_info`
+- **Plausibility helpers:** `is_uninitialized_temperature`, `UNINITIALIZED_TEMPERATURE_C`
 - **Optional web supplement:** `IdmNavigator10WebClient`, `IdmNavigator20WebClient`, `create_optional_navigator10_web_client`, `create_optional_navigator20_web_client`, `web_pin_configured`, `IdmWebData`, `IdmWebValue`, `IdmWebValueDescription`, `IdmWebNotifications`, `IdmWebNotification`, `IdmWebDiagnostics`, `WEB_VALUE_DESCRIPTIONS`, `RECOMMENDED_WEB_SCAN_INTERVAL`, `IdmWebError`, `IdmWebDependencyError`, `IdmWebConnectionError`, `IdmWebTimeoutError`, `IdmWebAuthenticationError`, `IdmWebPinRejectedError`, `IdmWebCsrfError`, `IdmWebProtocolError`, `IdmWebWebSocketError`, `IdmWebResponseError`, and the legacy aliases `AuthenticationError`, `PinRejectedError`, `CsrfError`, `ConnectionError`, `TimeoutError`, `WebSocketError`, `ProtocolError`
 - **Option maps:** `SYSTEM_MODE_OPTIONS`, `CIRCUIT_MODE_OPTIONS`, `ROOM_MODE_OPTIONS`, `ZONE_MODULE_MODE_OPTIONS`, `ACTIVE_HC_MODE_OPTIONS`, `SOLAR_MODE_OPTIONS`, `SMART_GRID_OPTIONS`, `ISC_MODE_OPTIONS`, `HP_OPERATING_MODE_OPTIONS`, `BIVALENCE_STATE_OPTIONS`, `BOOSTER_FAULT_OPTIONS`, `EVU_LOCK_OPTIONS`, `VARIABLE_INPUT_OPTIONS`
 - **Model, feature, and connection constants:** `MODEL_NAVIGATOR_20`, `MODEL_NAVIGATOR_PRO`, `MODEL_NAVIGATOR_10`, `MODEL_UNKNOWN`, `MODEL_DETECTION_TIMEOUT`, `MODEL_DETECTION_MAX_RETRIES`, `FEATURE_HEATING_CIRCUITS`, `FEATURE_ZONE_MODULES`, `FEATURE_SOLAR`, `FEATURE_ISC`, `FEATURE_PV`, `FEATURE_CASCADE`, `HEATING_CIRCUIT_LETTERS`, `MAX_HEATING_CIRCUITS`, `MAX_ZONE_MODULES`, `MAX_ROOMS_PER_ZONE`, `DEFAULT_PORT`, `DEFAULT_SLAVE_ID`, `DEFAULT_TIMEOUT`, `MAX_RETRIES`, `RETRY_BACKOFF_BASE`, `EEPROM_SENSITIVE_ADDRESSES`
@@ -297,7 +299,7 @@ The library fully covers the official 2025 Navigator 10 Modbus TCP specification
 
 ## Contributing
 
-Please open an issue or pull request for bug reports, improvements, and documentation updates. See [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/Contributing (2).md](docs/Contributing%20%282%29.md) for details.
+Please open an issue or pull request for bug reports, improvements, and documentation updates. See [CONTRIBUTING.md](CONTRIBUTING.md) for the developer setup, quality gate, and register-map rules.
 
 ## License
 
