@@ -1,8 +1,8 @@
 # Changelog
 
-> **This project makes your life with an IDM heat pump easier â€” completely free of charge.**
+> **This project makes your life with an IDM heat pump easier — completely free of charge.**
 > If you like it and want to support the development, a small token of
-> appreciation is hugely motivating. No obligation â€” every coffee counts! â˜•
+> appreciation is hugely motivating. No obligation — every coffee counts! ☕
 
 [![GitHub Sponsors](https://img.shields.io/github/sponsors/xerolux?logo=github&style=for-the-badge&color=blue)](https://github.com/sponsors/xerolux)
 [![Ko-Fi](https://img.shields.io/badge/Ko--fi-xerolux-blue?logo=ko-fi&style=for-the-badge)](https://ko-fi.com/xerolux)
@@ -17,7 +17,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Versions are written in [PEP 440](https://peps.python.org/pep-0440/) form, so a
-prerelease is `2.0.0b1`, not `2.0.0-beta.1` â€” see `docs/RELEASE_PROCESS.md`.
+prerelease is `2.0.0b1`, not `2.0.0-beta.1` — see `docs/RELEASE_PROCESS.md`.
 
 Sections up to `1.0.3` are German; they stay as published, because a released
 changelog is history. Everything from `2.0.0b1` on is English.
@@ -54,7 +54,7 @@ changelog is history. Everything from `2.0.0b1` on is English.
 
 ### Added
 
-- Publish the uninitialized-temperature band as library knowledge: a temperature input whose sensor is not wired answers with uninitialized controller memory instead of a declared sentinel â€” observed as about -327 Â°C on Navigator 2.0 register 1364 (idm-heatpump-hass issues #504 and #668). `is_uninitialized_temperature()` and `UNINITIALIZED_TEMPERATURE_C` (-300 Â°C) classify that band. Decoding is unchanged: values still flow through faithfully and consumers decide what to publish, the same contract as the declared sentinel sets.
+- Publish the uninitialized-temperature band as library knowledge: a temperature input whose sensor is not wired answers with uninitialized controller memory instead of a declared sentinel — observed as about -327 °C on Navigator 2.0 register 1364 (idm-heatpump-hass issues #504 and #668). `is_uninitialized_temperature()` and `UNINITIALIZED_TEMPERATURE_C` (-300 °C) classify that band. Decoding is unchanged: values still flow through faithfully and consumers decide what to publish, the same contract as the declared sentinel sets.
 
 ## [2.16.0] - 2026-11-05
 
@@ -162,13 +162,13 @@ changelog is history. Everything from `2.0.0b1` on is English.
 - **`heat_sink_flow_rate` (address 1072) re-typed from UCHAR to word-swapped
   FLOAT32** (idm-heatpump-hass discussion #516): the official IDM register
   doc lists UCHAR, but two independent field reads prove the controller
-  serves a 32-bit word-swapped float here like its siblings 1068/1070 â€” a
+  serves a 32-bit word-swapped float here like its siblings 1068/1070 — a
   direct Home Assistant modbus `float32` read with word swap returns
   plausible L/min values on a plant with a live flow signal, and plants
-  without a plate heat exchanger answer the âˆ’1.0 float pattern (raw
+  without a plate heat exchanger answer the −1.0 float pattern (raw
   `[0, 49024]`). The UCHAR decode read one byte of the float's low word,
   which produced jumping, far-too-high flow readings whenever the charging
-  pump ran. The FLOAT datatype default sentinel (âˆ’1.0) covers not-present
+  pump ran. The FLOAT datatype default sentinel (−1.0) covers not-present
   plants, so consumers keep classifying them as *not present*. The versioned
   register-schema fixture and the register reference are updated accordingly.
 
@@ -179,7 +179,7 @@ changelog is history. Everything from `2.0.0b1` on is English.
 - **"Not present" fills no longer warn as invalid values on unconfigured
   features** (idm-heatpump-hass issue #532, Navigator 2.0 diagnostics):
   `bivalence_state` (1124) and `solar_mode` (1856) read the one-byte fill
-  255 on plants without bivalence or solar â€” `compressor_status_*` already
+  255 on plants without bivalence or solar — `compressor_status_*` already
   stayed silent on the identical raw `0xFFFF`, but the enum registers
   warned on every Home Assistant restart. Both registers now declare
   `sentinel_values=(255,)`, so the values publish as *not present* (the
@@ -194,7 +194,7 @@ changelog is history. Everything from `2.0.0b1` on is English.
   and `ext_demand_temp_cooling` (1695) now declare their zero fill as a
   sentinel (0 is never inside the documented ranges 15..30, 20..65 and
   10..25), from the same issue #532 diagnostics. The Navigator 1.7 map is
-  untouched â€” separate protocol family, no capture.
+  untouched — separate protocol family, no capture.
 - The versioned register-schema fixture is regenerated accordingly.
 
 ## [2.14.2] - 2026-10-09
@@ -202,9 +202,9 @@ changelog is history. Everything from `2.0.0b1` on is English.
 ### Fixed
 
 - **`dhw_charge_off_temp` (address 1034): validation range widened to
-  46..67 Â°C** (was 46..53 from the official map). The controller's own web
+  46..67 °C** (was 46..53 from the official map). The controller's own web
   interface (`system/detail/freshwater`) accepts 50..67 on current firmware
-  and stores real values there â€” idm-heatpump-hass issue #460 measured 63 Â°C
+  and stores real values there — idm-heatpump-hass issue #460 measured 63 °C
   on an AEOR ALM 4-12 (Navigator 10, firmware NAV10_20.23-903), a value the
   documented maximum rejected on every poll. The lower bound keeps the
   documented 46 so devices that follow the official map validate unchanged;
@@ -219,8 +219,8 @@ changelog is history. Everything from `2.0.0b1` on is English.
 
 - A register that persistently returns an invalid value no longer floods the
   consumer's log with one WARNING per poll (idm-heatpump-hass issue #460:
-  `dhw_charge_off_temp`, address 1034, read outside its documented 46..53 Â°C
-  range on an AEOR ALM 4-12 â€” one warning every 12 s, 6600+ log entries per
+  `dhw_charge_off_temp`, address 1034, read outside its documented 46..53 °C
+  range on an AEOR ALM 4-12 — one warning every 12 s, 6600+ log entries per
   day). The individual-validation WARNING is now logged once per register and
   episode; further occurrences of the same rejection log at DEBUG level, and
   a clean read re-arms the warning. The register keeps being re-read (unlike
@@ -238,16 +238,16 @@ changelog is history. Everything from `2.0.0b1` on is English.
 ### Added
 
 - **`IdmNavigator10WebClient.read_system_overview()`**: the complete-plant
-  `system/overview` frame the shipped frontend renders its system page from â€”
+  `system/overview` frame the shipped frontend renders its system page from —
   buffer, energy-flow widget, domestic hot water, every configured heating
   circuit and the heat-pump block, parsed defensively into the new exported
   `IdmWebSystemOverview` / `IdmWebSystemCircuit` types and
   `parse_navigator_system_overview_response()`. Each circuit carries its
   regulation `type` (the value the display-level-gated Heizsystem setting page
-  exposes as `HS<x>01`); the numbering is firmware-defined and stays raw â€” a
+  exposes as `HS<x>01`); the numbering is firmware-defined and stays raw — a
   normally regulated circuit reports `2`. Live-verified on a Navigator 10
   (jsonVersion 11, firmware T_NAV10_20.24-1580, 2026-10-01) that the frame,
-  unlike the setting page, answers on a plain PIN session at userlevel 0 â€” the
+  unlike the setting page, answers on a plain PIN session at userlevel 0 — the
   level-0 source for heating-circuit-type detection
   (idm-heatpump-hass issue #429). Strictly read-only; the controller has no
   `save` command for this frame.
@@ -291,21 +291,21 @@ changelog is history. Everything from `2.0.0b1` on is English.
 
 - **Navigator 10 performance detail**: `read_performance()` /
   `parse_navigator_performance_response()` expose the live power figures of
-  `system.heatpump.performance/detail` â€” electrical consumption power,
+  `system.heatpump.performance/detail` — electrical consumption power,
   source-side (environment) power and temperatures, the production flow
   temperature, the heating-rod flag and the performance mode.
 - **Navigator 10 weather forecast**: `read_weather()` /
   `parse_navigator_weather_response()` expose the controller-side forecast
-  (myiDM service) â€” today plus up to six forecast days with temperature
+  (myiDM service) — today plus up to six forecast days with temperature
   min/max/act, cloud cover, rain probability, sunshine seconds, weather
   symbol and wind speed.
 - **Navigator 10 iON status**: `read_ion()` /
   `parse_navigator_ion_response()` expose the cloud energy-optimization
-  state â€” active flag, enable setting (`CE001` chooselist) and subscription
+  state — active flag, enable setting (`CE001` chooselist) and subscription
   status. Read-only; the `ion/save` write side is deliberately not wrapped.
 - **Navigator 10 energy flow**: `read_energyflow()` /
   `parse_navigator_energyflow_response()` expose the energy-flow widget
-  state â€” grid and PV power plus the signal/type codes. Firmware
+  state — grid and PV power plus the signal/type codes. Firmware
   `T_NAV10_20.24-1580` removed the `house` channel; the field stays `None`
   there and keeps working on older firmwares.
 
@@ -323,7 +323,7 @@ September 2026); the shipped frontend was the source of the protocol map.
   heat, electrical energy consumption) and normalize the totals to hours or
   kWh using the page's own `unitTotal` scale. Categories follow the
   localized names (heating, cooling, hot water, defrost).
-- **Controller clock setting**: `set_datetime(value)` on both web clients â€”
+- **Controller clock setting**: `set_datetime(value)` on both web clients —
   the Navigator 2.0 settings item `SSETDATETIME` via HTTP PUT and the
   Navigator 10 setting item 4537 (capture-confirmed `setting/save` with an
   ISO-8601 value).
@@ -333,7 +333,7 @@ September 2026); the shipped frontend was the source of the protocol map.
 ### Added
 
 - `IdmWebHeatingCircuit.flow_setpoint`: the current flow setpoint of the
-  circuit (`temperatures.set` of the detail frame) â€” the missing input for
+  circuit (`temperatures.set` of the detail frame) — the missing input for
   the consumer's flow-deviation calculation in web-only operation.
 
 ## [2.10.0] - 2026-09-28
@@ -376,7 +376,7 @@ September 2026); the shipped frontend was the source of the protocol map.
 
 - **WebSocket writes, slice 1** (Phase 4 of the consumer's WebSocket-first
   roadmap; payloads and response frames capture-confirmed on 2026-09-28).
-  The Navigator 10 client gains explicit, validated write methods â€” it stays
+  The Navigator 10 client gains explicit, validated write methods — it stays
   read-only unless one of them is called:
   - `set_system_mode(mode)`: operating mode through `home/save`, validated
     against the Modbus `system_mode` numbering (0 standby, 1 automatic,
@@ -391,7 +391,7 @@ September 2026); the shipped frontend was the source of the protocol map.
     rejected write can never be mistaken for a confirmed one
     (`parse_navigator_save_response` is exported for consumers).
 - `read_home_overview()` / `IdmWebHomeOverview` / `IdmWebSystemMode`: the
-  `home/overview` frame's operating-mode tile â€” current value plus the
+  `home/overview` frame's operating-mode tile — current value plus the
   controller's own selectable values.
 
 ## [2.7.0] - Unreleased
@@ -403,8 +403,8 @@ September 2026); the shipped frontend was the source of the protocol map.
   dependencies; relays every frame between the browser and the controller
   into a JSONL file with the PIN redacted (it lives only in the handshake
   URL). Reads HTTP heads byte-wise so the controller's first
-  `{"authorized": true}` frame â€” which arrives in the same TCP segment as
-  the 101 response â€” is never swallowed. Live-verified read-only against a
+  `{"authorized": true}` frame — which arrives in the same TCP segment as
+  the 101 response — is never swallowed. Live-verified read-only against a
   Navigator 10 through the API's own web client. Companion wiki section on
   the protocol page (EN + DE) documents the capture procedure and the
   sanitization rules.
@@ -421,7 +421,7 @@ September 2026); the shipped frontend was the source of the protocol map.
   - `read_freshwater_overview()` / `parse_navigator_freshwater_response()` /
     `IdmWebFreshwater`: the `system.freshwater/overview` frame with the DHW
     circulation-pump state, the numeric status info, the DHW system mode and
-    the two tank temperatures (as `IdmWebValue`, `Â°C`).
+    the two tank temperatures (as `IdmWebValue`, `°C`).
   - `NAVIGATOR10_STATISTIC_*` constants: the `statisticType` selector values
     (0 heat-pump runtimes, 2 bivalence runtime, 3 EM heat pump, 4 EM heating
     element, 5 energy flow, 6 heat quantities; 1 is answered "not available")
@@ -438,18 +438,18 @@ read-only by design.
 - **Read-only error-code database** (`get_error_code_info()` returning an
   `ErrorCodeInfo`): 2005 controller error codes decoded from the
   configuration of the Windows service tool ("IDM Smart Navigator" 2.3.118,
-  NAV10 protocol session of 2026-09-27). The controller message range 20â€“999
-  â€” the range the Modbus `internal_message` register reports â€” carries
+  NAV10 protocol session of 2026-09-27). The controller message range 20–999
+  — the range the Modbus `internal_message` register reports — carries
   German texts for 343 codes; every one of the 90 hand-collected codes of the
   Home Assistant integration's `internal_messages.py` table matched the
   database one-to-one, which validates the numbering as the same namespace.
   The 10000+ blocks cover device-side errors (20000 display, 30000+ outdoor
   unit, inverter, fan, EVD, Carel peripherals, cascade devices). Each entry
-  carries the affected component (`text`, "WÃ¤rmepumpenvorlauf") and, where
+  carries the affected component (`text`, "Wärmepumpenvorlauf") and, where
   the vendor has one, the error kind (`info`, "Maximaltemperatur");
   `display_text` joins both exactly as the controller display does. Where
   shipped, German user and service remediation texts are included (1160 and
-  1346 entries respectively). Texts are German only â€” the vendor translation
+  1346 entries respectively). Texts are German only — the vendor translation
   table has no English for these enums. The data is packaged as
   `error_codes.json` (one entry per line for reviewable diffs) and can be
   regenerated with `scripts/generate_error_codes.py` from a capture; the
@@ -460,20 +460,20 @@ read-only by design.
 
 ### Added
 
-- **Navigator 1.0/1.7: the official FC01/FC05 coil block (3000â€“3003) is
-  mapped.** `c3000` (StÃ¶rungsmeldung quittieren) becomes the 1.x
-  `error_acknowledge` â€” a write-only COIL register â€” so consumers resolve the
+- **Navigator 1.0/1.7: the official FC01/FC05 coil block (3000–3003) is
+  mapped.** `c3000` (Störungsmeldung quittieren) becomes the 1.x
+  `error_acknowledge` — a write-only COIL register — so consumers resolve the
   acknowledge by name on every family and the 1.x mechanism no longer falls
   back to the shared family's undocumented holding register 1999. The demand
   coils map as read-only binary registers: `demand_heating_17` (c3001,
-  Anforderung Heizen), `demand_cooling_17` (c3002, Anforderung KÃ¼hlen) and
+  Anforderung Heizen), `demand_cooling_17` (c3002, Anforderung Kühlen) and
   `demand_dhw_17` (c3003, Anforderung Vorrangladung). They carry the `_17`
   suffix because the shared family's identically named registers at
-  1710â€“1713 are writable GLT demand *inputs*, while the 1.x coils report the
+  1710–1713 are writable GLT demand *inputs*, while the 1.x coils report the
   controller's live demand *status*. `c3003` is documented read/write
   (Vorrangladung anfordern) and a working FHEM configuration writes it daily
   (idm-heatpump-hass issue #319), but it stays read-only until a hardware
-  capture confirms what writing `0` does to a running demand â€” a switch
+  capture confirms what writing `0` does to a running demand — a switch
   entity would toggle both directions.
 - **Optional coil extension on the transport boundary.** `IdmCoilTransportExtension`
   adds `read_coils` (FC01) and `write_coil` (FC05) beside the existing word
@@ -493,11 +493,11 @@ read-only by design.
 - **`get_register` now resolves the model map before the legacy
   `CORE_REGISTERS` short-circuit.** Previously `error_acknowledge` resolved
   to the shared family's holding register 1999 even with a detected
-  Navigator 1.7, although the 1.x map defines no such register â€” a
+  Navigator 1.7, although the 1.x map defines no such register — a
   model-scoped lookup must never hand back a definition the detected model
   does not have. The default (no model) path is unchanged: the default map
   contains every CORE register with identical addresses, so only 1.x-family
-  name shadows behave differently â€” exactly the intended fix.
+  name shadows behave differently — exactly the intended fix.
 
 ## [2.4.3] - 2026-09-25
 
@@ -507,21 +507,21 @@ read-only by design.
   single word.** A hardware capture on firmware N1.MLj
   (idm-heatpump-hass issue #364, September 2026) proved the
   firmware-specific exception to the Rev.1 table: addresses 2152/2153
-  answer `(0, 0x4238)`, which is exactly 46.0 Â°C as an IEEE-754 float, low
-  word first â€” the Frischwasser-Solltemperatur the controller displays.
+  answer `(0, 0x4238)`, which is exactly 46.0 °C as an IEEE-754 float, low
+  word first — the Frischwasser-Solltemperatur the controller displays.
   Reading 2152 as UINT16 returned the constant low word `0`, which the
-  documented 35â€“60 range correctly rejected (the shape 2.4.2's diagnostics
+  documented 35–60 range correctly rejected (the shape 2.4.2's diagnostics
   exposed). Moving the setpoint on the controller and writing it over
   Modbus both change the pair, in both directions. The register is now a
-  `FLOAT` spanning 2152â€“2153 with the documented 35â€“60 range unchanged;
+  `FLOAT` spanning 2152–2153 with the documented 35–60 range unchanged;
   the following address (2154) times out and stays unused.
 
 ### Changed
 
-- **Heating-curve step hint 0.1 â†’ 0.05, both protocol families.** The 0.1
+- **Heating-curve step hint 0.1 → 0.05, both protocol families.** The 0.1
   hint was a UI assumption from #81; the same N1.MLj plant runs a curve of
   0.35, off the 0.1 grid, and its controller UI steps by 0.05. The hint is
-  a consumer presentation hint only â€” it never rounded writes â€” so every
+  a consumer presentation hint only — it never rounded writes — so every
   previously reachable value stays reachable.
 
 ## [2.4.2] - 2026-09-25
@@ -531,8 +531,8 @@ read-only by design.
 - **Per-register read outcomes for diagnostics: `IdmModbusClient.get_register_outcomes()`.**
   The client now keeps one bounded record per register name describing the
   last read: `status` (`ok` / `suspect` / `unsupported` / `device_error` /
-  `decode_error`), the last decoded `value` â€” retained even when it was
-  rejected as outside the documented range â€” the raw 16-bit `raw_words` as
+  `decode_error`), the last decoded `value` — retained even when it was
+  rejected as outside the documented range — the raw 16-bit `raw_words` as
   last seen on the wire, the register `address`, and the `reason` for a
   rejection (`below_min` / `above_max` / `not_in_enum` / `illegal_address` /
   `device_error` / `decode_error`). Values that used to vanish silently in
@@ -575,9 +575,9 @@ read-only by design.
   (low word first, as the official datatype section states). New writable,
   EEPROM-sensitive registers (the official document allows 300 000 write
   cycles per register and skips identical values):
-  `system_mode_17` (2000) and `hc_a_operating_mode` â€¦ `hc_g_operating_mode`
-  (2002-2014) with their own enum tables â€” the value sets deliberately
-  differ from the shared family's `system_mode`/active hc mode â€” plus, per
+  `system_mode_17` (2000) and `hc_a_operating_mode` … `hc_g_operating_mode`
+  (2002-2014) with their own enum tables — the value sets deliberately
+  differ from the shared family's `system_mode`/active hc mode — plus, per
   heating circuit A-G, the shared family's names for identical parameters
   (`hc_*_room_setpoint_heat_normal` 15-30, `hc_*_room_setpoint_heat_eco`
   10-25, `hc_*_heating_curve` 0.1-3.5 with step 0.1, `hc_*_heating_limit`
@@ -592,8 +592,8 @@ read-only by design.
   `dhw_setpoint` (2152, Frischwasser-Solltemperatur FW030, 35-60). The
   byte-sized parameters are mapped as whole-register UINT16 values (a full
   register is reserved per value, confirmed by the capture); the bivalence
-  points are INT16. The official FC01/05 coil block (3000 StÃ¶rung
-  quittieren, 3001 Anforderung Heizen, 3002 Anforderung KÃ¼hlen, 3003
+  points are INT16. The official FC01/05 coil block (3000 Störung
+  quittieren, 3001 Anforderung Heizen, 3002 Anforderung Kühlen, 3003
   Anforderung Vorrangladung) is documented in the same table but stays
   unmapped until the transport implements FC01/FC05.
 
@@ -602,7 +602,7 @@ read-only by design.
 ### Added
 
 - `IdmNavigator10WebClient.read_home_detail()` (Navigator 10 only): reads the
-  home screen the way the built-in display does â€” the controller's demand
+  home screen the way the built-in display does — the controller's demand
   reason ("Anforderungsgrund") per widget, including **PV**, plus the live
   energy-flow `pv`/`grid` power values.
 - New public web API: `IdmWebHomeDetail` (with `pv_demand_active`),
@@ -621,7 +621,7 @@ read-only by design.
 ### Added
 
 - Optional `RegisterDef.step` metadata, exported by the registry and schema:
-  heating curves use 0.1, zone room setpoints use 0.5 Â°C (#81).
+  heating curves use 0.1, zone room setpoints use 0.5 °C (#81).
 - Document that the official zone setpoint min/max columns are blank;
   no undocumented bounds or write rounding are introduced.
 
@@ -668,12 +668,12 @@ read-only by design.
 
 - **Navigator 1.0/1.7 protocol family support.** A new `MODEL_NAVIGATOR_17`
   model exposes the 1.x family's official register table (`ma_de_812049`,
-  dated 2016-06-13): 44 FC04 FLOAT values (1000-1088 â€” outdoor/flow/DHW/
+  dated 2016-06-13): 44 FC04 FLOAT values (1000-1088 — outdoor/flow/DHW/
   solar/ISC temperatures, humidity at 1046, thermal power and cumulative
-  energy meters) and 25 status words (1500-1524 â€” fault number, operating
+  energy meters) and 25 status words (1500-1524 — fault number, operating
   mode, heating-circuit and compressor statuses, pump statuses,
   cascade/solar/smart-grid/ISC modes). The map is strictly separate from the
-  shared 2.0/10/Pro families â€” the data points differ address by address â€”
+  shared 2.0/10/Pro families — the data points differ address by address —
   and its base registers are all read-only. `hp_operating_mode` (1501) is
   UCHAR per the official table, because firmwares return the mode byte
   doubled into the word (a value of 1 arrives as 0x0101).
@@ -689,7 +689,7 @@ read-only by design.
   response signature: the core input block (1000) responds while the shared
   family's heating-circuit base (1350), active-mode base (1498) and
   zone-module base (2000) are rejected with Modbus Illegal Data Address. The
-  1350 rejection gates the signature â€” impossible on the shared family â€” and
+  1350 rejection gates the signature — impossible on the shared family — and
   runs before the circuit-based classification, because the shared
   active-mode probes (1498-1504) overlap the 1.x status block (1500-1524)
   and would otherwise fake heating circuits. Updated 1.x firmware answering
@@ -818,7 +818,7 @@ write-safety or wire-protocol changes from the beta.
 - **The contract tests point at the integration's `main` again.** They were
   aimed at `claude/idm-heatpump-0.16.0` while both sides of the pymodbus break
   were in flight, because the integration's `main` still spoke pymodbus and
-  could not pass against `2.0.0` â€” CI would have reported an expected break as
+  could not pass against `2.0.0` — CI would have reported an expected break as
   a regression. [Xerolux/idm-heatpump-hass#255](https://github.com/Xerolux/idm-heatpump-hass/pull/255)
   is merged, so `main` is the migrated consumer now and the temporary pin is
   gone.
@@ -828,7 +828,7 @@ write-safety or wire-protocol changes from the beta.
 
 - **Neither release workflow could ship a `2.x` wheel.** Its smoke check installed
   the plain wheel and then built an `IdmModbusClient`, which since `2.0.0`
-  raises the `ImportError` naming the `[pymodbus]` extra â€” by design. This
+  raises the `ImportError` naming the `[pymodbus]` extra — by design. This
   failed the `2.0.0b1` release run at *Inspect built package*, before the tag
   and the upload, so nothing was published. `publish.yml` carried the identical
   check and would have failed the same way. Both now assert what the plain wheel
@@ -851,9 +851,9 @@ write-safety or wire-protocol changes from the beta.
   next to them.** `README.md`, `docs/Home.md` and
   `docs/Installation-and-Setup.md` all showed `pip install idm-heatpump-api`
   followed by an `IdmModbusClient` example, which since `2.0.0` raises an
-  `ImportError`. They now name the three install forms â€” `[pymodbus]` for
+  `ImportError`. They now name the three install forms — `[pymodbus]` for
   standalone use, `[web,pymodbus]` with the web supplement, and the plain
-  package for consumers injecting their own transport â€” and the release body
+  package for consumers injecting their own transport — and the release body
   does the same.
 - **`README.md` gained an "Upgrading from `1.x`" section.** Nobody has to stay on
   `1.0.3`: `pip install "idm-heatpump-api[pymodbus]"` gives what `1.0.3` gave,
@@ -875,7 +875,7 @@ write-safety or wire-protocol changes from the beta.
 First beta of the `2.0.0` line. **Breaking release:** pymodbus is no longer part
 of the public contract. The library owns its error hierarchy, and the built-in
 Modbus TCP transport is an optional extra. A consumer that injects its own
-transport â€” the documented path since `1.0` â€” installs no Modbus library at all
+transport — the documented path since `1.0` — installs no Modbus library at all
 and catches no foreign exception types.
 
 See [#85](https://github.com/Xerolux/idm-heatpump-api/issues/85).
@@ -946,9 +946,9 @@ If you use the built-in transport, add the extra:
 
 ## [1.0.3] - 2026-08-22
 
-Wartungs-Release: ausschlieÃŸlich CI-/Security-Toolchain-Updates, keine
-Ã„nderung an der Bibliothek. Das Ã¶ffentliche API-Verhalten ist identisch zu
-1.0.2 â€“ ein Update ist fÃ¼r Konsumenten optional.
+Wartungs-Release: ausschließlich CI-/Security-Toolchain-Updates, keine
+Änderung an der Bibliothek. Das öffentliche API-Verhalten ist identisch zu
+1.0.2 – ein Update ist für Konsumenten optional.
 
 ### Changed
 
@@ -960,24 +960,24 @@ Wartungs-Release: ausschlieÃŸlich CI-/Security-Toolchain-Updates, keine
 ### Housekeeping
 
 - Alle offenen Pull Requests wurden nach `main` gemergt. Die verbliebenen
-  Feature-Branches (0.7.x-/0.8.2-Ã„ra) enthalten keinen Code, der nicht
+  Feature-Branches (0.7.x-/0.8.2-Ära) enthalten keinen Code, der nicht
   bereits in `main` ist, und wurden bewusst nicht gemergt, da sie `main` auf
-  einen Ã¤lteren Stand zurÃ¼cksetzen wÃ¼rden.
+  einen älteren Stand zurücksetzen würden.
 
 
 ## [1.0.2] - 2026-08-22
 
 ### Added
 
-- **`SENSOR_NAME_MAP` / `WEB_VALUE_DESCRIPTIONS` Erweiterung fÃ¼r Raumtemperaturen (B61â€“B67):**
-  UnterstÃ¼tzung fÃ¼r alle Heizkreis-Raumtemperatursensoren `B61` bis `B67` (`room_temperature_HK_A` bis `room_temperature_HK_G`) im lokalen Web-Client. Live-verifiziert an Navigator 10 ALM 6-15 (Heizkreise A und D, `B64 = 21.8 Â°C`).
+- **`SENSOR_NAME_MAP` / `WEB_VALUE_DESCRIPTIONS` Erweiterung für Raumtemperaturen (B61–B67):**
+  Unterstützung für alle Heizkreis-Raumtemperatursensoren `B61` bis `B67` (`room_temperature_HK_A` bis `room_temperature_HK_G`) im lokalen Web-Client. Live-verifiziert an Navigator 10 ALM 6-15 (Heizkreise A und D, `B64 = 21.8 °C`).
 
 
 
 ## [1.0.1] - 2026-08-14
 
 Patch-Release: zwei aus dem 1.0.0-Code-Review behobene Fehler, keine
-VerhaltensÃ¤nderung fÃ¼r konforme Nutzung.
+Verhaltensänderung für konforme Nutzung.
 
 ### Fixed
 
@@ -986,36 +986,36 @@ VerhaltensÃ¤nderung fÃ¼r konforme Nutzung.
   `None` gesetzt wurde (z.B. durch Tests, die den pre-1.0-Reset-Pattern
   nutzen) und danach `connect()`/`_ensure_connected()` aufgerufen wird.
 - **`_PymodbusTransport.write_registers`** nutzt jetzt den zentralen
-  `check_transport_response`-Helper statt einer eigenen, unvollstÃ¤ndigen
+  `check_transport_response`-Helper statt einer eigenen, unvollständigen
   Fehler-Zuordnung. Schreibfehler mit Exception-Code 2 werden dadurch wie
   bei Reads korrekt als `IllegalAddressError` (permanent) statt als
   transiente `ModbusException` klassifiziert.
 
 ## [1.0.0] - 2026-08-04
 
-Erste stabile 1.0.0 der API. FÃ¼hrt die Ã¶ffentliche Transport-Injektion ein,
+Erste stabile 1.0.0 der API. Führt die öffentliche Transport-Injektion ein,
 damit die Home-Assistant-Integration rohe Modbus-I/O ohne Subclassing und
 ohne Override privater API-Mitglieder durch einen injizierbaren Transport
 routen kann. Direkter Pymodbus bleibt das Default-Verhalten und ist
-beobachtbar identisch zu 0.9.x â€” bestehende Konsumenten (auch solche mit
-offenen Requirements wie `>=0.3.x`) funktionieren weiterhin unverÃ¤ndert.
+beobachtbar identisch zu 0.9.x — bestehende Konsumenten (auch solche mit
+offenen Requirements wie `>=0.3.x`) funktionieren weiterhin unverändert.
 
 ### Added
 
 - **`IdmModbusTransport`** als `@runtime_checkable Protocol`: der stabile
-  1.0-Vertrag zwischen der gerÃ¤teagnostischen IDM-Bibliothekslogik
+  1.0-Vertrag zwischen der geräteagnostischen IDM-Bibliothekslogik
   (Register-Maps, Codecs, Batching, Retry, Quarantine, Model Detection,
   Write Safety) und dem konkreten Byte-Transport. Umfasst Lifecycle
-  (`connect`/`close`/`connected`) sowie rohe RegisterwÃ¶rter (FC03/FC04
+  (`connect`/`close`/`connected`) sowie rohe Registerwörter (FC03/FC04
   Reads, FC16 Writes). Transports besitzen keinen eigenen Retry, Lock,
   Batching oder Write Safety.
 - **`IdmModbusClient(..., transport=None)`** als neuer keyword-only
-  Konstruktor-Parameter. `None` wÃ¤hlt den internen `_PymodbusTransport`
+  Konstruktor-Parameter. `None` wählt den internen `_PymodbusTransport`
   (Default, beobachtbar identisch zu 0.9.x); ein injiziertes Objekt muss
-  das `IdmModbusTransport`-Protocol erfÃ¼llen, sonst `TypeError`.
+  das `IdmModbusTransport`-Protocol erfüllen, sonst `TypeError`.
 - **`check_transport_response`**-Helper im Transport-Modul: zentralisiert
-  das Device-Response-Mapping (Code 2 â†’ `IllegalAddressError` permanent;
-  andere Fehler â†’ `ModbusException` transient), sodass Default- und
+  das Device-Response-Mapping (Code 2 → `IllegalAddressError` permanent;
+  andere Fehler → `ModbusException` transient), sodass Default- und
   injizierte Transports identisch klassifizieren.
 - **Exception-Code-Taxonomie** offiziell fixiert: Code 2 (Illegal Data
   Address) permanent; Codes 5/6/10/11 transient (Retry-in-Place, kein
@@ -1025,22 +1025,22 @@ offenen Requirements wie `>=0.3.x`) funktionieren weiterhin unverÃ¤ndert.
 ### Changed
 
 - `IdmModbusClient` routet Connection-Lifecycle und rohe Reads/Writes jetzt
-  Ã¼ber `self._transport`. `_lock`, `_max_retries`, `_connection_suspect`,
+  über `self._transport`. `_lock`, `_max_retries`, `_connection_suspect`,
   `_record_error_context`, `_retry_command`, Batching, Quarantine,
-  Model Detection und Write Safety bleiben API-eigen und unverÃ¤ndert.
-- `FakeModbusTransport` (Test-Double) gibt jetzt rohe `list[int]` zurÃ¼ck
+  Model Detection und Write Safety bleiben API-eigen und unverändert.
+- `FakeModbusTransport` (Test-Double) gibt jetzt rohe `list[int]` zurück
   und raiset Exceptions statt pymodbus-shaped Response-Objekte, um das
   Protocol korrekt zu modellieren.
 
 ### Compatibility
 
-- **VollstÃ¤ndig abwÃ¤rtskompatibel.** Der legacy `IdmModbusClient(host)`
+- **Vollständig abwärtskompatibel.** Der legacy `IdmModbusClient(host)`
   Pymodbus-Pfad bleibt beobachtbar identisch; `client._client = fake`
   funktioniert weiterhin (Property-Alias auf `_transport`).
-- Keine Ã„nderung an Adressen, Datentypen, Register-Maps, Web-Client,
+- Keine Änderung an Adressen, Datentypen, Register-Maps, Web-Client,
   EEPROM-Throttling, Model Detection oder Write Safety.
-- Keine neue API-AbhÃ¤ngigkeit (kein `modbus-connection`/`tmodbus`); die
-  API bleibt Home-Assistant-unabhÃ¤ngig.
+- Keine neue API-Abhängigkeit (kein `modbus-connection`/`tmodbus`); die
+  API bleibt Home-Assistant-unabhängig.
 - `v0.10.1` und `v0.11.0-beta.1` (Add-on) bleiben auf dem exakten
   API-0.9.1-Pin; nur das neue Add-on `0.11.0-beta.2` wird explizit auf
   `idm-heatpump-api[web]==1.0.0` pinnen.
@@ -1050,48 +1050,48 @@ offenen Requirements wie `>=0.3.x`) funktionieren weiterhin unverÃ¤ndert.
 
 ### Added
 
-- **`IdmModbusClient.eeprom_write_interval`** als Ã¶ffentliche Property (Getter +
-  Setter): ermÃ¶glicht Verbrauchern, das EEPROM-Schreib-Cooldown (Default 60s)
-  pro Instanz zu Ã¼berschreiben â€“ z. B. fÃ¼r erweiterte HA-Integrationsoptionen.
-  Der Default bleibt 60s; ein Senken erfolgt ausdrÃ¼cklich auf eigenes Risiko
-  (EEPROM-VerschleiÃŸ). Setter validiert > 0 und endlich.
+- **`IdmModbusClient.eeprom_write_interval`** als öffentliche Property (Getter +
+  Setter): ermöglicht Verbrauchern, das EEPROM-Schreib-Cooldown (Default 60s)
+  pro Instanz zu überschreiben – z. B. für erweiterte HA-Integrationsoptionen.
+  Der Default bleibt 60s; ein Senken erfolgt ausdrücklich auf eigenes Risiko
+  (EEPROM-Verschleiß). Setter validiert > 0 und endlich.
 
 ### Compatibility
 
-- Keine Ã„nderung an Adressen, Datentypen, Batch-Reads oder dem Web-Client.
+- Keine Änderung an Adressen, Datentypen, Batch-Reads oder dem Web-Client.
   Lediglich eine neue Property; das interne `_eeprom_write_interval` bleibt.
 
 
 ## [0.9.0] - 2026-07-26
 
-Erste 0.9.x-Stable der API. BÃ¼ndelt die 0.8.6/0.8.7-Zwischenschritte
-(Navigator-10-Standby-Erkennung, Sentinel-AuthoritÃ¤t) und erklÃ¤rt sie fÃ¼r
-stabil. Keine neuen Brechstellen; alle Ã„nderungen sind additiv und
-rÃ¼ckwÃ¤rtskompatibel.
+Erste 0.9.x-Stable der API. Bündelt die 0.8.6/0.8.7-Zwischenschritte
+(Navigator-10-Standby-Erkennung, Sentinel-Authorität) und erklärt sie für
+stabil. Keine neuen Brechstellen; alle Änderungen sind additiv und
+rückwärtskompatibel.
 
 ### Added (seit 0.8.5 stable)
 
 - **`RegisterDef.effective_sentinel_values`** und datentypbasierte
-  Default-Sentinels (`DATATYPE_SENTINEL_DEFAULTS`): FLOAT â†’ `-1.0`, UCHAR â†’
-  `255`, UINT16 â†’ `65535`, INT16 â†’ `(-1, -32768)`. Explizite `sentinel_values`
+  Default-Sentinels (`DATATYPE_SENTINEL_DEFAULTS`): FLOAT → `-1.0`, UCHAR →
+  `255`, UINT16 → `65535`, INT16 → `(-1, -32768)`. Explizite `sentinel_values`
   pro Register bleiben autoritativ (Override/Opt-out). Damit ist die API die
-  alleinige Quelle der â€žunbenutzt/nicht konfiguriert"-Klassifikation.
-- **Strenger tertiÃ¤rer Navigator-10-Indikator:** die Nav10-only-Register
-  `power_consumption_hp` (4122) und `thermal_power_flow_sensor` (4126) mÃ¼ssen
+  alleinige Quelle der „unbenutzt/nicht konfiguriert"-Klassifikation.
+- **Strenger tertiärer Navigator-10-Indikator:** die Nav10-only-Register
+  `power_consumption_hp` (4122) und `thermal_power_flow_sensor` (4126) müssen
   **beide** antworten. Navigator 2.0 / IDM Terra SWM bleiben Navigator 2.0, da
   sie diese Adressen mit Modbus Exception 2 ablehnen.
 
 ### Changed
 
-- **Pumpenstatus-Register** (10 StÃ¼ck) deklarieren explizit
-  `sentinel_values=(-32768, 65535, 255)`; `-1` bleibt gÃ¼ltiges â€žAus".
+- **Pumpenstatus-Register** (10 Stück) deklarieren explizit
+  `sentinel_values=(-32768, 65535, 255)`; `-1` bleibt gültiges „Aus".
 
 ### Compatibility
 
-- Keine Ã„nderung an Adressen, Datentypen, Batch-Reads, Schreibpfaden oder dem
-  Web-Client. `RegisterDef` erhÃ¤lt nur eine berechnete Eigenschaft; das Feld
-  `sentinel_values` ist unverÃ¤ndert. Live verifiziert an einem Navigator 10
-  (Firmware `NAV10_20.24-880-g265e09c4a`); Navigator 2.0 / Terra SWM Ã¼ber die
+- Keine Änderung an Adressen, Datentypen, Batch-Reads, Schreibpfaden oder dem
+  Web-Client. `RegisterDef` erhält nur eine berechnete Eigenschaft; das Feld
+  `sentinel_values` ist unverändert. Live verifiziert an einem Navigator 10
+  (Firmware `NAV10_20.24-880-g265e09c4a`); Navigator 2.0 / Terra SWM über die
   Unit-Test-Matrix abgesichert.
 
 
@@ -1100,11 +1100,11 @@ rÃ¼ckwÃ¤rtskompatibel.
 ### Added
 
 - **`RegisterDef.effective_sentinel_values`** und datentypbasierte
-  Default-Sentinelwerte (`DATATYPE_SENTINEL_DEFAULTS`): FLOAT â†’ `-1.0`, UCHAR â†’
-  `255`, UINT16 â†’ `65535`, INT16 â†’ `(-1, -32768)`. Ein Register ohne
+  Default-Sentinelwerte (`DATATYPE_SENTINEL_DEFAULTS`): FLOAT → `-1.0`, UCHAR →
+  `255`, UINT16 → `65535`, INT16 → `(-1, -32768)`. Ein Register ohne
   explizite `sentinel_values` erbt nun den dokumentierten Default seines
   Datentyps; eine explizite Angabe bleibt autoritativ (Override oder Opt-out).
-  Damit ist die API die alleinige Quelle fÃ¼r die â€žunbenutzt/nicht konfiguriert"-
+  Damit ist die API die alleinige Quelle für die „unbenutzt/nicht konfiguriert"-
   Klassifikation (SENT-01); die Integration braucht keine numerische Heuristik
   mehr.
 
@@ -1114,64 +1114,64 @@ rÃ¼ckwÃ¤rtskompatibel.
   `heat_source_pump_status`, `isc_cold_storage_pump_status`,
   `isc_recooling_pump_status`, `heat_sink_charging_pump_signal`,
   `booster_a/b_source_pump`, `booster_a/b_charging_pump`) deklarieren jetzt
-  explizit `sentinel_values=(-32768, 65535, 255)` â€” `-1` bleibt als gÃ¼ltiges
-  â€žAus" erhalten, das bisher Ã¼ber die Ausnahmeliste `NEGATIVE_ONE_VALID_REGISTERS`
+  explizit `sentinel_values=(-32768, 65535, 255)` — `-1` bleibt als gültiges
+  „Aus" erhalten, das bisher über die Ausnahmeliste `NEGATIVE_ONE_VALID_REGISTERS`
   der Integration abgefangen wurde.
 
 ### Compatibility
 
-- Keine Ã„nderung an Adressen, Datentypen, Batch-Reads, Schreibpfaden oder dem
-  Web-Client. Lediglich `RegisterDef` erhÃ¤lt eine berechnete Eigenschaft; das
-  Feld `sentinel_values` ist unverÃ¤ndert. Verbraucher, die bisher die
-  Integrationssseitige Heuristik nutzten, kÃ¶nnen jetzt
-  `effective_sentinel_values` als AutoritÃ¤t verwenden.
+- Keine Änderung an Adressen, Datentypen, Batch-Reads, Schreibpfaden oder dem
+  Web-Client. Lediglich `RegisterDef` erhält eine berechnete Eigenschaft; das
+  Feld `sentinel_values` ist unverändert. Verbraucher, die bisher die
+  Integrationssseitige Heuristik nutzten, können jetzt
+  `effective_sentinel_values` als Autorität verwenden.
 
 
 ## [0.8.6] - 2026-07-26
 
 ### Fixed
 
-- **Modellerkennung: echtes Navigator 10 ohne konfigurierten Booster und im Standby wurde als Navigator 2.0 fehlklassifiziert (#170 live).** Die in 0.8.5 gestraffte Sentinel-Validierung fÃ¼r `booster_fault` (4001) schloss korrekt Terra-SWM-Navigator-2.0-GerÃ¤te aus, entzog aber auch echten Navigator-10-Anlagen ohne Booster den Ersatz-Indikator, sobald `power_limit_hp` (4108) im Standby einen unplausiblen Wert (`-1.0`/Sentinel bzw. `0.0`) lieferte. `detect_model()` zieht nun zusÃ¤tzlich die Navigator-10-only-Leistungsregister `power_consumption_hp` (4122) und `thermal_power_flow_sensor` (4126) heran: Antworten **beide** Register (auch mit `0.0` im Standby), gilt das als starker, familienspezifischer Navigator-10-Nachweis. Navigator-2.0-Regelungen (inkl. IDM Terra SWM) lehnen diese Adressen mit Modbus-Ausnahmecode 2 ab, sodass die Unterscheidung sicher bleibt. Verifiziert an einer Live-Anlage mit Firmware `NAV10_20.24-880-g265e09c4a`.
+- **Modellerkennung: echtes Navigator 10 ohne konfigurierten Booster und im Standby wurde als Navigator 2.0 fehlklassifiziert (#170 live).** Die in 0.8.5 gestraffte Sentinel-Validierung für `booster_fault` (4001) schloss korrekt Terra-SWM-Navigator-2.0-Geräte aus, entzog aber auch echten Navigator-10-Anlagen ohne Booster den Ersatz-Indikator, sobald `power_limit_hp` (4108) im Standby einen unplausiblen Wert (`-1.0`/Sentinel bzw. `0.0`) lieferte. `detect_model()` zieht nun zusätzlich die Navigator-10-only-Leistungsregister `power_consumption_hp` (4122) und `thermal_power_flow_sensor` (4126) heran: Antworten **beide** Register (auch mit `0.0` im Standby), gilt das als starker, familienspezifischer Navigator-10-Nachweis. Navigator-2.0-Regelungen (inkl. IDM Terra SWM) lehnen diese Adressen mit Modbus-Ausnahmecode 2 ab, sodass die Unterscheidung sicher bleibt. Verifiziert an einer Live-Anlage mit Firmware `NAV10_20.24-880-g265e09c4a`.
 
 ### Compatibility
 
-- Keine Ã„nderung an `RegisterDef`, Modbus-Dekodierung, Batch-Reads, Schreibpfaden oder dem Web-Client. Lediglich `detect_model()` erhÃ¤lt einen zusÃ¤tzlichen, strengen TertiÃ¤r-Indikator (4122 UND 4126 mÃ¼ssen beide antworten).
-- SchlieÃŸt die LÃ¼cke aus dem 0.8.5-KompatibilitÃ¤tshinweis (â€žechtes Nav10 ohne Booster fÃ¤llt auf 2.0 zurÃ¼ck"): ein solches GerÃ¤t wird jetzt zuverlÃ¤ssig als Navigator 10 erkannt, ohne die Terra-SWM-Sicherung (#44/#65) aufzuweichen.
+- Keine Änderung an `RegisterDef`, Modbus-Dekodierung, Batch-Reads, Schreibpfaden oder dem Web-Client. Lediglich `detect_model()` erhält einen zusätzlichen, strengen Tertiär-Indikator (4122 UND 4126 müssen beide antworten).
+- Schließt die Lücke aus dem 0.8.5-Kompatibilitätshinweis („echtes Nav10 ohne Booster fällt auf 2.0 zurück"): ein solches Gerät wird jetzt zuverlässig als Navigator 10 erkannt, ohne die Terra-SWM-Sicherung (#44/#65) aufzuweichen.
 
 
 ## [0.8.5] - 2026-07-25
 
 ### Fixed
 
-- **Modellerkennung: Navigator 2.0 mit `0xFFFF`-Antwort auf `booster_fault` (4001) wurde als Navigator 10 fehlklassifiziert.** Der in 0.8.4 eingefÃ¼hrte Booster-Fallback wertete **jede** 1-Register-Antwort auf Adresse 4001 als Navigator-10-Indikator â€” einschlieÃŸlich des deklarierten â€žnicht konfiguriert"-Sentinels `255` (roh `0xFFFF`). Einige Navigator-2.0-Regelungen beantworten Navigator-10-only-Register jedoch mit einem Sentinel statt sie mit Modbus-Ausnahmecode 2 abzulehnen (dasselbe Terra-SWM-Verhalten, das 0.8.3 bereits fÃ¼r Adresse 4108 korrigierte). `detect_model()` wertet 4001 jetzt konsistent zu 4108: nur ein **nicht-sentinel** Wert (low byte â‰  255) gilt als echter Navigator-10-Nachweis. Behebt Integration-Issue #170.
+- **Modellerkennung: Navigator 2.0 mit `0xFFFF`-Antwort auf `booster_fault` (4001) wurde als Navigator 10 fehlklassifiziert.** Der in 0.8.4 eingeführte Booster-Fallback wertete **jede** 1-Register-Antwort auf Adresse 4001 als Navigator-10-Indikator — einschließlich des deklarierten „nicht konfiguriert"-Sentinels `255` (roh `0xFFFF`). Einige Navigator-2.0-Regelungen beantworten Navigator-10-only-Register jedoch mit einem Sentinel statt sie mit Modbus-Ausnahmecode 2 abzulehnen (dasselbe Terra-SWM-Verhalten, das 0.8.3 bereits für Adresse 4108 korrigierte). `detect_model()` wertet 4001 jetzt konsistent zu 4108: nur ein **nicht-sentinel** Wert (low byte ≠ 255) gilt als echter Navigator-10-Nachweis. Behebt Integration-Issue #170.
 
 ### Compatibility
 
-- **Trade-off (bewusste Entscheidung, dokumentiert):** Ein echtes Navigator 10 **ohne** konfigurierten Booster, das 4001 mit dem Sentinel `255` beantwortet, verliert dieses Ersatz-Indikator. Die Erkennung fÃ¤llt dann auf `Navigator 2.0` zurÃ¼ck (Registerplan ohne Nav10-only-Block), sofern Adresse 4108 keinen plausiblen Power-Limit-Wert liefert. Abfangen Ã¼ber (a) den primÃ¤ren Indikator 4108, (b) die Verbraucher-Firmware-/Web-Reconciliation (z. B. `NAV10_`-Firmware-Prefix â†’ `set_model_info()`) oder (c) den manuellen Modell-Override in der Integration. Ein Nav 2.0 mit falscher Nav10-Klassifizierung (Nav10-only-Block wird gepollt, EEPROM-Schreibgating aktiv) ist das grÃ¶ÃŸere Anlagenrisiko als eine Nav10-Untererkennung, die sicher auf den 2.0-Registerplan zurÃ¼ckfÃ¤llt.
-- Keine Ã„nderung an `RegisterDef`, Modbus-Dekodierung, Batch-Reads, Schreibpfaden oder dem Web-Client. Lediglich die 4001-Wertvalidierung in `detect_model()` ist prÃ¤zisiert.
+- **Trade-off (bewusste Entscheidung, dokumentiert):** Ein echtes Navigator 10 **ohne** konfigurierten Booster, das 4001 mit dem Sentinel `255` beantwortet, verliert dieses Ersatz-Indikator. Die Erkennung fällt dann auf `Navigator 2.0` zurück (Registerplan ohne Nav10-only-Block), sofern Adresse 4108 keinen plausiblen Power-Limit-Wert liefert. Abfangen über (a) den primären Indikator 4108, (b) die Verbraucher-Firmware-/Web-Reconciliation (z. B. `NAV10_`-Firmware-Prefix → `set_model_info()`) oder (c) den manuellen Modell-Override in der Integration. Ein Nav 2.0 mit falscher Nav10-Klassifizierung (Nav10-only-Block wird gepollt, EEPROM-Schreibgating aktiv) ist das größere Anlagenrisiko als eine Nav10-Untererkennung, die sicher auf den 2.0-Registerplan zurückfällt.
+- Keine Änderung an `RegisterDef`, Modbus-Dekodierung, Batch-Reads, Schreibpfaden oder dem Web-Client. Lediglich die 4001-Wertvalidierung in `detect_model()` ist präzisiert.
 
 
 ## [0.8.4] - 2026-07-22
 
 ### Fixed
 
-- **Modellerkennung: Navigator 10 mit Standard-Power-Limit (-1.0) wurde als Navigator 2.0 fehlklassifiziert.** Wenn das Register `power_limit_hp` (Adresse 4108) den Standardwert `-1.0` ("keine Leistungsbegrenzung") liefert, prÃ¼ft `detect_model()` nun zusÃ¤tzlich das Booster-Register (Adresse 4001). Echtes Navigator-10-GerÃ¤te antworten auf Adresse 4001 sauber (auch ohne installierten Booster mit `0xFFFF` / Sentinel 255), wÃ¤hrend Navigator-2.0-GerÃ¤te (wie Terra SWM) Adresse 4001 mit Modbus Ausnahmecode 2 (Illegal Data Address) ablehnen.
-- **`IdmHeatPumpClient.set_model_info()` hinzugefÃ¼gt:** Erlaubt das explizite Setzen bzw. Ãœberschreiben der Modellinformationen durch aufrufende Verbraucher (z.B. Home Assistant Integration oder Web-Erkennung).
+- **Modellerkennung: Navigator 10 mit Standard-Power-Limit (-1.0) wurde als Navigator 2.0 fehlklassifiziert.** Wenn das Register `power_limit_hp` (Adresse 4108) den Standardwert `-1.0` ("keine Leistungsbegrenzung") liefert, prüft `detect_model()` nun zusätzlich das Booster-Register (Adresse 4001). Echtes Navigator-10-Geräte antworten auf Adresse 4001 sauber (auch ohne installierten Booster mit `0xFFFF` / Sentinel 255), während Navigator-2.0-Geräte (wie Terra SWM) Adresse 4001 mit Modbus Ausnahmecode 2 (Illegal Data Address) ablehnen.
+- **`IdmHeatPumpClient.set_model_info()` hinzugefügt:** Erlaubt das explizite Setzen bzw. Überschreiben der Modellinformationen durch aufrufende Verbraucher (z.B. Home Assistant Integration oder Web-Erkennung).
 
 ### Compatibility
 
-- Keine Ã„nderung an `RegisterDef`, Modbus-Dekodierung, Batch-Reads, Schreibpfaden oder dem Web-Client. Lediglich die Modellauswahl in `detect_model()` ist fÃ¼r alle Anlagen prÃ¤zisiert.
+- Keine Änderung an `RegisterDef`, Modbus-Dekodierung, Batch-Reads, Schreibpfaden oder dem Web-Client. Lediglich die Modellauswahl in `detect_model()` ist für alle Anlagen präzisiert.
 
 
 ## [0.8.3] - 2026-07-22
 
 ### Fixed
 
-- **Modellerkennung: Terra SWM / Navigator 2.0 wurde fÃ¤lschlich als Navigator 10 erkannt.** Register `power_limit_hp` (Adresse 4108) wurde als Navigator-10-Indikator genutzt, wobei bereits das bloÃŸe Antworten (ohne Illegal-Address-Fehler) als Indikator gewertet wurde. Einige Navigator-2.0-Regelungen â€“ namentlich die IDM Terra SWM â€“ beantworten diese Adresse jedoch mit einem Sentinel-Wert (`-1.0` / `0xFFFF` oder `0.0`) anstatt sie abzulehnen. Dadurch wurde die Anlage als Navigator 10 klassifiziert, beim nachfolgenden Poll des Navigator-10-only-Registerblocks (ab 4001) korrekt mit Modbus-Ausnahmecode 2 abgelehnt und das Setup brach ab. Die Erkennung wertet jetzt nur noch plausible, konfigurierte Power-Limit-Werte (>0 kW, â‰¤200 kW) als Navigator-10-Indikator; Sentinel- und Nullwerte fÃ¼hren zur korrekten Klassifizierung als Navigator 2.0. Siehe Integration Issue #44.
+- **Modellerkennung: Terra SWM / Navigator 2.0 wurde fälschlich als Navigator 10 erkannt.** Register `power_limit_hp` (Adresse 4108) wurde als Navigator-10-Indikator genutzt, wobei bereits das bloße Antworten (ohne Illegal-Address-Fehler) als Indikator gewertet wurde. Einige Navigator-2.0-Regelungen – namentlich die IDM Terra SWM – beantworten diese Adresse jedoch mit einem Sentinel-Wert (`-1.0` / `0xFFFF` oder `0.0`) anstatt sie abzulehnen. Dadurch wurde die Anlage als Navigator 10 klassifiziert, beim nachfolgenden Poll des Navigator-10-only-Registerblocks (ab 4001) korrekt mit Modbus-Ausnahmecode 2 abgelehnt und das Setup brach ab. Die Erkennung wertet jetzt nur noch plausible, konfigurierte Power-Limit-Werte (>0 kW, ≤200 kW) als Navigator-10-Indikator; Sentinel- und Nullwerte führen zur korrekten Klassifizierung als Navigator 2.0. Siehe Integration Issue #44.
 
 ### Compatibility
 
-- Keine Ã„nderung an `RegisterDef`, Modbus-Dekodierung, Batch-Reads, Schreibpfaden oder dem Web-Client. Lediglich die Modellauswahl in `detect_model()` ist fÃ¼r von der Fehlklassifizierung betroffene Anlagen korrigiert; alle anderen Installationen verhalten sich unverÃ¤ndert.
+- Keine Änderung an `RegisterDef`, Modbus-Dekodierung, Batch-Reads, Schreibpfaden oder dem Web-Client. Lediglich die Modellauswahl in `detect_model()` ist für von der Fehlklassifizierung betroffene Anlagen korrigiert; alle anderen Installationen verhalten sich unverändert.
 
 
 ## [0.8.2] - 2026-07-20
@@ -1447,14 +1447,14 @@ rÃ¼ckwÃ¤rtskompatibel.
   any register whose decoded value falls outside its declared `enum_options` or
   `min_val`/`max_val` range is automatically re-read individually. This fixes
   corrupt UCHAR values (e.g. zone-module room-mode registers showing 255/196
-  instead of 0â€“4) returned by some IDM controllers during large batch reads
+  instead of 0–4) returned by some IDM controllers during large batch reads
   (issue #69).
 
 ### Changed
 
 - Increase `MAX_ROOMS_PER_ZONE` from 6 to 8 so that older IDM zone modules with
   up to 8 rooms per module are supported. `get_zone_module_registers()` and
-  `build_register_map()` now accept `room_count`/`rooms_per_zone` values of 1â€“8
+  `build_register_map()` now accept `room_count`/`rooms_per_zone` values of 1–8
   (issue #68).
 
 ## [0.6.0] - 2026-07-05
@@ -1649,22 +1649,22 @@ All register definitions were verified line by line against the official iDM
 - **`smart_grid_status` moved from address 1006 to address 90** with the correct
   Navigator 10 enum (0=Red, 1=Yellow, 2=Green, 4=Supergreen). Address 1006 is the
   variable input ("Variabler Eingang") and is now exposed as `variable_input`.
-- **`battery_soc` (86): changed from `FLOAT` to `INT16`** â€” the official doc lists it
+- **`battery_soc` (86): changed from `FLOAT` to `INT16`** — the official doc lists it
   as WORD (single register, -1 = unavailable). As FLOAT it read two registers and
   decoded garbage.
-- **`internal_message` (1004): changed from `UCHAR` to `UINT16`** â€” message numbers
+- **`internal_message` (1004): changed from `UCHAR` to `UINT16`** — message numbers
   range from 020 to 999 and were corrupted by the one-byte mask.
 - **Pump status registers (1074, 1104, 1105, 1106, 1108, 1109) and booster pumps
-  (4020, 4021, 4050, 4051): changed from `UINT16` to `INT16`** â€” these report -1 for
+  (4020, 4021, 4050, 4051): changed from `UINT16` to `INT16`** — these report -1 for
   "off", which previously decoded as 65535 %.
-- **`isc_mode` (1874) is read-only again** â€” the official doc lists it as RO
+- **`isc_mode` (1874) is read-only again** — the official doc lists it as RO
   (writability was incorrectly introduced in 0.3.0).
 - **`ext_demand_groundwater_pump_m15` (1714) / 1715: changed from `UINT16` to `UCHAR`**
   with range 0-100 per the official doc. Renamed `ext_demand_brine_pump_m16` to
-  `ext_demand_groundwater_pump_m15_sw_max` â€” address 1715 controls the groundwater
+  `ext_demand_groundwater_pump_m15_sw_max` — address 1715 controls the groundwater
   pump M15 on SW Max, not the brine pump M16.
 - **`heat_source_pump_status` (1106): added missing `%` unit and state_class.**
-- **`pyproject.toml`: fixed broken tool configs** â€” `ruff.target-version` and
+- **`pyproject.toml`: fixed broken tool configs** — `ruff.target-version` and
   `mypy.python_version` contained the package version ("0.3.1") instead of
   "py312" / "3.12".
 - `client.py`: heating-circuit detection now adds the `FEATURE_HEATING_CIRCUITS`
@@ -1673,17 +1673,17 @@ All register definitions were verified line by line against the official iDM
 
 ### Added
 
-- `pv_target_value` register (address 88, FLOAT, kW) â€” PV target value for
+- `pv_target_value` register (address 88, FLOAT, kW) — PV target value for
   Smartfox / Solar-Log.
 - `VARIABLE_INPUT_OPTIONS` and `EVU_LOCK_OPTIONS` enums (exported from the package).
 - `evu_lock` (1098) now has enum options (0=Locked, 1=Not Locked).
 - Write limits per official doc: bivalence points 1120-1123 and cascade bivalence
-  points 1226-1231 (-40..40 Â°C), `system_mode` (0..5), zone-module room modes (0..4).
-- PV registers 74-88 are now writable (RW/RO per official doc â€” a building management
+  points 1226-1231 (-40..40 °C), `system_mode` (0..5), zone-module room modes (0..4).
+- PV registers 74-88 are now writable (RW/RO per official doc — a building management
   system writes these values to the heat pump).
-- Zone-module room temperature and humidity registers are now writable (RW/RO â€” RW
-  when external/GLT room sensors are used), with documented ranges (15-30 Â°C / 0-100 %).
-- `current_electricity_price` (1048) now has its documented unit (â‚¬/MWh).
+- Zone-module room temperature and humidity registers are now writable (RW/RO — RW
+  when external/GLT room sensors are used), with documented ranges (15-30 °C / 0-100 %).
+- `current_electricity_price` (1048) now has its documented unit (€/MWh).
 - Address-accuracy tests for heating circuits, zone modules and PV registers.
 
 ### Changed
@@ -1709,12 +1709,12 @@ All register definitions were verified line by line against the official iDM
 ### Added
 
 - New `RegisterDef` metadata fields for better Home Assistant integration support:
-  - `binary: bool` â€” mark registers as binary sensors (e.g. compressor status, alarms)
-  - `enabled_by_default: bool` â€” control default entity visibility in HA
-  - `state_class: str | None` â€” HA state class ("measurement", "total", "total_increasing")
-  - `icon: str | None` â€” default icon for HA entities
-  - `write_only: bool` â€” mark write-only registers (e.g. error_acknowledge)
-  - `exclude_from_write: set[int] | None` â€” exclude enum values from being written (e.g. 255)
+  - `binary: bool` — mark registers as binary sensors (e.g. compressor status, alarms)
+  - `enabled_by_default: bool` — control default entity visibility in HA
+  - `state_class: str | None` — HA state class ("measurement", "total", "total_increasing")
+  - `icon: str | None` — default icon for HA entities
+  - `write_only: bool` — mark write-only registers (e.g. error_acknowledge)
+  - `exclude_from_write: set[int] | None` — exclude enum values from being written (e.g. 255)
 - 8 registers now marked as `binary=True`: `hp_sum_alarm`, `compressor_status_1-4`, `heating_demand`, `cooling_demand`, `dhw_demand`
 - `isc_mode` (address 1874) is now writable with `exclude_from_write={255}`
 - `exclude_from_write={255}` added to all heating circuit mode registers (`hc_X_mode`)
@@ -1724,7 +1724,7 @@ All register definitions were verified line by line against the official iDM
 
 - `battery_soc` (address 86): changed from `UINT16` to `FLOAT` to match actual device encoding
 - `firmware_version` (address 4120): changed from `UINT16` to `FLOAT` (all surrounding registers are FLOAT)
-- `error_acknowledge` (address 1999): now correctly marked as `write_only=True` â€” read attempts will raise instead of failing silently
+- `error_acknowledge` (address 1999): now correctly marked as `write_only=True` — read attempts will raise instead of failing silently
 - `read_register()` and `read_batch()` now properly skip write-only registers
 - `write_register()` now validates `exclude_from_write` values before sending to device
 - Removed unused `RegisterType` import from `registers.py`
