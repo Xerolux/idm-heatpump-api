@@ -61,6 +61,7 @@ for the full walkthrough.
 | [Register-Map Invariants](Register-Map-Invariants) | Mandatory rules for editing the register map |
 | [Navigator Protocol Analysis](Navigator-Protocol-Analysis) | Local web transport boundary and reverse-engineering evidence |
 | [Firmware Compatibility](firmware_compatibility) | Firmware notes and references |
+| [CI and Automation](CI-and-Automation) | Workflows, branch protection, Dependabot auto-merge, wiki/Pages publishing |
 
 ## Other Entry Points
 
@@ -68,6 +69,7 @@ for the full walkthrough.
 - **PyPI:** https://pypi.org/project/idm-heatpump-api/
 - **GitHub Pages:** https://xerolux.github.io/idm-heatpump-api/
 - **Changelog:** [CHANGELOG.md](https://github.com/Xerolux/idm-heatpump-api/blob/main/CHANGELOG.md)
+- **Contributing:** [CONTRIBUTING.md](https://github.com/Xerolux/idm-heatpump-api/blob/main/CONTRIBUTING.md)
 
 > This wiki is synchronized automatically from the `docs/` folder in the
 > repository. Edits should be made there, not directly in the wiki.
