@@ -60,11 +60,17 @@ documented logical range overlaps at block boundaries.
 - **`release.yml` enforces the format** and refuses to auto-bump off a
   prerelease — only a maintainer knows whether the next one is `2.0.0b2` or
   `2.0.0`. Use `version_mode=custom` and name it.
-- **Releasing takes two dispatches.** `release.yml` tags with `GITHUB_TOKEN`,
-  and GitHub does not start workflows for events that token creates, so the
-  `push: tags` trigger in `publish.yml` never fires. Run **Release** first, then
-  **Publish** with the tag. A GitHub release with assets is not proof the
-  package is on PyPI — check PyPI itself.
+- **One dispatch releases.** `release.yml` validates, bumps, tags, builds,
+  creates the GitHub release and dispatches `publish.yml` itself at the end —
+  publishing needs no second dispatch. (The tag is pushed with
+  `GITHUB_TOKEN`, and GitHub starts no workflows for events that token
+  creates, which is why the dispatch exists at all. `publish.yml` still fires
+  on a manually pushed `v*` tag and can be dispatched by hand to re-run a
+  failed publish; it always builds exactly the named tag.) The version-bump
+  commit lands through a pull request when the required status checks refuse
+  the workflow's direct push; with the `RELEASE_TOKEN` secret set, CI runs on
+  that pull request and auto-merge finishes it unattended. A GitHub release
+  with assets is not proof the package is on PyPI — check PyPI itself.
 - **Every release carries the support links.** They are part of the release body
   in `release.yml`; keep them in step with `.github/FUNDING.yml`. The same
   links are pinned at the top of `README.md` and `CHANGELOG.md` — when a
