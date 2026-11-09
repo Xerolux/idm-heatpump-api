@@ -10,6 +10,14 @@ name: Dependabot Auto-merge
 # a read-only token, which cannot merge anything. The PR's code is deliberately
 # never checked out here, so nothing from the branch is executed with that
 # write-capable token — this workflow only talks to the GitHub API.
+#
+# The fallback wait must not use `gh pr checks --watch`: this workflow runs on
+# pull_request_target, so its own job is a check run on the pull request, and a
+# watch over all checks waits for this very job to finish. That deadlock was
+# only resolved by the job timeout — #163 and #164 each burned the full 90
+# minutes that way while every real check was green after one minute. The job
+# below polls the Checks API instead and skips the check runs of its own
+# workflow run.
 
 on:
   pull_request_target:
@@ -35,6 +43,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -o pipefail
 
@@ -45,9 +54,48 @@ jobs:
             exit 0
           fi
 
-          # Otherwise wait here. --fail-fast stops on the first failing check, so
-          # a red pull request fails this job and stays open instead of merging.
+          # Otherwise wait here. `gh pr checks --watch` is not usable (see the
+          # header comment): this job would wait for itself. Poll the Checks API
+          # for the PR head instead and ignore our own workflow run.
+          export OWN_RUN="/actions/runs/${GITHUB_RUN_ID}/"
+          CHECKS_URL="repos/${REPO}/commits/${HEAD_SHA}/check-runs?per_page=100"
           echo "Repository auto-merge unavailable; watching the checks of #$PR."
-          gh pr checks "$PR" --repo "$REPO" --watch --fail-fast --interval 30
+
+          # Give Actions a moment to register the check runs of a freshly
+          # opened pull request, so the loop below can never mistake an empty
+          # check list for a completed one.
+          sleep 30
+
+          while :; do
+            JSON="$(gh api "$CHECKS_URL")"
+
+            PENDING="$(jq -r '[.check_runs[]
+                | select((.details_url // "") | contains(env.OWN_RUN) | not)
+                | select(.status != "completed")
+                | .name] | join(", ")' <<<"$JSON")"
+            TOTAL="$(jq -r '[.check_runs[]
+                | select((.details_url // "") | contains(env.OWN_RUN) | not)]
+                | length' <<<"$JSON")"
+
+            if [[ "$TOTAL" -gt 0 && -z "$PENDING" ]]; then
+              break
+            fi
+
+            echo "Waiting for checks of $HEAD_SHA ($TOTAL reported, pending: ${PENDING:-none yet})."
+            sleep 30
+          done
+
+          # Every other check has finished. Refuse to merge on any red one so a
+          # broken pull request fails this job and stays open.
+          RED="$(jq -r '[.check_runs[]
+              | select((.details_url // "") | contains(env.OWN_RUN) | not)
+              | select(.conclusion == "failure" or .conclusion == "cancelled"
+                       or .conclusion == "timed_out" or .conclusion == "startup_failure")
+              | .name] | join(", ")' <<<"$JSON")"
+          if [[ -n "$RED" ]]; then
+            echo "Failing checks prevent auto-merge: $RED" >&2
+            exit 1
+          fi
+
           gh pr merge "$PR" --repo "$REPO" --merge
           echo "Merged #$PR into main." >> "$GITHUB_STEP_SUMMARY"
