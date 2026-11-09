@@ -22,7 +22,11 @@ prerelease is `2.0.0b1`, not `2.0.0-beta.1` — see `docs/RELEASE_PROCESS.md`.
 Sections up to `1.0.3` are German; they stay as published, because a released
 changelog is history. Everything from `2.0.0b1` on is English.
 
-## [2.16.2rc1] - 2026-11-09
+## [2.16.2] - 2026-11-09
+
+<!-- consolidation draft: fold complete. Rework the prose, remove the
+     per-beta markers, add the lead paragraph and the rollback note, then
+     replace UNRELEASED DRAFT with the release date. -->
 
 ### Fixed
 
