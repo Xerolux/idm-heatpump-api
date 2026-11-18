@@ -29,7 +29,9 @@ hardware capture proving a firmware-specific exception.
 - Validate physical ranges only after decoding the documented datatype. Do not
   clamp or discard a raw byte to hide a datatype/address error.
 - Treat Navigator 1.0/1.7 as a separate protocol family. Its addresses must not
-  be copied into the Navigator 2.0/10/Pro map. It is not currently supported.
+  be copied into the Navigator 2.0/10/Pro map. The API detects this family and
+  supports its dedicated input registers, documented writable holding registers,
+  and momentary command coils. Observe the documented EEPROM write limits.
 - Treat writes as safety-sensitive. Preserve EEPROM guards, cyclic-write rules,
   exact function codes, and documented sentinels.
 

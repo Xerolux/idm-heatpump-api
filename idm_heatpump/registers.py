@@ -5,13 +5,13 @@ Register map sources:
 - Earlier Navigator 2.0 / Pro documentation
 - Official iDM "Modbus TCP Navigator 1.0 und 1.7" documentation
   (ma_de_812049, register table dated 2016-06-13) for the separate
-  Navigator 1.7 read-only map
+  Navigator 1.7 register map
 
 Supports:
 - Navigator 10 (current generation)
 - Navigator 2.0
 - Navigator Pro
-- Navigator 1.7 (read-only input blocks; see _navigator_17_registers)
+- Navigator 1.0/1.7 (dedicated input, holding and coil map; see _navigator_17_registers)
 
 All new descriptions are in English. German original terms kept in comments where helpful
 for cross-reference with official iDM docs.
