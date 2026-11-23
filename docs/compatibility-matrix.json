@@ -432,6 +432,12 @@
       "hass_integration_version": "pending",
       "status": "api-prepared",
       "notes": "November 2026 audit fixes: detect_model() raises IdmConnectionError instead of returning a model built from probes that got no answer; a validated EEPROM-sensitive write reserves its register so concurrent writes cannot all reach the device; a write through a detected model must match the model's definition in datatype and register type; NaN/Inf flow-temperature slots are not installed circuits; the Navigator 10 handshake releases its websocket when the client is closed mid-connect; Navigator 2.0 statistics refuse an unknown unitTotal. Release tooling and development dependencies updated. Contract tests of integration 0.28.3 pass unchanged against this candidate; no integration release pins it yet; no new live hardware test."
+    },
+    {
+      "api_version": "2.17.0",
+      "hass_integration_version": "0.28.4-b2",
+      "status": "api-prepared",
+      "notes": "The 0.28.4-b2 integration contract suite passed against the stable API. A read-only Navigator 10 hardware check confirmed model detection, individual and batch Modbus reads, authenticated WebSocket settings and matching system modes. Navigator 2.0 statistics were verified with regression tests."
     }
   ]
 }
