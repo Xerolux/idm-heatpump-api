@@ -22,21 +22,9 @@ prerelease is `2.0.0b1`, not `2.0.0-beta.1` — see `docs/RELEASE_PROCESS.md`.
 Sections up to `1.0.3` are German; they stay as published, because a released
 changelog is history. Everything from `2.0.0b1` on is English.
 
-## [2.16.2] - 2026-11-09
+## [2.17.0rc1] - 2026-11-23
 
-<!-- consolidation draft: fold complete. Rework the prose, remove the
-     per-beta markers, add the lead paragraph and the rollback note, then
-     replace UNRELEASED DRAFT with the release date. -->
-
-### Fixed
-
-- Distinguish capture-confirmed Navigator 10 unavailable-circuit notes from malformed responses. Existing response-error handlers remain compatible; a note for a different requested circuit remains an error. This allows consumers to retain successful circuit reads without treating missing circuits as valid zero states. No Modbus map or write behavior changes.
-
-### Documentation
-
-- Record the reviewed donation evidence and unresolved Pro authentication, register attribution and #577 questions in Known Limitations. Retain numeric-parameter versus HTML-section parser separation and firmware-channel boundaries.
-
-## [Unreleased]
+Release candidate of 2.17.0. It closes the defects found in the November 2026 audit of the library and its release tooling, and brings the development dependencies up to date. Two changes are visible to consumers: `detect_model()` now fails instead of returning a model built from probes that got no answer, and a write through a detected model has to match the model's register definition in datatype and register type as well. Everything else is a fix of behaviour nobody could have relied on, or tooling.
 
 ### Fixed
 
@@ -69,6 +57,20 @@ changelog is history. Everything from `2.0.0b1` on is English.
 - `docs/Services.md` states that `detect_model()` raises `IdmConnectionError` when a probe gets no answer, and what the model check of a write compares (name, address, register type and datatype).
 - `set_datetime()` on the Navigator 10 web client: the docstring promised the `.000Z` form the web interface submits, but the value is sent exactly as `datetime.isoformat()` spells it. The docstring now says so, including that a naive datetime goes out without a zone and how the firmware interprets that is not verified. The wire format is unchanged.
 - The documented quality gate (`CONTRIBUTING.md`, `docs/Installation-and-Setup.md`, `docs/RELEASE_PROCESS.md`) lists the commands CI runs. A bare `mypy` failed with "Missing target module", and `scripts/` was missing from the lint and format commands.
+
+## [2.16.2] - 2026-11-09
+
+<!-- consolidation draft: fold complete. Rework the prose, remove the
+     per-beta markers, add the lead paragraph and the rollback note, then
+     replace UNRELEASED DRAFT with the release date. -->
+
+### Fixed
+
+- Distinguish capture-confirmed Navigator 10 unavailable-circuit notes from malformed responses. Existing response-error handlers remain compatible; a note for a different requested circuit remains an error. This allows consumers to retain successful circuit reads without treating missing circuits as valid zero states. No Modbus map or write behavior changes.
+
+### Documentation
+
+- Record the reviewed donation evidence and unresolved Pro authentication, register attribution and #577 questions in Known Limitations. Retain numeric-parameter versus HTML-section parser separation and firmware-channel boundaries.
 
 ## [2.16.1] - 2026-11-08
 
