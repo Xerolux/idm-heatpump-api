@@ -19,6 +19,11 @@ This script does the mechanical part of the fold so nothing is lost:
 * the merged draft replaces the prerelease sections as
   ``## [<version>] - UNRELEASED DRAFT``.
 
+Only the prerelease sections themselves are replaced. A release published
+between two prereleases of the target version - a patch cut while the beta
+cycle was running - stays in the file, in its chronological position below
+the new stable section.
+
 The draft is deliberately rough. The editorial pass — tightening the prose,
 ordering by impact, removing the per-beta markers, writing the lead paragraph
 and the rollback note — is the maintainer's job, and the contract test in
@@ -58,6 +63,9 @@ class _Section:
     """One changelog section: its heading line, intro and categorized bullets."""
 
     heading: str
+    #: Offset of the heading in the changelog text; the section runs from
+    #: here to the start of the next top-level section (or the end of text).
+    start: int = 0
     intro: list[str] = field(default_factory=list)
     bullets: dict[str, list[str]] = field(default_factory=dict)
     uncategorized: list[str] = field(default_factory=list)
@@ -78,10 +86,16 @@ def _parse_sections(text: str) -> list[tuple[str, _Section]]:
             target.append("\n".join(bullet).rstrip())
         bullet = None
 
-    for line in text.splitlines():
+    offset = 0
+    # Iterate with the line endings kept so ``offset`` tracks the position in
+    # the original text, which the fold needs to cut sections out exactly;
+    # everything below works on the lines without their endings, as before.
+    for raw_line in text.splitlines(keepends=True):
+        line = raw_line.rstrip("\r\n")
+        line_start, offset = offset, offset + len(raw_line)
         if line.startswith("## "):
             _flush_bullet()
-            current = _Section(heading=line)
+            current = _Section(heading=line, start=line_start)
             current_category = None
             sections.append((line, current))
             continue
@@ -183,15 +197,28 @@ def fold(text: str, version: str, date: str) -> str:
 
     replacement = "\n".join(lines).rstrip() + "\n"
 
-    # Replace the span from the newest prerelease heading (first in the
-    # newest-first file) to just before the section that follows the oldest
-    # prerelease (pre is chronological after the reverse, so pre[0] is the
-    # oldest and appears last in the file).
-    first_idx = min(text.index(heading) for heading, _ in pre)
-    last_heading, _ = pre[0]
-    last_idx = text.index(last_heading)
-    after = text.index("## [", last_idx + 1) if "## [" in text[last_idx + 1 :] else len(text)
-    return text[:first_idx] + replacement + "\n" + text[after:]
+    # Each prerelease section runs from its heading to the start of the next
+    # top-level section (or the end of the text). Replace exactly those spans
+    # and nothing in between: a release published between two prereleases of
+    # this version (a patch cut while the beta cycle was running) sits in
+    # the newest-first file between them and keeps its place below the draft.
+    # The file is newest-first, so spans[0] is where the draft goes.
+    spans: list[tuple[int, int]] = []
+    for index, (heading, section) in enumerate(sections):
+        if _prerelease_version(heading) != version:
+            continue
+        end = sections[index + 1][1].start if index + 1 < len(sections) else len(text)
+        spans.append((section.start, end))
+
+    pieces: list[str] = []
+    cursor = 0
+    for index, (start, end) in enumerate(spans):
+        pieces.append(text[cursor:start])
+        if index == 0:
+            pieces.append(replacement + "\n")
+        cursor = end
+    pieces.append(text[cursor:])
+    return "".join(pieces)
 
 
 def main(argv: list[str] | None = None) -> int:

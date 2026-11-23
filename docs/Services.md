@@ -50,8 +50,8 @@ Validates a non-empty `host`, `port` in 1–65535, `slave_id` in 1–247,
 
 | Method | Description |
 |--------|-------------|
-| `async detect_model(*, read_firmware: bool = True) -> IdmModelInfo` | Probe registers to detect the model, active heating circuits, zone modules, solar, ISC, PV, and cascade. Optionally reads the firmware version. |
-| `async probe_register(address: int, count: int = 1, *, max_retries: int \| None = None, timeout: float \| None = None) -> list[int] \| None` | Read raw register words without affecting failure tracking. Returns `None` when the controller rejects the address. |
+| `async detect_model(*, read_firmware: bool = True) -> IdmModelInfo` | Probe registers to detect the model, active heating circuits, zone modules, solar, ISC, PV, and cascade. Optionally reads the firmware version. Raises `IdmConnectionError` and leaves `model_info` untouched when any probe got no answer during the run, even if later probes succeeded: a probe that fails reads like a register the controller does not implement, so the result would be wrong. Registers the controller rejects (Illegal Data Address) are ordinary negative answers. |
+| `async probe_register(address: int, count: int = 1, *, max_retries: int \| None = None, timeout: float \| None = None) -> list[int] \| None` | Read raw register words without affecting failure tracking. Returns `None` when the controller rejects the address or the read fails. |
 
 ### Reading
 
@@ -65,7 +65,7 @@ Validates a non-empty `host`, `port` in 1–65535, `slave_id` in 1–247,
 
 | Method | Description |
 |--------|-------------|
-| `async write_register(reg: RegisterDef, value: Any, *, allow_custom_register: bool = False) -> None` | Validate, encode, and write a single register. `allow_custom_register=True` skips detected-model map membership for an explicitly constructed register; datatype, numeric, and write-metadata validation still apply. Expose this only behind an explicit advanced-user risk acknowledgement. |
+| `async write_register(reg: RegisterDef, value: Any, *, allow_custom_register: bool = False) -> None` | Validate, encode, and write a single register. Without the bypass, the register has to be the detected model's own data point: same name, address, register type, and datatype as in `build_register_map(model_info=...)`. `allow_custom_register=True` skips that model check for an explicitly constructed register; datatype, numeric, and write-metadata validation still apply. Expose the bypass only behind an explicit advanced-user risk acknowledgement. |
 | `async set_value(key: str, value: Any, *, dry_run: bool = False) -> WriteSafetyResult` | Safe key-based write. `dry_run=True` validates and encodes without sending. |
 | `simulate_write(reg: RegisterDef \| str, value: Any, *, dry_run: bool = True, allow_custom_register: bool = False) -> WriteSafetyResult` | Validate and encode a write without necessarily sending it. `reg` may be a `RegisterDef` or a registry key. |
 

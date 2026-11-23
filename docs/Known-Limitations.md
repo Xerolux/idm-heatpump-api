@@ -29,10 +29,15 @@ There is **no no-overlap invariant** — by design.
 
 ## EEPROM-sensitive registers
 
-`EEPROM_SENSITIVE_ADDRESSES` contains 89 addresses that are persisted to
+`EEPROM_SENSITIVE_ADDRESSES` contains 88 addresses that are persisted to
 EEPROM on write and therefore have a limited number of write cycles. The
 library throttles writes to these addresses; consumers should write them
 sparingly and never in a tight loop.
+
+The throttle also holds under concurrency: a validated write reserves its
+register until it has finished, so a second request for the same register
+arriving meanwhile is refused with a `ValueError` instead of being written
+too. A write that fails or is cancelled does not start the cooldown.
 
 ## Cyclic GLT writes
 

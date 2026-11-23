@@ -16,6 +16,7 @@ from idm_heatpump.client import (
     WriteClass,
 )
 from idm_heatpump.const import MODEL_NAVIGATOR_10, MODEL_NAVIGATOR_20
+from idm_heatpump.exceptions import IdmDeviceError
 
 from .fake_modbus import FakeModbusTransport
 
@@ -267,6 +268,83 @@ def test_failed_eeprom_write_does_not_start_throttle_window() -> None:
         asyncio.run(client.write_register(reg, 1))
 
     assert client._last_eeprom_writes == {}
+    assert client._eeprom_writes_in_flight == {}
+
+
+def test_failed_eeprom_write_releases_its_throttle_slot() -> None:
+    """A write that did not happen holds nothing back: the next attempt goes out at once."""
+    transport = FakeModbusTransport(error_writes={1200})
+    client = IdmModbusClient("127.0.0.1", max_retries=1, transport=transport)
+    client._time = lambda: 1000.0
+    reg = RegisterDef(1200, DataType.UCHAR, "eeprom", writable=True, eeprom_sensitive=True)
+
+    with pytest.raises(IdmDeviceError):
+        asyncio.run(client.write_register(reg, 1))
+
+    transport.error_writes.clear()
+    asyncio.run(client.write_register(reg, 1))
+
+    assert transport.write_calls == [(1200, [1]), (1200, [1])]
+    assert client._eeprom_writes_in_flight == {}
+
+
+def test_cancelled_eeprom_write_releases_its_throttle_slot() -> None:
+    class _HangingWriteTransport(FakeModbusTransport):
+        def __init__(self) -> None:
+            super().__init__()
+            self.write_started = asyncio.Event()
+
+        async def write_registers(self, *, address: int, values: list[int], **_: Any) -> None:
+            self.write_started.set()
+            await asyncio.Event().wait()
+
+    async def cancel_mid_write() -> _HangingWriteTransport:
+        transport = _HangingWriteTransport()
+        client = IdmModbusClient("127.0.0.1", transport=transport)
+        reg = RegisterDef(1200, DataType.UCHAR, "eeprom", writable=True, eeprom_sensitive=True)
+        task = asyncio.create_task(client.write_register(reg, 1))
+        await transport.write_started.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert client._eeprom_writes_in_flight == {}
+        assert client._last_eeprom_writes == {}
+        return transport
+
+    asyncio.run(cancel_mid_write())
+
+
+def test_concurrent_eeprom_writes_reach_the_device_once() -> None:
+    """Writes racing for one EEPROM register must not all reach the device.
+
+    The throttle check and the write are separated by awaits, so before the
+    slot was reserved at validation time every concurrent set_value() passed
+    the check: three simultaneous requests produced three EEPROM writes,
+    while the same three requests one after the other produce one.
+    """
+    transport = FakeModbusTransport(delay=0.01)
+    client = IdmModbusClient("127.0.0.1", transport=transport)
+
+    async def race() -> list[object]:
+        return await asyncio.gather(
+            client.set_value("hc_a_mode", 2),
+            client.set_value("hc_a_mode", 2),
+            client.set_value("hc_a_mode", 3),
+            return_exceptions=True,
+        )
+
+    results = asyncio.run(race())
+
+    written = [result for result in results if not isinstance(result, BaseException)]
+    refused = [result for result in results if isinstance(result, BaseException)]
+
+    # Exactly one request reached the device; the other two were refused
+    # while it was on the wire, and none of them was sent.
+    assert len(written) == 1
+    assert transport.write_calls == [(1393, [2])]
+    assert len(refused) == 2
+    assert all(isinstance(err, ValueError) for err in refused)
+    assert all("write in progress" in str(err) for err in refused)
 
 
 def test_write_register_rejects_register_unavailable_for_detected_model() -> None:

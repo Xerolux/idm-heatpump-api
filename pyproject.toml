@@ -40,6 +40,11 @@ keywords = ["idm", "heatpump", "modbus", "navigator", "home-assistant", "hass", 
 dependencies = []
 
 [project.optional-dependencies]
+# The two runtime extras keep their floors on purpose: the Home Assistant
+# integration installs this package next to Home Assistant's own aiohttp pin,
+# and CI proves the pymodbus floor (3.12.1) in its matrix. Both ranges admit
+# the current releases. The tooling extras below carry the versions the
+# quality gate ran with.
 web = [
     "aiohttp>=3.9,<4.0",
 ]
@@ -49,22 +54,22 @@ pymodbus = [
     "pymodbus>=3.12.1,<4.0",
 ]
 test = [
-    "packaging>=24.0",
-    "pytest>=9.1.1",
-    "pytest-asyncio>=0.24",
+    "packaging>=26.3",
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.5.0",
     "pytest-cov>=7.1.0",
     "aiohttp>=3.9,<4.0",
     "pymodbus>=3.12.1,<4.0",
 ]
 dev = [
-    "packaging>=24.0",
+    "packaging>=26.3",
     "pymodbus>=3.12.1,<4.0",
-    "build>=1.2.0",
-    "twine>=6.2.0",
-    "ruff>=0.15.20",
-    "mypy>=2.1.0",
-    "pytest>=9.1.1",
-    "pytest-asyncio>=0.24",
+    "build>=1.6.1",
+    "twine>=7.0.0",
+    "ruff>=0.17.6",
+    "mypy>=2.4.1",
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.5.0",
     "pytest-cov>=7.1.0",
     "aiohttp>=3.9,<4.0",
 ]
@@ -78,6 +83,12 @@ dev = [
 "Ko-fi" = "https://ko-fi.com/xerolux"
 "Buy Me a Coffee" = "https://www.buymeacoffee.com/xerolux"
 "PayPal" = "https://paypal.me/xerolux"
+
+[tool.pytest.ini_options]
+# pytest-asyncio 1.5 warns while this is unset. The suite has no async
+# fixtures, so "function" (the scope pytest-asyncio will default to) only
+# states what every marked test already gets: its own event loop.
+asyncio_default_fixture_loop_scope = "function"
 
 [tool.ruff]
 line-length = 100

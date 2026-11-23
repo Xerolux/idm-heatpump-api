@@ -6,9 +6,9 @@ repositories change.
 ## API Checklist
 
 - `pytest tests/ -v --tb=short --cov=idm_heatpump --cov-report=term-missing --cov-fail-under=75`
-- `ruff check idm_heatpump tests`
-- `ruff format idm_heatpump tests --check`
-- `mypy idm_heatpump`
+- `ruff check idm_heatpump tests scripts`
+- `ruff format idm_heatpump tests scripts --check`
+- `mypy idm_heatpump scripts`
 - `python -m build`
 - `twine check dist/*`
 - Install the built wheel into a clean virtual environment and import the public

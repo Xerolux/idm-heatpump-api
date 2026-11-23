@@ -30,8 +30,9 @@ pull request will not merge while any of them is red:
 
 ```bash
 pytest                       # tests + coverage (fail-under 75)
-ruff check .                 # lint
-mypy                         # strict type checking
+ruff check idm_heatpump tests scripts    # lint
+ruff format idm_heatpump tests scripts --check
+mypy idm_heatpump scripts    # strict type checking
 ```
 
 Home Assistant cross-repository contract tests run in CI as well; if you

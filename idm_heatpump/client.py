@@ -80,8 +80,6 @@ DEFAULT_CYCLIC_WRITE_TTL = 300.0
 # recovery from connection drops slow and produces noisy
 # "No response received after N retries" log lines on every failure.
 _PMODBUS_RETRIES_DEFAULT = 0
-_PMODBUS_RECONNECT_DELAY = 0.5
-_PMODBUS_RECONNECT_DELAY_MAX = 10.0
 _TRANSPORT_ERRORS = (IdmConnectionError, IdmTransportError, OSError, TimeoutError)
 
 _DETECT_HC_FLOW_BASE = 1350
@@ -331,6 +329,17 @@ class ModbusErrorContext:
     attempt: int
 
 
+@dataclass(frozen=True)
+class _EepromWriteReservation:
+    """An EEPROM-sensitive write that passed validation and has not finished.
+
+    One object per write, so the write that holds the register's throttle
+    slot can be told from a newer one started after a ``reset_write_throttle``.
+    """
+
+    register_name: str
+
+
 @dataclass
 class RegisterDef:
     address: int
@@ -361,6 +370,22 @@ class RegisterDef:
     last_verified: str | None = None
     step: float | None = None
     size: int = field(init=False)
+
+    def matches_request_shape(self, other: RegisterDef) -> bool:
+        """Return whether ``other`` addresses the same data point on the wire.
+
+        Two definitions describe the same request when name, register type,
+        address and datatype agree: the data point is then read or written
+        with the same function code, start address, count and decoding.
+        Metadata such as writability, range or step is deliberately not part
+        of the comparison; the request shape is.
+        """
+        return (
+            self.name == other.name
+            and self.register_type is other.register_type
+            and self.address == other.address
+            and self.datatype is other.datatype
+        )
 
     def __post_init__(self) -> None:
         if not isinstance(self.datatype, DataType):
@@ -513,12 +538,23 @@ class IdmModbusClient:
         self._invalid_value_warned: set[str] = set()
         self._model_info: IdmModelInfo | None = None
         self._last_eeprom_writes: dict[str, float] = {}
+        # EEPROM-sensitive writes that are validated and still on the wire,
+        # keyed by register name. The throttle check and the write itself are
+        # separated by awaits, so without this record two concurrent writes to
+        # the same EEPROM register would both pass the check and both reach
+        # the device (see _send_write).
+        self._eeprom_writes_in_flight: dict[str, _EepromWriteReservation] = {}
         self._cyclic_write_deadlines: dict[str, float] = {}
         self._last_error_context: ModbusErrorContext | None = None
         # Per-address record of whether the last probe_register() call was
         # rejected by the device with Illegal Data Address. Model detection
         # reads it to tell "register not implemented" apart from "no answer".
         self._probe_illegal_rejections: dict[int, bool] = {}
+        # Set by probe_register() when a probe failed for transport reasons
+        # (timeout, reset, no answer). A failed probe reads as "register not
+        # implemented", so detect_model() refuses to publish a result that was
+        # built while the link was failing at any point of the run.
+        self._probe_transport_failed: bool = False
         self._eeprom_write_interval = DEFAULT_EEPROM_WRITE_INTERVAL
         self._time = time.monotonic
         # Set to True after any connection/transport failure
@@ -964,7 +1000,10 @@ class IdmModbusClient:
         Returns the register values or None if the read fails. Each probe also
         records in ``_probe_illegal_rejections`` whether the device explicitly
         rejected the address with Illegal Data Address, so model detection can
-        distinguish "register not implemented" from "no answer at all".
+        distinguish "register not implemented" from "no answer at all". A
+        failure caused by the transport (timeout, reset, no answer) is
+        remembered in ``_probe_transport_failed`` for the same reason: that
+        probe did not learn anything about the register.
         """
         try:
             await self._ensure_connected()
@@ -976,6 +1015,8 @@ class IdmModbusClient:
             )
         except (IdmModbusError, OSError) as err:
             self._probe_illegal_rejections[address] = _is_illegal_address_exception(err)
+            if isinstance(err, _TRANSPORT_ERRORS):
+                self._probe_transport_failed = True
             return None
         self._probe_illegal_rejections[address] = False
         return regs
@@ -1072,6 +1113,13 @@ class IdmModbusClient:
              classification because the shared active-mode probes (1498+)
              overlap the 1.x status block (1500+) and could fake circuits.
 
+        A probe that gets no answer is indistinguishable from a register the
+        device does not implement, so the result is only trustworthy when the
+        link carried every probe. If any probe failed for transport reasons
+        (timeout, reset, no answer), detection raises
+        :class:`IdmConnectionError` instead of returning a model built from
+        gaps - even when later probes succeeded again.
+
         Args:
             read_firmware: Probe Modbus register 4120 for the firmware version.
                 Disable this when a consumer prefers the optional local web
@@ -1079,6 +1127,7 @@ class IdmModbusClient:
         """
         await self._ensure_connected()
         self._probe_illegal_rejections.clear()
+        self._probe_transport_failed = False
 
         # Heating-circuit presence probing. The first slot of each signal is
         # always probed individually: it gates the Navigator 1.7 family
@@ -1133,13 +1182,16 @@ class IdmModbusClient:
         active_circuits: list[str] = []
         for i in range(MAX_HEATING_CIRCUITS):
             regs = flow_slots[i]
+            # The unbounded decode tells a NaN/Inf or short answer (None) from
+            # any finite value; the bounded one is a real flow temperature.
+            finite = self._probe_float_value(regs)
             val = self._probe_float_value(regs, min_val=-50.0, max_val=80.0)
             # Navigator controllers return -1.0 for the flow-temperature
             # register of an unconfigured heating-circuit slot. The register
             # still responds, so the -1.0 sentinel alone must not imply an
             # active circuit, but a real (non-sentinel) reading is a strong
             # presence signal.
-            flow_unavailable = val == _DETECT_HC_FLOW_UNAVAILABLE
+            flow_unavailable = finite == _DETECT_HC_FLOW_UNAVAILABLE
             flow_real = val is not None and not flow_unavailable
 
             # Second presence signal: the active operating-mode register. An
@@ -1160,11 +1212,13 @@ class IdmModbusClient:
                 # Flow temperature is absent/sentinel but the active-mode
                 # register confirms the circuit is configured. Treat as active.
                 active_circuits.append(HEATING_CIRCUIT_LETTERS[i])
-            elif regs is not None and len(regs) == 2 and not flow_unavailable:
-                # Registers responded but value was out-of-range or not decodable
-                # and the active-mode register did not confirm configuration;
-                # keep the legacy conservative behavior of treating a responding
-                # non-sentinel flow register as an active slot.
+            elif finite is not None and not flow_unavailable:
+                # The registers answered with a finite value outside the
+                # plausibility window and the active-mode register did not
+                # confirm configuration; keep the legacy conservative
+                # behavior of treating a responding, non-sentinel flow
+                # register as an active slot. NaN and Inf are not values:
+                # such a slot carried no measurement and stays inactive.
                 active_circuits.append(HEATING_CIRCUIT_LETTERS[i])
             # All seven slots A-G are probed; do not early-break. Installed
             # circuits can be non-contiguous (e.g. only A and D configured with
@@ -1333,13 +1387,14 @@ class IdmModbusClient:
             if val is not None:
                 firmware_version = round(val, 2)
 
-        if self._connection_suspect:
+        if self._connection_suspect or self._probe_transport_failed:
             # Every probe reports a failed read as "register not implemented"
             # (``probe_register`` returns None for transport errors too), so a
-            # link that died half-way through would otherwise yield a confident
-            # and wrong result: fewer circuits, no features, the older model.
-            # ``_connection_suspect`` is still set when the last transport
-            # failure was not followed by a successful read.
+            # link that failed anywhere in this run would otherwise yield a
+            # confident and wrong result: fewer circuits, missing features,
+            # the older model. ``_connection_suspect`` covers a failure that
+            # no later read cleared; ``_probe_transport_failed`` also covers
+            # a blip that later probes recovered from.
             raise IdmConnectionError(
                 "Connection lost during model detection; the result would treat "
                 "every unanswered probe as an unsupported register"
@@ -1530,12 +1585,7 @@ class IdmModbusClient:
             dry_run=False,
             allow_custom_register=allow_custom_register,
         )
-        await self._ensure_connected()
-        if reg.register_type is RegisterType.COIL:
-            await self._write_coil(reg.address, bool(plan.encoded_registers[0]))
-        else:
-            await self._write_registers(reg.address, list(plan.encoded_registers))
-        self._record_successful_write(reg)
+        await self._send_write(reg, plan)
 
     async def read_value(self, key: str) -> Any:
         """Read one register by registry key/name."""
@@ -1547,13 +1597,49 @@ class IdmModbusClient:
         reg = self._get_register_by_key(key)
         plan = self.simulate_write(reg, value, dry_run=dry_run)
         if not dry_run:
-            await self._ensure_connected()
-            if reg.register_type is RegisterType.COIL:
-                await self._write_coil(reg.address, bool(plan.encoded_registers[0]))
-            else:
-                await self._write_registers(reg.address, list(plan.encoded_registers))
-            self._record_successful_write(reg)
+            await self._send_write(reg, plan)
         return plan
+
+    async def _send_write(self, register: RegisterDef, plan: WriteSafetyResult) -> None:
+        """Send a validated write plan and record its success.
+
+        An EEPROM-sensitive register occupies its throttle slot before the
+        first await, so a second concurrent write to the same register is
+        refused by validation instead of reaching the device as well. The slot
+        is given back when the write fails or is cancelled: a write that did
+        not happen must not start the cooldown window.
+        """
+        reservation = self._reserve_eeprom_write(register)
+        try:
+            await self._ensure_connected()
+            if register.register_type is RegisterType.COIL:
+                await self._write_coil(register.address, bool(plan.encoded_registers[0]))
+            else:
+                await self._write_registers(register.address, list(plan.encoded_registers))
+        except BaseException:
+            self._release_eeprom_write(reservation)
+            raise
+        self._record_successful_write(register)
+
+    def _reserve_eeprom_write(self, reg: RegisterDef) -> _EepromWriteReservation | None:
+        """Occupy ``reg``'s EEPROM throttle slot, or return None for other write classes."""
+        if reg.write_class is not WriteClass.EEPROM:
+            return None
+        reservation = _EepromWriteReservation(register_name=reg.name)
+        self._eeprom_writes_in_flight[reg.name] = reservation
+        return reservation
+
+    def _release_eeprom_write(self, reservation: _EepromWriteReservation | None) -> None:
+        """Give a reserved EEPROM throttle slot back after a failed or cancelled write.
+
+        Only the write that holds the slot may release it: a throttle reset
+        and a newer write started in between own the slot by then.
+        """
+        if reservation is None:
+            return
+        if self._eeprom_writes_in_flight.get(reservation.register_name) is not reservation:
+            return
+        del self._eeprom_writes_in_flight[reservation.register_name]
 
     def simulate_write(
         self,
@@ -1657,6 +1743,10 @@ class IdmModbusClient:
                 )
 
         if reg.write_class is WriteClass.EEPROM:
+            if reg.name in self._eeprom_writes_in_flight:
+                raise ValueError(
+                    f"EEPROM-sensitive register '{reg.name}' already has a write in progress"
+                )
             now = self._time()
             last_write = self._last_eeprom_writes.get(reg.name)
             if last_write is not None:
@@ -1682,9 +1772,22 @@ class IdmModbusClient:
             raise ValueError(
                 f"Register '{reg.name}' is not available for detected model {self._model_info.model_name}"
             )
+        if not available.matches_request_shape(reg):
+            # Same name and address, but a different datatype or register
+            # type is a different request: another function code or count, or
+            # another decoding of the same words. The documented overlap at
+            # 1392 (FLOAT humidity) and 1393 (UCHAR heating-circuit mode)
+            # shows why that must not pass as the model's data point.
+            raise ValueError(
+                f"Register '{reg.name}' differs from the detected model's definition: "
+                f"{self._model_info.model_name} has {available.datatype.value} at "
+                f"{available.register_type.value} address {available.address}, got "
+                f"{reg.datatype.value} at {reg.register_type.value} address {reg.address}"
+            )
 
     def _record_successful_write(self, reg: RegisterDef) -> None:
         if reg.write_class is WriteClass.EEPROM:
+            self._eeprom_writes_in_flight.pop(reg.name, None)
             self._last_eeprom_writes[reg.name] = self._time()
         if reg.write_class is WriteClass.CYCLIC:
             ttl = reg.cyclic_write_ttl or DEFAULT_CYCLIC_WRITE_TTL

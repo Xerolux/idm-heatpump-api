@@ -150,3 +150,37 @@ def test_fold_refuses_without_prereleases() -> None:
         assert "no prerelease sections" in str(err)
     else:
         raise AssertionError("folding a version without prereleases must refuse")
+
+
+HOTFIX_BETWEEN_BETAS = SAMPLE.replace(
+    "## [2.2.0b1] - 2026-10-01\n",
+    "## [2.1.2] - 2026-09-20\n"
+    "\n"
+    "### Fixed\n"
+    "\n"
+    "- Hotfix released while the betas were open.\n"
+    "\n"
+    "## [2.2.0b1] - 2026-10-01\n",
+)
+
+
+def test_fold_keeps_a_release_published_between_prereleases() -> None:
+    """A patch cut while the beta cycle was running sits between the betas in the file.
+
+    The fold used to replace everything from the newest to the oldest
+    prerelease section, which deleted that release's section with it - the
+    one thing the mechanical fold exists to prevent.
+    """
+    result = fold_module.fold(HOTFIX_BETWEEN_BETAS, "2.2.0", "2026-10-03")
+
+    assert "## [2.1.2] - 2026-09-20" in result
+    assert "- Hotfix released while the betas were open." in result
+    # Both betas still fold into the stable section, and the hotfix keeps its
+    # chronological place: below the new stable section, above the older release.
+    assert "## [2.2.0b" not in result
+    assert "Feature X." in result and "Bug B." in result
+    assert (
+        result.index("## [2.2.0] - 2026-10-03")
+        < result.index("## [2.1.2] - 2026-09-20")
+        < result.index("## [2.1.1] - 2026-09-13")
+    )

@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import math
 from typing import Any
 
 import pytest
@@ -29,7 +30,7 @@ from idm_heatpump.const import (
     MODEL_NAVIGATOR_20,
     MODEL_UNKNOWN,
 )
-from idm_heatpump.exceptions import IdmConnectionError, IdmDeviceError
+from idm_heatpump.exceptions import IdmConnectionError, IdmDeviceError, IdmTransportError
 from idm_heatpump.registers import get_heating_circuit_registers, get_register
 from idm_heatpump.transport import quiet_pymodbus_logging
 
@@ -443,6 +444,70 @@ def test_detect_model_active_mode_detects_circuit_without_flow_temp() -> None:
     model_info = asyncio.run(client.detect_model())
 
     assert model_info.active_heating_circuits == ["A", "B"]
+
+
+def test_detect_model_ignores_non_finite_flow_temperature_slots() -> None:
+    """NaN and Inf in a flow register are no measurement, so the slot is not active.
+
+    An unconfigured slot can hold uninitialized memory instead of the -1.0
+    sentinel. Together with the active-mode "not configured" sentinel (raw
+    0xFFFF) that is an absent circuit, not a responding one: detection used
+    to count every answering, non-sentinel flow register as active, which
+    turned such garbage into phantom heating circuits.
+    """
+    client = ProbeOnlyClient(
+        {
+            (1350, 2): ModbusCodec.encode_float32(25.0),
+            (1352, 2): ModbusCodec.encode_float32(math.nan),  # uninitialized memory
+            (1354, 2): ModbusCodec.encode_float32(math.inf),
+            (1356, 2): ModbusCodec.encode_float32(-1.0),
+            (1358, 2): ModbusCodec.encode_float32(-1.0),
+            (1360, 2): ModbusCodec.encode_float32(-1.0),
+            (1362, 2): ModbusCodec.encode_float32(-1.0),
+            (1498, 1): [0],
+            (1499, 1): [0xFFFF],
+            (1500, 1): [0xFFFF],
+            (1501, 1): [0xFFFF],
+            (1502, 1): [0xFFFF],
+            (1503, 1): [0xFFFF],
+            (1504, 1): [0xFFFF],
+        }
+    )
+
+    model_info = asyncio.run(client.detect_model())
+
+    assert model_info.active_heating_circuits == ["A"]
+
+
+def test_detect_model_keeps_out_of_range_flow_temperature_as_active_slot() -> None:
+    """A finite flow value outside the plausibility window still counts as a circuit.
+
+    The conservative legacy rule stays: a slot that answers with a real
+    number (here a defective sensor reading 500 C) is treated as installed,
+    even when the active-mode register does not confirm it.
+    """
+    client = ProbeOnlyClient(
+        {
+            (1350, 2): ModbusCodec.encode_float32(25.0),
+            (1352, 2): ModbusCodec.encode_float32(-1.0),
+            (1354, 2): ModbusCodec.encode_float32(-1.0),
+            (1356, 2): ModbusCodec.encode_float32(500.0),  # finite, out of range
+            (1358, 2): ModbusCodec.encode_float32(-1.0),
+            (1360, 2): ModbusCodec.encode_float32(-1.0),
+            (1362, 2): ModbusCodec.encode_float32(-1.0),
+            (1498, 1): [0],
+            (1499, 1): [0xFFFF],
+            (1500, 1): [0xFFFF],
+            (1501, 1): [0xFFFF],
+            (1502, 1): [0xFFFF],
+            (1503, 1): [0xFFFF],
+            (1504, 1): [0xFFFF],
+        }
+    )
+
+    model_info = asyncio.run(client.detect_model())
+
+    assert model_info.active_heating_circuits == ["A", "D"]
 
 
 def test_detect_model_navigator_20_with_heat_sink_flow_rate() -> None:
@@ -1087,6 +1152,42 @@ def test_custom_write_requires_explicit_model_validation_bypass() -> None:
     assert plan.encoded_registers == (42,)
 
 
+def test_write_register_rejects_same_name_and_address_with_another_datatype() -> None:
+    """A register is the model's data point only when its request shape matches too.
+
+    Same name and address with another datatype or register type is another
+    request (another function code or count, or another decoding of the same
+    words). It used to pass the model check, which then allowed writing, for
+    example, the FLOAT humidity 1392 as a single UCHAR.
+    """
+    transport = FakeModbusTransport()
+    client = IdmModbusClient("127.0.0.1", transport=transport)
+    client._model_info = IdmModelInfo(
+        model_name=MODEL_NAVIGATOR_10,
+        active_heating_circuits=["A"],
+        zone_modules=0,
+        has_solar=False,
+        has_isc=False,
+        has_pv=False,
+        has_cascade=False,
+    )
+    humidity_as_uchar = RegisterDef(1392, DataType.UCHAR, "humidity_sensor", writable=True)
+    humidity_as_holding = RegisterDef(
+        1392, DataType.FLOAT, "humidity_sensor", writable=True, register_type=RegisterType.HOLDING
+    )
+
+    for reg in (humidity_as_uchar, humidity_as_holding):
+        with pytest.raises(ValueError, match="differs from the detected model's definition"):
+            asyncio.run(client.write_register(reg, 50))
+
+    assert transport.write_calls == []
+
+    # The explicit advanced-user bypass still skips the model check.
+    asyncio.run(client.write_register(humidity_as_uchar, 50, allow_custom_register=True))
+
+    assert transport.write_calls == [(1392, [50])]
+
+
 def test_write_safety_rejects_invalid_enum_boolean_and_fractional_integer_values() -> None:
     client = IdmModbusClient("192.0.2.10")
     bool_reg = RegisterDef(1710, DataType.BOOL, "demand_heating", writable=True)
@@ -1710,6 +1811,117 @@ def test_detect_model_raises_when_the_link_dies_mid_detection() -> None:
         asyncio.run(client.detect_model())
 
     assert client.model_info is None
+
+
+def _standby_navigator_10_registers() -> dict[int, int]:
+    """Input registers of a Navigator 10 without booster and with the power limit off.
+
+    Only the power-measurement registers 4122 and 4126 identify this plant
+    (the live case of issue #170), which makes a lost answer on either of
+    them the most consequential detection gap.
+    """
+    registers = {
+        1000 + offset: word for offset, word in enumerate(ModbusCodec.encode_float32(10.0))
+    }
+    for index in range(7):
+        flow = ModbusCodec.encode_float32(27.61 if index in (0, 3) else -1.0)
+        for offset, word in enumerate(flow):
+            registers[1350 + index * 2 + offset] = word
+        registers[1498 + index] = 0 if index in (0, 3) else 0xFFFF
+    for address in (4122, 4126):
+        for offset, word in enumerate(ModbusCodec.encode_float32(0.0)):
+            registers[address + offset] = word
+    registers[4001] = 0xFFFF
+    for offset, word in enumerate(ModbusCodec.encode_float32(-1.0)):
+        registers[4108 + offset] = word
+    return registers
+
+
+class _OneLostAnswerTransport(FakeModbusTransport):
+    """A healthy link on which exactly one request gets no answer."""
+
+    def __init__(self, unanswered: tuple[str, int, int]) -> None:
+        super().__init__(input_registers=_standby_navigator_10_registers())
+        self._unanswered = unanswered
+        self.lost = False
+
+    async def _read(
+        self, kind: str, registers: dict[int, int], address: int, count: int
+    ) -> list[int]:
+        if (kind, address, count) == self._unanswered and not self.lost:
+            self.lost = True
+            raise IdmTransportError("one lost frame")
+        return await super()._read(kind, registers, address, count)
+
+
+def test_detect_model_identifies_the_standby_navigator_10_control_plant() -> None:
+    """The plant behind the lost-answer tests classifies correctly on a healthy link."""
+    transport = FakeModbusTransport(input_registers=_standby_navigator_10_registers())
+    client = IdmModbusClient("127.0.0.1", max_retries=1, transport=transport)
+
+    model_info = asyncio.run(client.detect_model())
+
+    assert model_info.model_name == MODEL_NAVIGATOR_10
+    assert model_info.active_heating_circuits == ["A", "D"]
+
+
+@pytest.mark.parametrize(
+    "unanswered",
+    [
+        ("input", 1350, 14),  # the batched flow-temperature read of circuits A-G
+        ("input", 1498, 7),  # the batched active-mode read of circuits A-G
+        ("input", 2000, 1),  # zone-module base
+        ("input", 1850, 2),  # solar
+        ("input", 74, 2),  # PV
+        ("input", 4122, 2),  # Navigator 10 power measurement
+        ("input", 4126, 2),  # Navigator 10 thermal power
+    ],
+)
+def test_detect_model_raises_when_any_probe_lost_its_answer(
+    unanswered: tuple[str, int, int],
+) -> None:
+    """A single lost frame must fail detection, even when the link recovers at once.
+
+    A probe that gets no answer is reported like a register the device does
+    not implement. The guard used to look only at the last failure, so a
+    blip that later probes recovered from produced a confident, wrong model:
+    a Navigator 10 became a "Navigator Pro" without its booster block, or
+    lost its zone modules, solar or PV.
+    """
+    transport = _OneLostAnswerTransport(unanswered)
+    client = IdmModbusClient("127.0.0.1", max_retries=1, transport=transport)
+
+    with pytest.raises(IdmConnectionError, match="model detection"):
+        asyncio.run(client.detect_model())
+
+    assert transport.lost is True
+    assert client.model_info is None
+
+
+def test_detect_model_tolerates_rejected_registers_as_usual() -> None:
+    """An Illegal Data Address answer is a statement about the register, not the link."""
+    transport = FakeModbusTransport(
+        input_registers=_standby_navigator_10_registers(),
+        illegal_reads={
+            ("input", 2000, 1),
+            ("input", 2065, 1),
+            ("input", 1850, 2),
+            ("input", 1870, 2),
+            ("input", 74, 2),
+            ("input", 1147, 1),
+            ("input", 4108, 2),
+            ("input", 4001, 1),
+            ("input", 4120, 2),
+        },
+    )
+    client = IdmModbusClient("127.0.0.1", max_retries=1, transport=transport)
+
+    model_info = asyncio.run(client.detect_model())
+
+    assert model_info.model_name == MODEL_NAVIGATOR_10
+    assert model_info.zone_modules == 0
+    assert not model_info.has_solar
+    assert not model_info.has_pv
 
 
 # ---------------------------------------------------------------------------

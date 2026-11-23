@@ -5,7 +5,11 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from idm_heatpump.web import IdmNavigator10WebClient, IdmNavigator20WebClient
+from idm_heatpump.web import (
+    IdmNavigator10WebClient,
+    IdmNavigator20WebClient,
+    IdmWebConnectionError,
+)
 
 
 @pytest.mark.asyncio
@@ -42,3 +46,37 @@ async def test_cancelled_connection_closes_owned_resources(navigator: str) -> No
         assert client._session is None
     else:
         assert nav20._session is None
+
+
+@pytest.mark.asyncio
+async def test_close_during_handshake_releases_the_websocket() -> None:
+    """close() while the Navigator 10 handshake is in flight must not leave a socket behind.
+
+    close() takes no lock, so it can run while connect() is suspended in the
+    HTTP upgrade. The websocket opened after that moment belongs to a closed
+    client; it has to be closed as well, and connect() has to report the
+    closed client instead of succeeding.
+    """
+    handshake_started = asyncio.Event()
+    release_handshake = asyncio.Event()
+    ws = AsyncMock()
+    session = AsyncMock()
+
+    async def slow_ws_connect(*args: object, **kwargs: object) -> AsyncMock:
+        handshake_started.set()
+        await release_handshake.wait()
+        return ws
+
+    session.ws_connect.side_effect = slow_ws_connect
+    client = IdmNavigator10WebClient("192.0.2.10", "1234", session=session)
+
+    task = asyncio.create_task(client.connect())
+    await handshake_started.wait()
+    await client.close()
+    release_handshake.set()
+
+    with pytest.raises(IdmWebConnectionError, match="closed while connecting"):
+        await task
+
+    ws.close.assert_awaited_once()
+    assert client._ws is None

@@ -71,6 +71,44 @@ class TestStatisticsParsing:
         raw = json.dumps({"unitTotal": "kWh", "total": [{"name": "Zukunft", "value": 1}]})
         assert parse_navigator20_statistics_response(raw, "genheat") == {}
 
+    @pytest.mark.parametrize(
+        ("unit", "stat_type", "name", "reported", "expected"),
+        [
+            ("wh", "elcons", "stat_elcons_total_heating", 5000, 5.0),
+            ("KWH", "elcons", "stat_elcons_total_heating", 5000, 5000.0),
+            ('"MWh"', "elcons", "stat_elcons_total_heating", 5, 5000.0),
+            ("Min", "runtime", "stat_runtime_total_heating", 120, 2.0),
+        ],
+    )
+    def test_unit_scale_is_matched_case_insensitively(
+        self, unit: str, stat_type: str, name: str, reported: float, expected: float
+    ) -> None:
+        """A firmware spelling the unit in another case must scale exactly the same."""
+        raw = json.dumps({"unitTotal": unit, "total": [{"name": "Heating", "value": reported}]})
+
+        values = parse_navigator20_statistics_response(raw, stat_type)
+
+        assert values[name].numeric_value == pytest.approx(expected)
+
+    def test_unknown_unit_raises_instead_of_assuming_base_units(self) -> None:
+        """A scale the parser does not know must not be published as kWh.
+
+        An unrecognised ``unitTotal`` used to fall back to factor 1.0, which
+        turned, for example, a value reported in a unit spelled differently
+        into a number a thousand times too high, without any sign of it.
+        """
+        raw = json.dumps({"unitTotal": "MWh/a", "total": [{"name": "Heating", "value": 5000}]})
+
+        with pytest.raises(IdmWebResponseError, match="unknown unitTotal"):
+            parse_navigator20_statistics_response(raw, "elcons")
+
+    def test_missing_unit_is_read_in_base_units(self) -> None:
+        raw = json.dumps({"total": [{"name": "Heating", "value": 5000}]})
+
+        values = parse_navigator20_statistics_response(raw, "elcons")
+
+        assert values["stat_elcons_total_heating"].numeric_value == pytest.approx(5000.0)
+
     def test_non_json_raises(self) -> None:
         with pytest.raises(IdmWebResponseError):
             parse_navigator20_statistics_response("nope", "runtime")
@@ -167,6 +205,23 @@ class TestReadStatistics:
 
         with pytest.raises(IdmWebResponseError, match="none of the statistics"):
             await client.read_statistics()
+
+    @pytest.mark.asyncio
+    async def test_page_with_an_unknown_unit_is_skipped(self) -> None:
+        """An unscalable page contributes nothing; the other pages are still read."""
+        client = _StubNav20(
+            {
+                "/data/statistics.php?type=heatpump": RUNTIME_JSON,
+                "/data/statistics.php?type=amountofheat": json.dumps(
+                    {"unitTotal": "MWh/a", "total": [{"name": "Heizen", "value": 1}]}
+                ),
+            }
+        )
+
+        data = await client.read_statistics()
+
+        assert data.values["stat_runtime_total_heating"].numeric_value == pytest.approx(3379.48)
+        assert "stat_genheat_total_heating" not in data.values
 
 
 class TestSetDatetime:

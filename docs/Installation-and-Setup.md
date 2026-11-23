@@ -132,8 +132,9 @@ Run the full local quality gate before pushing:
 
 ```bash
 pytest                       # tests + coverage (fail-under 75)
-ruff check .                 # lint
-mypy                         # strict type checking
+ruff check idm_heatpump tests scripts    # lint
+ruff format idm_heatpump tests scripts --check
+mypy idm_heatpump scripts    # strict type checking
 ```
 
 Additional developer notes:
