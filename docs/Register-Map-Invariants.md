@@ -131,20 +131,26 @@ families — except the holding block's per-circuit parameters, which reuse
 the shared family's register names because the official ranges are
 identical (the 2.0/10/Pro holding block is the direct successor of the 1.x
 table). The holding modes' enum tables stay separate because their value
-sets differ from the shared family's enums. The FC01/05 coil block
-(3000-3003: Störung quittieren, Anforderung Heizen/Kühlen/Vorrangladung) is
-mapped since 2.5.0 as `RegisterType.COIL` registers with `DataType.BOOL`;
-reading and writing them requires a transport implementing
-`IdmCoilTransportExtension`. `c3000` reuses the shared family's
-`error_acknowledge` name because the acknowledge action is identical on both
-families; the Anforderung coils carry the `_17` suffix because the shared
-family's identically named registers at 1710-1713 are writable GLT demand
-*inputs*, while the 1.x coils are the controller's read-only demand *status*.
-`c3003` is documented read/write (Vorrangladung anfordern) but stays
-read-only until a hardware capture confirms what writing 0 does to a running
-demand. Every 1.7 register outside the holding block, the coil block and the
-PV supplement is `writable=False` and
-`detect_model` classifies the family through its Illegal-Data-Address
+sets differ from the shared family's enums. The FC01/05 coil block (3000
+Störung quittieren, 3003 Anforderung Vorrangladung) is mapped since 2.5.0 as
+write-only `RegisterType.COIL` commands with `DataType.BOOL`; writing them
+requires a transport implementing `IdmCoilTransportExtension`. The
+Anforderung Heizen/Kühlen coils (3001/3002) are momentary command bits, not
+status signals - the controller executes the request the moment the bit is
+set and the bit falls back to 0 (idm-heatpump-hass issue #319, verified on
+real 1.7 hardware) - so they are not mapped at all: the read-only
+`demand_heating_17` and `demand_cooling_17` registers that 2.5.0 had derived
+from them were removed in 2.13.0, and requesting heating or cooling is what
+the operating-mode holding registers are for. `c3000` reuses the shared
+family's `error_acknowledge` name because the acknowledge action is
+identical on both families; `c3003` carries the `_17` suffix
+(`demand_dhw_17`) because the shared family's identically named registers at
+1710-1713 are writable GLT demand *inputs*. `c3003` is documented read/write
+(Vorrangladung anfordern) and is a write-only command since 2.13.0 that is
+written exactly once per request: nothing may write 0 to a running demand
+until a hardware capture confirms what that does. Every 1.7 register outside
+the holding block, the coil block and the PV supplement is `writable=False`,
+and `detect_model` classifies the family through its Illegal-Data-Address
 signature (core block responds, shared-family addresses rejected) before the
 circuit-based classification, because the shared active-mode probes
 (1498-1504) overlap the 1.x status block (1500-1524). Never merge its

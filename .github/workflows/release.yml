@@ -39,9 +39,9 @@ jobs:
       - name: Validate current package
         run: |
           pytest tests/ -v --tb=short --cov=idm_heatpump --cov-report=term-missing --cov-fail-under=75
-          ruff check idm_heatpump tests
-          ruff format idm_heatpump tests --check
-          mypy idm_heatpump
+          ruff check idm_heatpump tests scripts
+          ruff format idm_heatpump tests scripts --check
+          mypy idm_heatpump scripts
 
   release:
     needs: validate
@@ -71,11 +71,17 @@ jobs:
 
       - name: Determine next version
         id: version
+        env:
+          # Inputs reach the script through the environment, never through a
+          # ${{ }} interpolation into its source: a dispatch input spliced
+          # into Python code would be executed there.
+          VERSION_MODE: ${{ github.event.inputs.version_mode }}
+          CUSTOM_VERSION: ${{ github.event.inputs.custom_version }}
         run: |
-          import re, sys, os
+          import os, re, sys
 
-          mode = "${{ github.event.inputs.version_mode }}"
-          custom = "${{ github.event.inputs.custom_version }}".strip()
+          mode = os.environ["VERSION_MODE"]
+          custom = os.environ["CUSTOM_VERSION"].strip()
 
           # PEP 440, not SemVer: this is a PyPI package, so a prerelease is
           # "2.0.0b1", never "2.0.0-beta.1". pip and PyPI normalise the latter

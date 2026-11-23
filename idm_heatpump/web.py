@@ -2286,6 +2286,13 @@ def parse_navigator_system_overview_response(
     )
 
 
+_NAV10_CLOSED_WHILE_CONNECTING = "Navigator 10 web client was closed while connecting"
+
+
+class _ClosedWhileConnecting(Exception):
+    """Internal signal: close() arrived while the Navigator 10 handshake was suspended."""
+
+
 class IdmNavigator10WebClient:
     """Read-only async client for the Navigator 10 local WebSocket interface."""
 
@@ -2380,7 +2387,18 @@ class IdmNavigator10WebClient:
             # only governs the close handshake.
             async with asyncio.timeout(self._timeout):
                 self._ws = await self._session.ws_connect(url, timeout=ws_timeout)
+                # close() takes no lock (see close()), so it can land while
+                # this handshake is suspended. Whatever is opened after that
+                # moment must not outlive the closed client: stop at both
+                # suspension points of the handshake and release it below.
+                self._raise_if_closed_while_connecting()
                 auth = await self._receive_text()
+                self._raise_if_closed_while_connecting()
+        except _ClosedWhileConnecting:
+            # Nothing was authorized; the websocket (if any) is closed here.
+            self._last_error = _NAV10_CLOSED_WHILE_CONNECTING
+            await self._close_unlocked()
+            raise IdmWebConnectionError(_NAV10_CLOSED_WHILE_CONNECTING) from None
         except builtins.TimeoutError as exc:
             self._last_error = "Navigator 10 websocket connection timed out"
             await self._close_unlocked()
@@ -2396,9 +2414,15 @@ class IdmNavigator10WebClient:
             self._last_error = f"Navigator 10 websocket handshake failed: {type(exc).__name__}"
             await self._close_unlocked()
             raise IdmWebConnectionError(self._last_error) from exc
-        except (Exception, asyncio.CancelledError):
+        except (Exception, asyncio.CancelledError) as exc:
             self._last_error = "Navigator 10 websocket connection failed"
             await self._close_unlocked()
+            if self._closed and not isinstance(exc, asyncio.CancelledError):
+                # close() ran during the handshake and already released the
+                # owned session, so the continuation fails with a foreign
+                # error (aiohttp's "Session is closed"); report the cause.
+                self._last_error = _NAV10_CLOSED_WHILE_CONNECTING
+                raise IdmWebConnectionError(_NAV10_CLOSED_WHILE_CONNECTING) from exc
             raise
         has_key, authorized = _parse_auth_response(auth)
         if not (has_key and authorized is True):
@@ -2410,6 +2434,11 @@ class IdmNavigator10WebClient:
             raise IdmWebProtocolError(self._last_error)
         self._last_success_monotonic = time.monotonic()
         self._last_error = None
+
+    def _raise_if_closed_while_connecting(self) -> None:
+        """Fail a handshake that close() outlived (called while the lock is held)."""
+        if self._closed:
+            raise _ClosedWhileConnecting
 
     async def close(self) -> None:
         # Set before touching the websocket: closing it fails the request that
@@ -2774,8 +2803,14 @@ class IdmNavigator10WebClient:
 
         Capture-confirmed on a live Navigator 10: setting item 4537
         (``N2_SETDATETIME``, type ``setdt``) written through
-        ``setting/save`` with the value in ISO-8601 form including the
-        millisecond ``.000Z`` suffix the interface submits.
+        ``setting/save`` with the value in ISO-8601 form.
+
+        The value is sent exactly as ``datetime.isoformat()`` spells it. An
+        aware datetime carries its offset (``2026-09-29T12:30:00+00:00``), so
+        the controller receives an unambiguous instant. A naive datetime is
+        sent without any zone (``2026-09-29T12:30:00``), and how the firmware
+        interprets that is not verified; pass an aware datetime when the
+        instant must not depend on it.
         """
         if not isinstance(value, datetime):
             raise ValueError("value must be a datetime")
@@ -2982,6 +3017,12 @@ def parse_navigator20_statistics_response(
     runtime) and a localized ``total`` list by category. Values are
     normalized to kWh (energy) or hours (runtime) and keyed
     ``stat_<type>_total_<category>``.
+
+    The unit is matched case-insensitively. A page whose ``unitTotal`` is
+    present but not one of the documented scales raises
+    :class:`IdmWebResponseError`: its numbers could not be scaled, and
+    publishing them as base units would be silently wrong. A page without a
+    ``unitTotal`` is read in base units (kWh or hours) as before.
     """
     try:
         payload = json.loads(raw_response)
@@ -2996,17 +3037,22 @@ def parse_navigator20_statistics_response(
 
     unit = payload.get("unitTotal")
     factor = 1.0
-    if isinstance(unit, str):
-        unit_clean = unit.strip().strip('",')
+    unit_clean = unit.strip().strip('",') if isinstance(unit, str) else ""
+    if unit_clean:
         factors = {
-            "Wh": 0.001,
-            "kWh": 1.0,
-            "MWh": 1000.0,
-            "GWh": 1000000.0,
+            "wh": 0.001,
+            "kwh": 1.0,
+            "mwh": 1000.0,
+            "gwh": 1000000.0,
             "h": 1.0,
             "min": 1.0 / 60.0,
         }
-        factor = factors.get(unit_clean, 1.0)
+        try:
+            factor = factors[unit_clean.casefold()]
+        except KeyError:
+            raise IdmWebResponseError(
+                f"Navigator 2.0 statistics uses an unknown unitTotal {unit!r}"
+            ) from None
 
     values: dict[str, IdmWebValue] = {}
     total = payload.get("total")

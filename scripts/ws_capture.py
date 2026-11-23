@@ -278,9 +278,7 @@ def _serve_one_session(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument(
-        "--host", required=True, help="Navigator host (for example 192.0.2.10)"
-    )
+    parser.add_argument("--host", required=True, help="Navigator host (for example 192.0.2.10)")
     parser.add_argument("--pin", required=True, help="local web PIN (SYSLPIN); never logged")
     parser.add_argument(
         "--port", type=int, default=DEFAULT_NAVIGATOR_PORT, help="Navigator WebSocket port"

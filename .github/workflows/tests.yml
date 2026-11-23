@@ -40,13 +40,13 @@ jobs:
       - name: Run linting
         run: |
           pip install ruff
-          ruff check idm_heatpump tests
-          ruff format idm_heatpump tests --check
+          ruff check idm_heatpump tests scripts
+          ruff format idm_heatpump tests scripts --check
 
       - name: Check type hints
         run: |
           pip install mypy
-          mypy idm_heatpump
+          mypy idm_heatpump scripts
 
       - name: Check typed package metadata
         run: |

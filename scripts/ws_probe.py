@@ -50,10 +50,16 @@ import socket
 import sys
 import time
 from pathlib import Path
-from typing import Iterator
+from typing import TYPE_CHECKING, Iterator
 from urllib.parse import quote
 
-from ws_capture import build_frame, read_frame
+if TYPE_CHECKING:
+    # Type-checked as part of the ``scripts`` package (``mypy scripts``).
+    from .ws_capture import build_frame, read_frame
+else:
+    # Run as a script (``python scripts/ws_probe.py``): the script directory
+    # is the import root there, and there is no package to import from.
+    from ws_capture import build_frame, read_frame
 
 DEFAULT_NAVIGATOR_PORT = 61220
 DEFAULT_CIRCUITS = "ABCDEFG"

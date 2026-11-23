@@ -26,7 +26,11 @@ jobs:
 
       - name: Sync docs content
         run: |
-          rsync -av --delete --exclude='.git/' docs/ /tmp/wiki/
+          # docs/New is source material for the register-map audit (the raw
+          # vendor manual and working notes) and is not mirrored. It is not
+          # deleted from the wiki by this sync either: --delete-excluded would
+          # also remove the clone's .git directory.
+          rsync -av --delete --exclude='.git/' --exclude='New/' docs/ /tmp/wiki/
 
       - name: Commit and push wiki changes
         working-directory: /tmp/wiki

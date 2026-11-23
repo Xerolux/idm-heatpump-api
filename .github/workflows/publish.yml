@@ -93,9 +93,13 @@ jobs:
           PY
 
       - name: Validate release tag
+        env:
+          # The dispatched tag reaches the script through the environment: a
+          # ${{ }} interpolation would splice the input into the shell code.
+          RELEASE_TAG: ${{ github.event.inputs.tag }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            REF="${{ github.event.inputs.tag }}"
+            REF="$RELEASE_TAG"
           else
             REF="${GITHUB_REF_NAME}"
           fi

@@ -22,5 +22,9 @@ with zero. Duplicate circuit IDs are ambiguous and omitted.
 Statistics version 2 nests the existing `unitTotal` and category `total` list in
 `data`; it uses the same runtime/energy units and localized category names as
 the flat format. Both layouts keep the existing normalized keys and scaling.
+The unit is matched case-insensitively. A page that names a scale the library
+does not know raises `IdmWebResponseError` and contributes no values rather
+than being published in base units; a page without `unitTotal` is read in base
+units (kWh or hours).
 This change is in the device library; consumers must install a released library
 version containing it before claiming runtime support.
