@@ -22,9 +22,10 @@ with zero. Duplicate circuit IDs are ambiguous and omitted.
 Statistics version 2 nests the existing `unitTotal` and category `total` list in
 `data`; it uses the same runtime/energy units and localized category names as
 the flat format. Both layouts keep the existing normalized keys and scaling.
-The unit is matched case-insensitively. A page that names a scale the library
-does not know raises `IdmWebResponseError` and contributes no values rather
-than being published in base units; a page without `unitTotal` is read in base
-units (kWh or hours).
+Runtime pages accept hours and minutes. Energy pages accept Wh, kWh, MWh and
+GWh. Unit matching is case-insensitive. A missing `unitTotal` defaults to
+hours or kWh. An explicit invalid or incompatible unit raises
+`IdmWebResponseError` for that page. A total that overflows during conversion
+is omitted individually, so other categories on the page remain available.
 This change is in the device library; consumers must install a released library
 version containing it before claiming runtime support.

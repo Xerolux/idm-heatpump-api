@@ -102,6 +102,30 @@ class TestStatisticsParsing:
         with pytest.raises(IdmWebResponseError, match="unknown unitTotal"):
             parse_navigator20_statistics_response(raw, "elcons")
 
+    @pytest.mark.parametrize(
+        ("stat_type", "unit"),
+        [("runtime", "kWh"), ("genheat", "min"), ("elcons", None), ("elcons", 42), ("elcons", "")],
+    )
+    def test_present_unit_must_match_the_statistic(self, stat_type: str, unit: object) -> None:
+        raw = json.dumps({"unitTotal": unit, "total": [{"name": "Heating", "value": 5}]})
+
+        with pytest.raises(IdmWebResponseError, match="unitTotal"):
+            parse_navigator20_statistics_response(raw, stat_type)
+
+    @pytest.mark.parametrize("reported", [1e308, 10**400])
+    def test_unrepresentable_total_keeps_other_categories(self, reported: float | int) -> None:
+        raw = json.dumps(
+            {
+                "unitTotal": "GWh",
+                "total": [{"name": "Heating", "value": reported}, {"name": "Cooling", "value": 1}],
+            }
+        )
+
+        values = parse_navigator20_statistics_response(raw, "genheat")
+
+        assert list(values) == ["stat_genheat_total_cooling"]
+        assert values["stat_genheat_total_cooling"].numeric_value == 1_000_000
+
     def test_missing_unit_is_read_in_base_units(self) -> None:
         raw = json.dumps({"total": [{"name": "Heating", "value": 5000}]})
 

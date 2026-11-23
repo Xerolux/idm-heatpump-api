@@ -63,6 +63,8 @@ NAVIGATOR20_STATISTICS_PATHS: tuple[tuple[str, str], ...] = (
     ("genheat", "/data/statistics.php?type=amountofheat"),
     ("elcons", "/data/statistics.php?type=baenergyhp"),
 )
+_RUNTIME_TO_HOURS = {"h": 1.0, "min": 1.0 / 60.0}
+_ENERGY_TO_KWH = {"wh": 0.001, "kwh": 1.0, "mwh": 1000.0, "gwh": 1_000_000.0}
 
 # Localized category names of the statistics JSON (confirmed German and
 # English firmwares); mapped onto the stable English slugs.
@@ -3035,23 +3037,17 @@ def parse_navigator20_statistics_response(
     if "total" not in payload and isinstance(payload.get("data"), dict):
         payload = payload["data"]
 
-    unit = payload.get("unitTotal")
+    runtime = stat_type == "runtime"
     factor = 1.0
-    unit_clean = unit.strip().strip('",') if isinstance(unit, str) else ""
-    if unit_clean:
-        factors = {
-            "wh": 0.001,
-            "kwh": 1.0,
-            "mwh": 1000.0,
-            "gwh": 1000000.0,
-            "h": 1.0,
-            "min": 1.0 / 60.0,
-        }
+    if "unitTotal" in payload:
+        unit = payload["unitTotal"]
+        unit_clean = unit.strip().strip('",').casefold() if isinstance(unit, str) else ""
+        factors = _RUNTIME_TO_HOURS if runtime else _ENERGY_TO_KWH
         try:
-            factor = factors[unit_clean.casefold()]
+            factor = factors[unit_clean]
         except KeyError:
             raise IdmWebResponseError(
-                f"Navigator 2.0 statistics uses an unknown unitTotal {unit!r}"
+                f"Navigator 2.0 statistics uses an unknown unitTotal {unit!r} for {stat_type}"
             ) from None
 
     values: dict[str, IdmWebValue] = {}
@@ -3067,19 +3063,23 @@ def parse_navigator20_statistics_response(
             not isinstance(raw_name, str)
             or isinstance(raw_value, bool)
             or not isinstance(raw_value, (int, float))
-            or not math.isfinite(raw_value)
         ):
             continue
         category = _STATISTICS_CATEGORY_NAMES.get(raw_name.strip().casefold())
         if category is None:
             continue
-        value = float(raw_value) * factor
+        try:
+            value = float(raw_value) * factor
+        except OverflowError:
+            continue
+        if not math.isfinite(value):
+            continue
         name = f"stat_{stat_type}_total_{category}"
         values[name] = IdmWebValue(
             name=name,
             value=f"{value:g}",
             raw_key=raw_name,
-            unit="h" if stat_type == "runtime" else "kWh",
+            unit="h" if runtime else "kWh",
             numeric_value=value,
         )
     return values
