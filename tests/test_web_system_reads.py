@@ -252,6 +252,15 @@ SYSTEM_OVERVIEW = json.dumps(
         "remoteSessionId": "x",
         "system": {
             "buffer": {"systemMode": 1, "temperatures": {"heating": "49.0"}},
+            # Differential-temperature control block as delivered by a live
+            # SLM 6-17 / NAV10_20.24-1124 controller (issue #750 capture,
+            # 2026-11-26): temperatures.buffer is the B84 sensor, reference
+            # the other side of the regulated delta.
+            "diffTempControl": {
+                "pumpActive": False,
+                "systemMode": 1,
+                "temperatures": {"buffer": "20.1", "reference": "40.3"},
+            },
             "energyflow": {"grid": {"value": "0.0180"}, "signal": 16, "type": 4},
             "freshwater": {
                 "circulation": {"active": False},
@@ -326,6 +335,23 @@ class TestSystemOverviewParsing:
         assert overview.heatpump_source_active is False
         assert overview.heatpump_source_type == 2
         assert overview.heatpump_source_temperature_in == pytest.approx(12.3)
+
+    def test_extracts_the_differential_temperature_control_block(self) -> None:
+        """temperatures.buffer is the B84 sensor (20.1 matches its table row)."""
+        overview = parse_navigator_system_overview_response(SYSTEM_OVERVIEW)
+
+        assert overview.diff_temp_buffer_temperature == pytest.approx(20.1)
+        assert overview.diff_temp_reference_temperature == pytest.approx(40.3)
+        assert overview.diff_temp_pump_active is False
+
+    def test_missing_diff_temp_control_block_parses_as_none(self) -> None:
+        overview = parse_navigator_system_overview_response(
+            json.dumps({"system": {"heatingcircuit": []}})
+        )
+
+        assert overview.diff_temp_buffer_temperature is None
+        assert overview.diff_temp_reference_temperature is None
+        assert overview.diff_temp_pump_active is None
 
     def test_lists_every_circuit_with_its_regulation_type(self) -> None:
         overview = parse_navigator_system_overview_response(SYSTEM_OVERVIEW)

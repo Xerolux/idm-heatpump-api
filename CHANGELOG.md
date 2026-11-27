@@ -22,6 +22,18 @@ prerelease is `2.0.0b1`, not `2.0.0-beta.1` — see `docs/RELEASE_PROCESS.md`.
 Sections up to `1.0.3` are German; they stay as published, because a released
 changelog is history. Everything from `2.0.0b1` on is English.
 
+## [2.18.0] - 2026-11-27
+
+The Navigator 10 web supplement now carries the differential-temperature control block and three previously unmapped hydraulic outputs, so consumers can visualize the plant's hydraulics without new requests.
+
+### Added
+
+- `IdmWebSystemOverview` exposes the `system.diffTempControl` block as `diff_temp_buffer_temperature` (the B84 sensor), `diff_temp_reference_temperature` and `diff_temp_pump_active`. Every field stays `None` on firmwares that do not deliver the block (issue #750 capture: SLM 6-17, NAV10_20.24-1124).
+- The Navigator 10 setting-section map gains three read-only rows from the analogue and digital output tables: `hgl_mixer_signal` (M71, V), `diff_temp_pump_signal` (M88, %, `-1` off sentinel) and `valve_heating_cooling` (M61, display text like the existing M63 value). All three ride the `setting/detail` requests `read_data()` already issues.
+- `WEB_VALUE_DESCRIPTIONS` catalogs the new value names with their preferred units, including the two diff-temp temperatures consumers inject from the overview object.
+
+The previous stable package is 2.17.0 for consumers that need to roll back.
+
 ## [2.17.0] - 2026-11-23
 
 Model detection now preserves the last known model when the controller misses a probe. Concurrent requests share the EEPROM write throttle, and Navigator statistics validate the units of runtime and energy totals.

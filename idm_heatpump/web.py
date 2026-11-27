@@ -331,6 +331,11 @@ NAVIGATOR10_SETTING_NAME_MAP: dict[tuple[str, str], str] = {
     # verified live on an AERO ALM 6-15, T_NAV10_20.24): keep M124 too in
     # case earlier firmware generations label the output that way (#151).
     ("4782", "M125"): "heat_sink_intermediate_circuit_pump_signal",
+    # Hydraulic-visualization outputs (issue #750 capture: SLM 6-17,
+    # NAV10_20.24-1124-g509fead95, 2026-11-26). M88 is the differential
+    # temperature control pump and reads -1 (% off sentinel) when idle.
+    ("4782", "M71"): "hgl_mixer_signal",
+    ("4782", "M88"): "diff_temp_pump_signal",
     ("4789", "M1"): "compressor_1",
     ("4789", "M51"): "4way_valve_circuit1",
     ("4789", "E32.1"): "siphon_heating",
@@ -358,6 +363,10 @@ NAVIGATOR10_SETTING_NAME_MAP: dict[tuple[str, str], str] = {
     ("4789", "2./3. Wärmeerzeuger"): "heat_generator_2nd_3rd",
     ("4789", "2. Wärmeerzeuger"): "heat_generator_2nd",
     ("4789", "M63"): "valve_heating_hotwater",
+    # M61 heating/cooling valve (issue #750 capture). Its cell holds the
+    # display text ("Heizen"/"Kuehlen"), so the value passes through as text
+    # like valve_heating_hotwater; no numeric enum is invented here.
+    ("4789", "M61"): "valve_heating_cooling",
     ("4789", "M64"): "hotwater_circulation_pump",
 }
 
@@ -540,6 +549,19 @@ class IdmWebValueDescription:
 
 WEB_VALUE_DESCRIPTIONS: dict[str, IdmWebValueDescription] = {
     "flowmeter": IdmWebValueDescription("flowmeter", "l/min", state_class="measurement"),
+    # Hydraulic-visualization values (issue #750 capture). The diff-temp
+    # temperatures are injected from the system/overview block by the
+    # consumer; the descriptions keep one catalog for every stable name.
+    "diff_temp_buffer_temp": IdmWebValueDescription(
+        "diff_temp_buffer_temp", "°C", device_class="temperature", state_class="measurement"
+    ),
+    "diff_temp_reference_temp": IdmWebValueDescription(
+        "diff_temp_reference_temp", "°C", device_class="temperature", state_class="measurement"
+    ),
+    "diff_temp_pump_signal": IdmWebValueDescription(
+        "diff_temp_pump_signal", "%", state_class="measurement"
+    ),
+    "hgl_mixer_signal": IdmWebValueDescription("hgl_mixer_signal", "V", state_class="measurement"),
     "hotgas_temperature": IdmWebValueDescription(
         "hotgas_temperature", "°C", device_class="temperature", state_class="measurement"
     ),
@@ -2140,6 +2162,12 @@ class IdmWebSystemOverview:
     grid_power: float | None = None
     energyflow_signal: int | None = None
     energyflow_type: int | None = None
+    # Differential-temperature control (system.diffTempControl): buffer is the
+    # B84 sensor, reference the other side of the regulated delta, pump the
+    # analogue output M88 as an on/off state (issue #750 capture).
+    diff_temp_buffer_temperature: float | None = None
+    diff_temp_reference_temperature: float | None = None
+    diff_temp_pump_active: bool | None = None
     freshwater_system_mode: int | None = None
     freshwater_temperature_top: float | None = None
     freshwater_temperature_bottom: float | None = None
@@ -2201,6 +2229,15 @@ def parse_navigator_system_overview_response(
         if isinstance(grid_node, dict):
             grid_power = _optional_float(grid_node.get("value"))
 
+    diff_temp_block = system.get("diffTempControl")
+    diff_temp_buffer_temperature = None
+    diff_temp_reference_temperature = None
+    diff_temp_pump_active = None
+    if isinstance(diff_temp_block, dict):
+        diff_temp_buffer_temperature = _system_temperature(diff_temp_block, "buffer")
+        diff_temp_reference_temperature = _system_temperature(diff_temp_block, "reference")
+        diff_temp_pump_active = _optional_bool(diff_temp_block.get("pumpActive"))
+
     freshwater_block = system.get("freshwater")
     freshwater_circulation_active = None
     if isinstance(freshwater_block, dict):
@@ -2254,6 +2291,9 @@ def parse_navigator_system_overview_response(
         grid_power=grid_power,
         energyflow_signal=energyflow_signal,
         energyflow_type=energyflow_type,
+        diff_temp_buffer_temperature=diff_temp_buffer_temperature,
+        diff_temp_reference_temperature=diff_temp_reference_temperature,
+        diff_temp_pump_active=diff_temp_pump_active,
         freshwater_system_mode=(
             _optional_int(freshwater_block.get("systemMode"))
             if isinstance(freshwater_block, dict)
