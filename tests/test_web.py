@@ -205,6 +205,63 @@ def test_parse_navigator_setting_response_uses_setting_specific_names() -> None:
     assert analogue_values_m124["heat_sink_intermediate_circuit_pump_signal"].value == "42%"
 
 
+def test_parse_navigator_setting_response_maps_hydraulic_visualization_rows() -> None:
+    """Navigator 10 hydraulic-visualization outputs (issue #750 capture).
+
+    SLM 6-17, firmware NAV10_20.24-1124-g509fead95, captured 2026-11-26 with
+    IDM Web Capture 1.19.9: the analogue-outputs rows M71 (HGL mixer control
+    signal) and M88 (differential-temperature-control pump) and the digital
+    outputs row M61 (heating/cooling valve) were requested as read-only
+    entities and were absent from the section maps before.
+    """
+    raw_analogue = json.dumps(
+        {
+            "settingDetail": {
+                "id": "4782",
+                "name": "N2_ANALOGUE_OUTPUTS",
+                "value": """
+                <table id="idm_info">
+                <tr><td>M71</td><td>HGL Mischer</td><td>2.0</td><td>V</td></tr>
+                <tr><td>M73</td><td>Ladepumpe</td><td>60</td><td>%</td></tr>
+                <tr><td>M88</td><td>Pumpe Differenztemperaturregelung</td><td>-1.0</td><td>%</td></tr>
+                </table>
+                """,
+            }
+        }
+    )
+
+    analogue = parse_navigator_setting_response(raw_analogue)
+
+    assert analogue["hgl_mixer_signal"].numeric_value == 2.0
+    assert analogue["hgl_mixer_signal"].unit == "V"
+    assert analogue["diff_temp_pump_signal"].numeric_value == -1.0
+    assert analogue["diff_temp_pump_signal"].unit == "%"
+    # The previously mapped rows keep working unchanged.
+    assert analogue["flow_pump_percentage"].numeric_value == 60.0
+
+    raw_digital = json.dumps(
+        {
+            "settingDetail": {
+                "id": "4789",
+                "name": "N2_DIGITAL_OUTPUTS",
+                "value": """
+                <table id="idm_info">
+                <tr><td>M41</td><td>Mischer Heizkreis A</td><td>Auf</td><td></td></tr>
+                <tr><td>M61</td><td>Ventil Heizen/Kuehlen</td><td>Heizen</td><td></td></tr>
+                </table>
+                """,
+            }
+        }
+    )
+
+    digital = parse_navigator_setting_response(raw_digital)
+
+    # M61 passes the controller's own wording through like the M63 web value
+    # does; the value domain is the display text, not a numeric enum.
+    assert digital["valve_heating_cooling"].value == "Heizen"
+    assert digital["mixer_heating_circuitA"].value == "Auf"
+
+
 def test_parse_navigator_setting_response_rejects_invalid_json() -> None:
     with pytest.raises(IdmWebResponseError):
         parse_navigator_setting_response("not json")
