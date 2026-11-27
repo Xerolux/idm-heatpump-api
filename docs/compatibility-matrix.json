@@ -191,7 +191,7 @@
       "api_version": "1.0.2",
       "hass_integration_version": "pending",
       "status": "hardware-verified",
-      "notes": "Web client mapping expansion: adds heating-circuit room temperature sensors B61-B67 (room_temperature_HK_A through G) to SENSOR_NAME_MAP and WEB_VALUE_DESCRIPTIONS. Verified live on a Navigator 10 ALM 6-15 with heating circuits A and D (B64 = 21.8 \u00c2\u00b0C)."
+      "notes": "Web client mapping expansion: adds heating-circuit room temperature sensors B61-B67 (room_temperature_HK_A through G) to SENSOR_NAME_MAP and WEB_VALUE_DESCRIPTIONS. Verified live on a Navigator 10 ALM 6-15 with heating circuits A and D (B64 = 21.8 Â°C)."
     },
     {
       "api_version": "1.0.3",
@@ -438,6 +438,12 @@
       "hass_integration_version": "0.28.4-b2",
       "status": "api-prepared",
       "notes": "The 0.28.4-b2 integration contract suite passed against the stable API. A read-only Navigator 10 hardware check confirmed model detection, individual and batch Modbus reads, authenticated WebSocket settings and matching system modes. Navigator 2.0 statistics were verified with regression tests."
+    },
+    {
+      "api_version": "2.18.0",
+      "hass_integration_version": "0.28.8",
+      "status": "api-prepared",
+      "notes": "Differential-temperature control block in system/overview and the M71/M88/M61 setting rows for Navigator 10 hydraulic visualization (issue #750). The integration suite passed locally against the built wheel: 3765 tests, 98.36% coverage, config_flow at 100%, strict mypy and the real-Home-Assistant smoke tests."
     }
   ]
 }
